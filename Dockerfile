@@ -6,7 +6,7 @@ COPY . .
 ARG TARGETARCH
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} go build -o /out/chowkidar ./cmd/server
 
-FROM alpine:3.21
+FROM alpine:3.23
 RUN apk add --no-cache ca-certificates dumb-init
 WORKDIR /app
 COPY --from=builder /out/chowkidar /app/chowkidar
