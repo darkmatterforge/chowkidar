@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.1] - 2026-06-01
+
+### Fixed
+- Move Unraid Community Applications template XML to `templates/` folder for proper CA discovery
+- Set `Secure` cookie attribute when the request is served over HTTPS
+- Remove double `v` prefix in GitHub release names
+
+### Changed
+- Bump Alpine base image from 3.21 to 3.23
+- Bump GitHub Actions: `actions/checkout` v4→v6, `actions/setup-go` v5→v6, `docker/login-action` v3→v4, `docker/metadata-action` v5→v6, `docker/setup-buildx-action` v3→v4
+
 ## [0.1.0] - 2026-06-01
 
 ### Added
@@ -24,4 +35,5 @@ All notable changes to this project will be documented in this file.
 - Unraid Community Applications template
 - AGPL-3.0 license
 
+[0.1.1]: https://github.com/darkmatterforge/chowkidar/releases/tag/v0.1.1
 [0.1.0]: https://github.com/darkmatterforge/chowkidar/releases/tag/v0.1.0
