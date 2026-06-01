@@ -3,6 +3,17 @@ name: CI
 on:
   push:
   pull_request:
+  # Manual trigger with the option to skip jobs selectively.
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: 'Skip Go unit tests'
+        type: boolean
+        default: false
+      skip_e2e:
+        description: 'Skip Playwright E2E tests'
+        type: boolean
+        default: false
 
 # One run per branch/PR at a time. A newer push cancels the in-flight run.
 concurrency:
@@ -14,8 +25,10 @@ env:
 
 jobs:
   # ── 1. Go tests + Docker build ─────────────────────────────────────────────
-  # Runs Go unit/integration tests, then builds the image once and exports it
-  # as a short-lived artifact so downstream jobs don't need to rebuild.
+  # Skip tokens (add to commit message):
+  #   [skip tests]  — skip Go unit tests but still build + smoke
+  #   [skip e2e]    — skip E2E job (this job still runs)
+  #   [skip ci]     — GitHub's built-in: skips the entire workflow
   test-build-smoke:
     runs-on: ubuntu-latest
     steps:
@@ -28,6 +41,9 @@ jobs:
           go-version-file: go.mod
 
       - name: Run unit and integration tests
+        if: |
+          !contains(github.event.head_commit.message, '[skip tests]') &&
+          inputs.skip_tests != true
         run: go test ./...
 
       - name: Build Docker image
@@ -47,9 +63,14 @@ jobs:
         run: bash scripts/api_smoke.sh chowkidar:ci
 
   # ── 2. Playwright E2E tests ────────────────────────────────────────────────
-  # Loads the image built above — no second docker build.
+  # Skipped when commit message contains [skip e2e] or when triggered manually
+  # with skip_e2e: true.  Still requires test-build-smoke to pass so the image
+  # artifact exists.
   e2e:
     needs: test-build-smoke
+    if: |
+      !contains(github.event.head_commit.message, '[skip e2e]') &&
+      inputs.skip_e2e != true
     runs-on: ubuntu-latest
     env:
       APP_PORT: 18081
