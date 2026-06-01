@@ -2024,8 +2024,14 @@
     </section>
   </main>
 
-  <footer style="text-align:center;padding:12px 16px;font-size:11px;color:var(--muted);margin-top:auto;">
-    A product by <strong>Dark Matter Forge</strong>
+  <footer style="margin-top:auto;">
+    <div style="background:color-mix(in srgb,var(--accent) 8%,var(--panel));border-top:1px solid color-mix(in srgb,var(--accent) 20%,var(--line));padding:10px 20px;display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;">
+      <span style="font-size:12px;color:var(--text);opacity:.85;">🚧 Chowkidar is a work in progress. Found a bug or have an idea?</span>
+      <a href="https://github.com/darkmatterforge/chowkidar/issues" target="_blank" rel="noopener" style="font-size:12px;font-weight:600;color:var(--accent);text-decoration:none;white-space:nowrap;">Open an issue on GitHub →</a>
+    </div>
+    <div style="text-align:center;padding:10px 16px;font-size:11px;color:var(--muted);">
+      A product by <strong>Dark Matter Forge</strong>
+    </div>
   </footer>
 
   <script>
@@ -3947,9 +3953,15 @@
       document.getElementById('bootNotifyChipsWrap').style.display = bootEnabled ? '' : 'none';
       renderBootNotifyChips(s.bootNotificationProfiles ?? []);
       updateBootNotifyBadge();
-      // Sync picker to the persisted layout (localStorage is source of truth)
-      pendingDashLayout = currentDashLayout;
+      // Sync layout and theme from server
+      pendingDashLayout = s.dashboardLayout || currentDashLayout;
+      currentDashLayout = pendingDashLayout;
+      localStorage.setItem('dashLayout', currentDashLayout);
       applyLayoutPickerSelection();
+      if (s.theme && ['auto', 'light', 'dark'].includes(s.theme)) {
+        localStorage.setItem('chowkidar-theme', s.theme);
+        applyTheme(s.theme);
+      }
     }
 
     async function saveSettings() {
@@ -4020,6 +4032,8 @@
         logLevel,
         logToFile,
         logRetentionDays,
+        dashboardLayout: pendingDashLayout,
+        theme: getStoredTheme(),
         ..._hiddenSettings,
       };
 
@@ -4030,7 +4044,6 @@
         return;
       }
       showSaveResult('settingsStatus', true, 'Settings saved', '');
-      // Apply the pending layout choice and persist it
       currentDashLayout = pendingDashLayout;
       localStorage.setItem('dashLayout', currentDashLayout);
       await loadDashboard();

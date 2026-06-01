@@ -50,6 +50,8 @@ type Config struct {
 	LogLevel                      string
 	LogToFile                     bool
 	LogRetentionDays              int
+	DashboardLayout               string
+	Theme                         string
 }
 
 type FileConfig struct {
@@ -89,6 +91,8 @@ type FileConfig struct {
 	LogLevel                      string   `yaml:"logLevel"                      json:"logLevel"`
 	LogToFile                     bool     `yaml:"logToFile"                     json:"logToFile"`
 	LogRetentionDays              int      `yaml:"logRetentionDays"              json:"logRetentionDays"`
+	DashboardLayout               string   `yaml:"dashboardLayout"               json:"dashboardLayout"`
+	Theme                         string   `yaml:"theme"                         json:"theme"`
 }
 
 func Load() (Config, error) {
@@ -132,6 +136,8 @@ func Load() (Config, error) {
 		LogLevel:                      envOr("LOG_LEVEL", fileCfg.LogLevel),
 		LogToFile:                     envOrBool("LOG_TO_FILE", fileCfg.LogToFile),
 		LogRetentionDays:              envOrInt("LOG_RETENTION_DAYS", fileCfg.LogRetentionDays),
+		DashboardLayout:               fileCfg.DashboardLayout,
+		Theme:                         fileCfg.Theme,
 	}
 
 	if cfg.SQLitePath == "" {
@@ -268,6 +274,8 @@ func ToFileConfig(cfg Config) FileConfig {
 		LogLevel:                      cfg.LogLevel,
 		LogToFile:                     cfg.LogToFile,
 		LogRetentionDays:              cfg.LogRetentionDays,
+		DashboardLayout:               cfg.DashboardLayout,
+		Theme:                         cfg.Theme,
 	}
 }
 
@@ -303,6 +311,8 @@ func defaultFileConfig() FileConfig {
 		LogLevel:                      "info",
 		LogToFile:                     true,
 		LogRetentionDays:              7,
+		DashboardLayout:               "cards",
+		Theme:                         "auto",
 	}
 }
 

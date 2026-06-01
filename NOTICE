@@ -1,0 +1,40 @@
+Chowkidar
+Copyright (C) 2026 Dark Matter Forge. All rights reserved.
+
+This software is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
+See the LICENSE file for the full license text.
+
+-------------------------------------------------------------------------------
+USAGE TERMS (plain English)
+-------------------------------------------------------------------------------
+
+You may use, study, and contribute to this software under the terms of the AGPL-3.0.
+This means:
+
+  - If you distribute this software or a modified version of it, you must make the
+    complete corresponding source code available under the AGPL-3.0.
+
+  - If you run a modified version of this software over a network and allow users to
+    interact with it, you must make the source code of your modified version available
+    to those users under the AGPL-3.0.
+
+  - You may NOT copy, extract, or reuse the code, logic, algorithms, UI design, or
+    any substantial portion of this software in a proprietary or closed-source product
+    without releasing that product's full source code under the AGPL-3.0.
+
+In short: you can use and build on this software, but you cannot take it private.
+Any derivative work must remain open source under the same terms.
+
+-------------------------------------------------------------------------------
+TRADEMARKS
+-------------------------------------------------------------------------------
+
+The name "Chowkidar", the "Dark Matter Forge" name, and any associated logos and
+branding are trademarks of Dark Matter Forge and may not be used to endorse or
+promote products derived from this software without prior written permission.
+
+-------------------------------------------------------------------------------
+COMMERCIAL LICENSING
+-------------------------------------------------------------------------------
+
+For commercial licensing, proprietary use, or any enquiries contact: Dark Matter Forge

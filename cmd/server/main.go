@@ -1727,10 +1727,10 @@ func normalizeSettingsBody(body *config.FileConfig) {
 		body.Action = "restart"
 	}
 	if body.WorkerCount < 1 {
-		body.WorkerCount = 1
+		body.WorkerCount = 2
 	}
 	if body.QueueSize < 1 {
-		body.QueueSize = 1
+		body.QueueSize = 64
 	}
 	if body.RetryCount < 1 {
 		body.RetryCount = 1
@@ -1738,12 +1738,52 @@ func normalizeSettingsBody(body *config.FileConfig) {
 	if body.HttpClientTimeoutSeconds < 1 {
 		body.HttpClientTimeoutSeconds = 15
 	}
+	if body.HttpMaxIdleConns < 1 {
+		body.HttpMaxIdleConns = 20
+	}
+	if body.HttpMaxIdleConnsPerHost < 1 {
+		body.HttpMaxIdleConnsPerHost = 10
+	}
+	if body.HttpIdleConnTimeoutSeconds < 1 {
+		body.HttpIdleConnTimeoutSeconds = 90
+	}
 	if body.DockerPingTimeoutSeconds < 1 {
 		body.DockerPingTimeoutSeconds = 5
+	}
+	if body.DockerClientRetryCount < 1 {
+		body.DockerClientRetryCount = 1
+	}
+	if body.DockerClientRetryDelaySeconds < 1 {
+		body.DockerClientRetryDelaySeconds = 2
+	}
+	if body.NotificationRatePerSec < 1 {
+		body.NotificationRatePerSec = 5
+	}
+	if body.NotificationRatePerSec > 1000 {
+		body.NotificationRatePerSec = 1000
+	}
+	if body.ActionTimeoutSeconds < 1 {
+		body.ActionTimeoutSeconds = 20
+	}
+	if body.LogRetentionDays < 1 {
+		body.LogRetentionDays = 7
+	}
+	if body.SQLiteBusyTimeoutSeconds < 1 {
+		body.SQLiteBusyTimeoutSeconds = 5000
 	}
 	body.DockerSocketPath = strings.TrimSpace(body.DockerSocketPath)
 	if body.DockerSocketPath == "" {
 		body.DockerSocketPath = "/var/run/docker.sock"
+	}
+	switch body.Theme {
+	case "light", "dark", "auto":
+	default:
+		body.Theme = "auto"
+	}
+	switch body.DashboardLayout {
+	case "cards", "table", "grid":
+	default:
+		body.DashboardLayout = "cards"
 	}
 }
 
@@ -1780,6 +1820,8 @@ func syncConfigFromBody(cfg *config.Config, body config.FileConfig) {
 	cfg.LogLevel = body.LogLevel
 	cfg.LogToFile = body.LogToFile
 	cfg.LogRetentionDays = body.LogRetentionDays
+	cfg.DashboardLayout = body.DashboardLayout
+	cfg.Theme = body.Theme
 }
 
 func (a *app) handleSettingsPUT(w http.ResponseWriter, r *http.Request) {
