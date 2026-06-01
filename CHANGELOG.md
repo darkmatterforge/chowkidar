@@ -5,7 +5,6 @@ All notable changes to this project will be documented in this file.
 ## [0.1.1] - 2026-06-01
 
 ### Fixed
-- Move Unraid Community Applications template XML to `templates/` folder for proper CA discovery
 - Set `Secure` cookie attribute when the request is served over HTTPS
 - Remove double `v` prefix in GitHub release names
 
