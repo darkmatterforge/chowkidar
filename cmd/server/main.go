@@ -2997,6 +2997,12 @@ func writeJSON(w http.ResponseWriter, code int, payload any) {
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
+// isSecureRequest returns true when the connection is HTTPS, either directly
+// or via a reverse proxy that sets X-Forwarded-Proto.
+func isSecureRequest(r *http.Request) bool {
+	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
+
 func containerName(c containertypes.Summary) string {
 	if len(c.Names) == 0 {
 		return c.ID
@@ -3168,6 +3174,7 @@ func (a *app) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   maxAge,
 		HttpOnly: true,
+		Secure:   isSecureRequest(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "username": req.Username})
@@ -3185,6 +3192,7 @@ func (a *app) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   isSecureRequest(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
@@ -3263,6 +3271,7 @@ func (a *app) handleAuthDisable(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   isSecureRequest(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
