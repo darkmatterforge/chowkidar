@@ -9,10 +9,10 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/darkmatterforge/chowkidar/issues</Support>
   <Project>https://github.com/darkmatterforge/chowkidar</Project>
-  <Overview>Lightweight Docker health monitor with auto-heal actions and multi-provider notifications. Watches container health events and reacts with configurable actions (restart, stop, run-script, webhook, auto-heal). Supports Discord, Slack, Telegram, ntfy, Gotify, Pushover, email, and plain Apprise URLs.</Overview>
+  <Overview>Lightweight Docker health monitor with configurable restart and notification actions. Watches containers for unhealthy health events and exited states, then reacts automatically. Supports Discord, Slack, Telegram, ntfy, Gotify, Pushover, email, and plain Apprise URLs.</Overview>
   <Category>Tools:</Category>
   <WebUI>http://[IP]:[PORT:8080]/</WebUI>
-  <TemplateURL>https://raw.githubusercontent.com/darkmatterforge/chowkidar/main/unraid/chowkidar.xml</TemplateURL>
+  <TemplateURL>https://raw.githubusercontent.com/darkmatterforge/chowkidar/main/templates/chowkidar.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/darkmatterforge/chowkidar/main/unraid/icon.svg</Icon>
 
   <!-- ── Volumes ── -->
