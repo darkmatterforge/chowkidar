@@ -1,0 +1,24 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  bin = "tmp/chowkidar"
+  cmd = "go build -o tmp/chowkidar ./cmd/server"
+  include_ext = ["go"]
+  exclude_dir = ["web", "config", "tmp", "docs", "scripts", "unraid"]
+  delay = 800
+  kill_delay = "200ms"
+  rerun = false
+
+[log]
+  time = true
+
+[color]
+  main = "magenta"
+  watcher = "cyan"
+  build = "yellow"
+  runner = "green"
+
+[screen]
+  clear_on_rebuild = false
+  keep_scroll = true

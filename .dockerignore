@@ -1,0 +1,45 @@
+# ── Version control ──────────────────────────────────────────────────────────
+.git
+.gitignore
+.gotignore
+
+# ── Claude Code IDE settings ─────────────────────────────────────────────────
+.claude/
+
+# ── Development tooling ──────────────────────────────────────────────────────
+.air.toml
+Dockerfile.dev
+docker-compose*.yml
+
+# ── Documentation ────────────────────────────────────────────────────────────
+README.md
+*.md
+
+# ── Runtime config volume (mounted at /config at runtime, not baked in) ──────
+/config/
+
+# ── Build artefacts and temp files ───────────────────────────────────────────
+tmp/
+server
+bin/
+
+# ── Scripts and tooling not needed inside the image ──────────────────────────
+scripts/
+unraid/
+
+# ── OS / editor noise ────────────────────────────────────────────────────────
+.DS_Store
+.env
+*.log
+*.tmp
+*.out
+*.swp
+*.swo
+*.bak
+*.exe
+*.test
+*.coverprofile
+
+# ── Dependency cache (not used in Docker build) ───────────────────────────────
+node_modules/
+vendor/

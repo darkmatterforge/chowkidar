@@ -1,0 +1,52 @@
+services:
+  chowkidar:
+    build: .
+    container_name: chowkidar
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      APP_PATH: /config
+      LOG_LEVEL: info
+      DOCKER_HOST: ${DOCKER_HOST:-}
+      CHOWKIDAR_SECRET_KEY: ${CHOWKIDAR_SECRET_KEY}
+      # EXTERNAL_HOSTNAME: my-server
+      # CONTAINER_NAME: sonarr,radarr
+      # APPRISE_NOTIFICATION_SERVICES: discord://token@webhookid
+      # RUN_SCRIPT_PATH: /config/scripts/heal.sh
+    volumes:
+      - ./config:/config
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    container_name: chowkidar-docker-proxy
+    restart: unless-stopped
+    profiles: ["socket-proxy"]
+    environment:
+      CONTAINERS: 1
+      PING: 1
+      POST: 1
+      AUTH: 0
+      BUILD: 0
+      COMMIT: 0
+      CONFIGS: 0
+      DISTRIBUTION: 0
+      EVENTS: 0
+      EXEC: 0
+      IMAGES: 0
+      INFO: 0
+      NETWORKS: 0
+      NODES: 0
+      PLUGINS: 0
+      SECRETS: 0
+      SERVICES: 0
+      SESSION: 0
+      SWARM: 0
+      SYSTEM: 0
+      TASKS: 0
+      VOLUMES: 0
+    ports:
+      - "2375:2375"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro

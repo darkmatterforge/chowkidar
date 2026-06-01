@@ -1,0 +1,226 @@
+# notification_default_templates.yaml — Chowkidar
+# ─────────────────────────────────────────────────────────────────────────────
+# This file is bundled with the application binary.
+# To override defaults for your installation, place a copy at
+#   /config/notification_default_templates.yaml
+# and edit it there — it takes precedence over this bundled version.
+# Per-agent overrides in /config/notification_templates.yaml take precedence over both.
+#
+# Available variables:
+#   {{.ContainerName}}   Docker container name
+#   {{.Action}}          Recovery action performed  (restart, start, stop, …)
+#   {{.Reason}}          Failure reason
+#   {{.Cycle}}           Current retry cycle number
+#   {{.MaxRetries}}      Configured maximum retry count
+#   {{.Cooldown}}        Post-action cooldown duration in seconds
+#   {{.RuleName}}        Monitoring rule / job name
+#
+# Each provider has two sections:
+#   titles:  short subject/title line  (same template variables available)
+#   bodies:  multi-line detail block — structured like a status card
+#
+# Providers: discord  telegram  slack  default (fallback for all others)
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: 1
+providers:
+
+  # ── Generic / plain-text fallback (ntfy, gotify, pushover, email, webhook) ──
+  default:
+    titles:
+      bootUp: "🚀 Chowkidar started"
+      unhealthyDetected: "⚠️ {{.ContainerName}} unhealthy detected"
+      retrying: "🔁 {{.ContainerName}} — recovery attempt {{.Cycle}}/{{.MaxRetries}}"
+      cooldown: "⏳ {{.ContainerName}} cooldown started"
+      containerRecovered: "✅ {{.ContainerName}} recovered"
+      actionFailed: "❌ {{.ContainerName}} action failed"
+      retryLimit: "🚨 {{.ContainerName}} retry limit reached"
+    bootUp: |-
+      🚀 Chowkidar is up and running.
+      All monitoring jobs have resumed.
+    unhealthyDetected: |-
+      📦 Container : {{.ContainerName}}
+      📋 Rule      : {{.RuleName}}
+
+      Health check failed — recovery evaluation started.
+    retrying: |-
+      📦 Container : {{.ContainerName}}
+      📋 Rule      : {{.RuleName}}
+      ⚡ Action    : {{.Action}}
+      🔁 Attempt   : {{.Cycle}} / {{.MaxRetries}}
+
+      Recovery attempt {{.Cycle}} of {{.MaxRetries}} has been initiated.
+    cooldown: |-
+      📦 Container : {{.ContainerName}}
+      📋 Rule      : {{.RuleName}}
+      ⏳ Cooldown  : {{.Cooldown}}s
+
+      Action complete — monitoring paused during cooldown.
+    containerRecovered: |-
+      📦 Container : {{.ContainerName}}
+      📋 Rule      : {{.RuleName}}
+
+      ✅ Container is healthy again. Monitoring resumed.
+    actionFailed: |-
+      📦 Container : {{.ContainerName}}
+      📋 Rule      : {{.RuleName}}
+      ⚡ Action    : {{.Action}}
+      🔢 Attempts  : {{.Cycle}} / {{.MaxRetries}}
+
+      Action failed — all retry attempts exhausted.
+    retryLimit: |-
+      📦 Container : {{.ContainerName}}
+      📋 Rule      : {{.RuleName}}
+      🔢 Attempts  : {{.Cycle}} / {{.MaxRetries}}
+
+      Retry limit reached — container still unhealthy. Monitoring paused.
+
+  # ── Discord (supports **bold** and `inline code` markdown) ──────────────────
+  discord:
+    titles:
+      bootUp: "🚀 Chowkidar started"
+      unhealthyDetected: "⚠️ {{.ContainerName}} unhealthy detected"
+      retrying: "🔁 {{.ContainerName}} — recovery attempt {{.Cycle}}/{{.MaxRetries}}"
+      cooldown: "⏳ {{.ContainerName}} cooldown started"
+      containerRecovered: "✅ {{.ContainerName}} recovered"
+      actionFailed: "❌ {{.ContainerName}} action failed"
+      retryLimit: "🚨 {{.ContainerName}} retry limit reached"
+    bootUp: |-
+      🚀 **Chowkidar is up and running.**
+      All monitoring jobs have resumed.
+    unhealthyDetected: |-
+      📦 **Container** : `{{.ContainerName}}`
+      📋 **Rule**      : `{{.RuleName}}`
+
+      Health check failed — recovery evaluation started.
+    retrying: |-
+      📦 **Container** : `{{.ContainerName}}`
+      📋 **Rule**      : `{{.RuleName}}`
+      ⚡ **Action**    : `{{.Action}}`
+      🔁 **Attempt**   : **{{.Cycle}} / {{.MaxRetries}}**
+
+      Recovery attempt {{.Cycle}} of {{.MaxRetries}} has been initiated.
+    cooldown: |-
+      📦 **Container** : `{{.ContainerName}}`
+      📋 **Rule**      : `{{.RuleName}}`
+      ⏳ **Cooldown**  : **{{.Cooldown}}s**
+
+      Action complete — monitoring paused during cooldown.
+    containerRecovered: |-
+      📦 **Container** : `{{.ContainerName}}`
+      📋 **Rule**      : `{{.RuleName}}`
+
+      ✅ Container is healthy again. Monitoring resumed.
+    actionFailed: |-
+      📦 **Container** : `{{.ContainerName}}`
+      📋 **Rule**      : `{{.RuleName}}`
+      ⚡ **Action**    : `{{.Action}}`
+      🔢 **Attempts**  : **{{.Cycle}} / {{.MaxRetries}}**
+
+      Action failed — all retry attempts exhausted.
+    retryLimit: |-
+      📦 **Container** : `{{.ContainerName}}`
+      📋 **Rule**      : `{{.RuleName}}`
+      🔢 **Attempts**  : **{{.Cycle}} / {{.MaxRetries}}**
+
+      Retry limit reached — container still unhealthy. Monitoring paused.
+
+  # ── Telegram (plain text + emoji — no HTML unless parsemode is configured) ──
+  telegram:
+    titles:
+      bootUp: "🚀 Chowkidar started"
+      unhealthyDetected: "⚠️ {{.ContainerName}} unhealthy detected"
+      retrying: "🔁 {{.ContainerName}} — recovery attempt {{.Cycle}}/{{.MaxRetries}}"
+      cooldown: "⏳ {{.ContainerName}} cooldown started"
+      containerRecovered: "✅ {{.ContainerName}} recovered"
+      actionFailed: "❌ {{.ContainerName}} action failed"
+      retryLimit: "🚨 {{.ContainerName}} retry limit reached"
+    bootUp: |-
+      🚀 Chowkidar is up and running.
+      All monitoring jobs have resumed.
+    unhealthyDetected: |-
+      📦 Container : {{.ContainerName}}
+      📋 Rule      : {{.RuleName}}
+
+      Health check failed — recovery evaluation started.
+    retrying: |-
+      📦 Container : {{.ContainerName}}
+      📋 Rule      : {{.RuleName}}
+      ⚡ Action    : {{.Action}}
+      🔁 Attempt   : {{.Cycle}} / {{.MaxRetries}}
+
+      Recovery attempt {{.Cycle}} of {{.MaxRetries}} has been initiated.
+    cooldown: |-
+      📦 Container : {{.ContainerName}}
+      �� Rule      : {{.RuleName}}
+      ⏳ Cooldown  : {{.Cooldown}}s
+
+      Action complete — monitoring paused during cooldown.
+    containerRecovered: |-
+      📦 Container : {{.ContainerName}}
+      📋 Rule      : {{.RuleName}}
+
+      ✅ Container is healthy again. Monitoring resumed.
+    actionFailed: |-
+      📦 Container : {{.ContainerName}}
+      📋 Rule      : {{.RuleName}}
+      ⚡ Action    : {{.Action}}
+      🔢 Attempts  : {{.Cycle}} / {{.MaxRetries}}
+
+      Action failed — all retry attempts exhausted.
+    retryLimit: |-
+      📦 Container : {{.ContainerName}}
+      📋 Rule      : {{.RuleName}}
+      🔢 Attempts  : {{.Cycle}} / {{.MaxRetries}}
+
+      Retry limit reached — container still unhealthy. Monitoring paused.
+
+  # ── Slack (*mrkdwn* bold, `code`, :emoji: shortcuts) ────────────────────────
+  slack:
+    titles:
+      bootUp: "🚀 Chowkidar started"
+      unhealthyDetected: "⚠️ {{.ContainerName}} unhealthy detected"
+      retrying: "🔁 {{.ContainerName}} — recovery attempt {{.Cycle}}/{{.MaxRetries}}"
+      cooldown: "⏳ {{.ContainerName}} cooldown started"
+      containerRecovered: "✅ {{.ContainerName}} recovered"
+      actionFailed: "❌ {{.ContainerName}} action failed"
+      retryLimit: "🚨 {{.ContainerName}} retry limit reached"
+    bootUp: |-
+      🚀 *Chowkidar is up and running.*
+      All monitoring jobs have resumed.
+    unhealthyDetected: |-
+      📦 *Container* : `{{.ContainerName}}`
+      📋 *Rule*      : `{{.RuleName}}`
+
+      Health check failed — recovery evaluation started.
+    retrying: |-
+      📦 *Container* : `{{.ContainerName}}`
+      📋 *Rule*      : `{{.RuleName}}`
+      ⚡ *Action*    : `{{.Action}}`
+      🔁 *Attempt*   : *{{.Cycle}} / {{.MaxRetries}}*
+
+      Recovery attempt {{.Cycle}} of {{.MaxRetries}} has been initiated.
+    cooldown: |-
+      📦 *Container* : `{{.ContainerName}}`
+      📋 *Rule*      : `{{.RuleName}}`
+      ⏳ *Cooldown*  : *{{.Cooldown}}s*
+
+      Action complete — monitoring paused during cooldown.
+    containerRecovered: |-
+      📦 *Container* : `{{.ContainerName}}`
+      📋 *Rule*      : `{{.RuleName}}`
+
+      ✅ Container is healthy again. Monitoring resumed.
+    actionFailed: |-
+      📦 *Container* : `{{.ContainerName}}`
+      📋 *Rule*      : `{{.RuleName}}`
+      ⚡ *Action*    : `{{.Action}}`
+      🔢 *Attempts*  : *{{.Cycle}} / {{.MaxRetries}}*
+
+      Action failed — all retry attempts exhausted.
+    retryLimit: |-
+      📦 *Container* : `{{.ContainerName}}`
+      📋 *Rule*      : `{{.RuleName}}`
+      🔢 *Attempts*  : *{{.Cycle}} / {{.MaxRetries}}*
+
+      Retry limit reached — container still unhealthy. Monitoring paused.

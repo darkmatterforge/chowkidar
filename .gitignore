@@ -1,0 +1,37 @@
+# ── Runtime config volume (user data, may contain secrets) ───────────────────
+# The entire /config directory is generated at runtime; nothing here is committed.
+/config/*
+
+# ── Air live-reload build output ─────────────────────────────────────────────
+tmp/
+
+# ── Compiled binaries at repo root ───────────────────────────────────────────
+/server
+bin/
+*.exe
+
+# ── Claude Code IDE settings ─────────────────────────────────────────────────
+.claude/
+
+# ── Go build artefacts ───────────────────────────────────────────────────────
+*.test
+*.out
+*.coverprofile
+coverage/
+
+# ── Dependency cache ─────────────────────────────────────────────────────────
+vendor/
+
+# ── Environment / secrets ────────────────────────────────────────────────────
+.env
+
+# ── OS / editor noise ────────────────────────────────────────────────────────
+.DS_Store
+*.swp
+*.swo
+*.bak
+*.tmp
+*.log
+.idea/
+.vscode/
+node_modules/

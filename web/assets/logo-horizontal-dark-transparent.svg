@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 137">
+  <g transform="translate(8,0)"><path d="M91 38c1,3 1,5 1,8 0,13 -10,23 -23,23 -14,0 -24,-10 -24,-23 0,-3 0,-5 1,-8l-7 -14 30 -8 28 8 -6 14 0 0zm-3 1c-13,9 -26,9 -39,0 13,-4 26,-4 39,0zm24 53c-9,-9 -22,-15 -35,-16l-5 8c-3,-1 -5,-1 -7,0l-5 -8c-14,2 -26,7 -35,16 9,15 25,25 44,25 18,0 34,-10 43,-25zm-51 14l5 -18c2,-1 4,-1 5,0l5 18 -7 8 -8 -8z" fill="#ff2e63"/></g>
+  <text x="162" y="98" font-family="Arial Black, Arial, sans-serif" font-weight="900"
+        font-size="55" fill="#FFFFFF" letter-spacing="1">CHOWKIDAR</text>
+</svg>

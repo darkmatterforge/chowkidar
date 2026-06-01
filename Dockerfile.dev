@@ -1,0 +1,9 @@
+FROM golang:1.26.3-alpine
+RUN apk add --no-cache ca-certificates git python3 py3-pip docker-cli nodejs npm
+RUN python3 -m venv /apprise && /apprise/bin/pip install --quiet apprise && ln -sf /apprise/bin/apprise /usr/local/bin/apprise
+RUN go install github.com/air-verse/air@v1.61.1
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+EXPOSE 8080
+CMD ["air", "-c", ".air.toml"]

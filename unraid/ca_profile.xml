@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<CAProfile>
+  <Name>chowkidar</Name>
+  <Description>Lightweight Docker health monitor with auto-heal actions and multi-provider notifications. Watches container health events and reacts with configurable actions (restart, stop, webhook, auto-heal). Supports Discord, Slack, Telegram, ntfy, Gotify, Pushover, email, and plain Apprise URLs.</Description>
+  <Repository>https://github.com/darkmatterforge/chowkidar</Repository>
+  <Support>https://github.com/darkmatterforge/chowkidar/issues</Support>
+  <License>MIT</License>
+  <Icon>https://raw.githubusercontent.com/darkmatterforge/chowkidar/main/unraid/icon.svg</Icon>
+</CAProfile>
