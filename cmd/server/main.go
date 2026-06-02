@@ -2307,11 +2307,18 @@ func (a *app) handleHistory(w http.ResponseWriter, r *http.Request) {
 
 	service := strings.TrimSpace(q.Get("service"))
 
+	// ?bars=true is used by the dashboard sparklines — include healthy pulse
+	// events so bars turn green for containers with no action history.
+	// The activity feed always excludes healthy to keep it readable.
+	excludeStatus := "healthy"
+	if q.Get("bars") == "true" {
+		excludeStatus = ""
+	}
 	entries, total, err := a.history.ListPage(history.ListOptions{
 		Limit:         limit,
 		Offset:        offset,
 		Service:       service,
-		ExcludeStatus: "healthy",
+		ExcludeStatus: excludeStatus,
 	})
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})

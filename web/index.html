@@ -2138,7 +2138,8 @@
     let editingDockerHostId = null;
     let selectedDockerConnType = 'socket';
     let _hiddenSettings = {};
-    let dashboardHistoryEntries = [];
+    let dashboardHistoryEntries = []; // activity feed (no healthy events)
+    let dashboardBarEntries = [];      // mini-bar sparklines (includes healthy)
     let dashboardHistoryTotal = 0;
     let historyPage = 1;
     let historyPageSize = 25;
@@ -3060,7 +3061,7 @@
     }
 
     function sampleBarsForService(name, count = 25) {
-      const samples = dashboardHistoryEntries.filter((e) => (e.containerName || e.containerId) === name).slice(0, count).reverse();
+      const samples = dashboardBarEntries.filter((e) => (e.containerName || e.containerId) === name).slice(0, count).reverse();
       const padded = Array(Math.max(0, count - samples.length)).fill(null);
       // When no events have been recorded yet, tint all bars with the current
       // health colour at low opacity so healthy containers don't look identical
@@ -3075,7 +3076,7 @@
     }
 
     function sampleSparkBarsForGrid(name, count = 10) {
-      const samples = dashboardHistoryEntries.filter((e) => (e.containerName || e.containerId) === name).slice(0, count).reverse();
+      const samples = dashboardBarEntries.filter((e) => (e.containerName || e.containerId) === name).slice(0, count).reverse();
       const padded = Array(Math.max(0, count - samples.length)).fill(null);
       const bars = [...padded, ...samples].map((s) => {
         if (!s) return '<span class="svc-grid-spark-bar"></span>';
@@ -3088,7 +3089,7 @@
     }
 
     function heartbeatBarsForService(name, count = 30) {
-      const samples = dashboardHistoryEntries.filter((e) => (e.containerName || e.containerId) === name).slice(0, count).reverse();
+      const samples = dashboardBarEntries.filter((e) => (e.containerName || e.containerId) === name).slice(0, count).reverse();
       const padded = Array(Math.max(0, count - samples.length)).fill(null);
       return [...padded, ...samples].map((s) => {
         if (!s) return '<span class="hb-block" title="No data"></span>';
@@ -3339,7 +3340,7 @@
             ? (firstJob ? `${firstJob.name} · ${firstJob.action || service.checkAction || 'restart'}` : `global · ${service.checkAction || 'restart'}`)
             : 'not monitored';
           const encodedName = encodeURIComponent(service.name);
-          const hasHistory = dashboardHistoryEntries.some((e) => (e.containerName || e.containerId) === service.name);
+          const hasHistory = dashboardBarEntries.some((e) => (e.containerName || e.containerId) === service.name);
           const upPct = uptimeForService(service.name, st);
           const uptimeBadgeText = (hasHistory || st === 'up' || st === 'down') ? `${upPct}%` : 'N/A';
           const uptimeBadgeStyle = st === 'up'
@@ -3375,7 +3376,7 @@
           const st = statusForService(service);
           const isActive = service.name === selectedServiceName ? ' active' : '';
           const encodedName = encodeURIComponent(service.name);
-          const hasHistory = dashboardHistoryEntries.some((e) => (e.containerName || e.containerId) === service.name);
+          const hasHistory = dashboardBarEntries.some((e) => (e.containerName || e.containerId) === service.name);
           const upPct = uptimeForService(service.name, st);
           const uptimeBadgeText = (hasHistory || st === 'up' || st === 'down') ? `${upPct}%` : 'N/A';
           const uptimeBadgeStyle = st === 'up'
@@ -3415,7 +3416,7 @@
           const st = statusForService(service);
           const isActive = service.name === selectedServiceName ? ' active' : '';
           const encodedName = encodeURIComponent(service.name);
-          const hasHistory = dashboardHistoryEntries.some((e) => (e.containerName || e.containerId) === service.name);
+          const hasHistory = dashboardBarEntries.some((e) => (e.containerName || e.containerId) === service.name);
           const upPct = uptimeForService(service.name, st);
           const uptimeBadgeText = (hasHistory || st === 'up' || st === 'down') ? `${upPct}%` : 'N/A';
           html += `<button class="svc-grid-tile ${st}${isActive}" data-service-name="${encodedName}">`;
@@ -3565,16 +3566,17 @@
       loadError.textContent = '';
 
       try {
-        const [healthRes, diagRes, containersRes, historyRes, jobsRes, dockerStatusRes] = await Promise.all([
+        const [healthRes, diagRes, containersRes, historyRes, barsRes, jobsRes, dockerStatusRes] = await Promise.all([
           apiFetch('/api/health'),
           apiFetch('/api/diagnostics'),
           apiFetch('/api/containers'),
           apiFetch(historyApiUrl()),
+          apiFetch('/api/history?bars=true&limit=1000'),
           apiFetch('/api/jobs?enabled=true&limit=1'),
           apiFetch('/api/docker-hosts/status'),
         ]);
         if (!healthRes.ok || !diagRes.ok || !containersRes.ok || !historyRes.ok) {
-          throw new Error(`API request failed (health=${healthRes.status}, diag=${diagRes.status}, containers=${containersRes.status}, history=${historyRes.status})`);
+          throw new Error(`API request failed (health=${healthRes.status}, diag=${diagRes.status}, containers=${containersRes.status}, history=${historyRes.status}, bars=${barsRes.status})`);
         }
 
         const health = await healthRes.json();
@@ -3583,6 +3585,8 @@
         const history = await historyRes.json();
         dashboardHistoryEntries = history.entries || [];
         dashboardHistoryTotal = history.total || 0;
+        const barsData = barsRes.ok ? await barsRes.json() : { entries: [] };
+        dashboardBarEntries = barsData.entries || [];
 
         // Docker stat card
         const dockerCard = document.getElementById('statDockerCard');
