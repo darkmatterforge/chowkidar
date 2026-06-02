@@ -34,11 +34,12 @@ test.describe('Settings — General tab', () => {
     await openGeneralTab(page)
 
     const urlInput = page.locator('#primaryBaseURL')
-    // Clear first, then click. Clearing can trigger a validation error div that
-    // physically overlaps the button — force:true bypasses the hit-test.
-    await urlInput.fill('')
-    await page.locator('#autoDetectBaseURLBtn').click({ force: true })
-    await expect(urlInput).not.toHaveValue('')
+    // Fill with a placeholder so it differs from the current origin.
+    // Clearing to empty triggers a validation error div that covers the button.
+    await urlInput.fill('https://placeholder.test')
+    await page.locator('#autoDetectBaseURLBtn').click()
+    // Handler: `element.value = window.location.origin` → should contain localhost
+    await expect(urlInput).toHaveValue(/localhost/)
   })
 
   test('display timezone dropdown has selectable options', async ({ page }) => {

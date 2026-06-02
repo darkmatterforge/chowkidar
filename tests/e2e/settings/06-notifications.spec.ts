@@ -473,7 +473,7 @@ test.describe('Settings — Notifications tab', () => {
           await page.locator('#notifyField_port').fill(process.env.E2E_EMAIL_PORT)
         await page.locator('#notifyField_to').fill(process.env.E2E_EMAIL_TO ?? '')
         if (process.env.E2E_EMAIL_USERNAME)
-          await page.locator('#notifyField_user').fill(process.env.E2E_EMAIL_USERNAME)
+          await page.locator('#notifyField_username').fill(process.env.E2E_EMAIL_USERNAME)
         if (process.env.E2E_EMAIL_PASSWORD)
           await page.locator('#notifyField_password').fill(process.env.E2E_EMAIL_PASSWORD)
       })

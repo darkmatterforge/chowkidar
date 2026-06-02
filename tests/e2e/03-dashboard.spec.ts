@@ -305,16 +305,19 @@ test.describe('Dashboard', () => {
     await expect(page.locator('#dashboardActionStatus')).toBeVisible()
   })
 
-  test('Resume monitoring button is visible when a container is selected', async ({ page }) => {
-    // Resume is only ENABLED when a container is in cooldown/exhausted state.
-    // We just verify it renders — functional cooldown testing is in 11-health-recovery.
+  test('action buttons panel is present when a container is selected', async ({ page }) => {
+    // #detailResumeBtn is display:none for healthy containers (only shown during
+    // cooldown/exhaustion). Just verify the actions wrapper and the 3 core buttons.
     await goToDashboard(page)
     const firstService = page.locator('#serviceGroups button[data-service-name]').first()
     if (await firstService.count() === 0) {
-      test.skip(true, 'No monitored containers — skipping Resume test')
+      test.skip(true, 'No monitored containers — skipping action panel test')
       return
     }
     await firstService.click()
-    await expect(page.locator('#detailResumeBtn')).toBeVisible()
+    await expect(page.locator('#detailActions')).toBeVisible()
+    await expect(page.locator('#detailRestartBtn')).toBeAttached()
+    await expect(page.locator('#detailStopBtn')).toBeAttached()
+    await expect(page.locator('#detailStartBtn')).toBeAttached()
   })
 })
