@@ -80,6 +80,8 @@ type app struct {
 	authCfg              *config.AuthConfig
 	sessions             map[string]sessionEntry
 	sessionMu            sync.Mutex
+	dryRunCleanupMu      sync.Mutex
+	dryRunCleanupTimer   *time.Timer
 }
 
 type dockerClient interface {
@@ -113,6 +115,7 @@ type actionJob struct {
 	force                 bool
 	retryCount            int
 	actionTimeoutSeconds  int
+	scriptTimeoutSeconds  int
 	postActionWaitSeconds int
 }
 
@@ -295,7 +298,7 @@ func resolveJobSettings(j actionJob, cfg config.Config) (retryCount, actionTimeo
 
 func (a *app) notifyRetriesExhausted(j actionJob, name, action string, cycle, retryCount int, failed bool) {
 	a.setRetriesExhausted(name, true)
-	a.logActionHistory(j.container, j.reason, action, cycle, "exhausted", "monitoring paused — max retries reached", 0)
+	a.logActionHistory(j.container, j.reason, action, cycle, "exhausted", "monitoring paused — max retries reached", "", 0)
 	event := "retry limit reached"
 	msg := fmt.Sprintf("Container %s monitoring paused after %d cycles (%s)", name, cycle, j.reason)
 	if failed {
@@ -345,7 +348,7 @@ func (j actionJob) Run(ctx context.Context) {
 
 		if j.app.isRetriesExhausted(name) {
 			logInfof("job: skipping container=%s reason=retries-exhausted source=%s", name, source)
-			j.app.logActionHistory(j.container, j.reason, action, 0, "skipped", "retries exhausted", 0)
+			j.app.logActionHistory(j.container, j.reason, action, 0, "skipped", "retries exhausted", "", 0)
 			return
 		}
 
@@ -353,7 +356,7 @@ func (j actionJob) Run(ctx context.Context) {
 		if remaining := j.app.postActionWaitRemaining(name); remaining > 0 {
 			logInfof("job: skipping container=%s reason=post-action-wait remaining=%s source=%s",
 				name, remaining.Round(time.Second), source)
-			j.app.logActionHistory(j.container, j.reason, action, 0, "skipped", "cooldown active", 0)
+			j.app.logActionHistory(j.container, j.reason, action, 0, "skipped", "cooldown active", "", 0)
 			return
 		}
 	}
@@ -378,7 +381,7 @@ func (j actionJob) Run(ctx context.Context) {
 	if docker == nil {
 		docker = j.app.docker
 	}
-	err := j.app.executeAction(ctx, docker, action, j.script, j.container, actionTimeout)
+	scriptOutput, err := j.app.executeAction(ctx, docker, action, j.script, j.container, actionTimeout, j.scriptTimeoutSeconds)
 	duration := time.Since(started)
 
 	if err == nil {
@@ -393,9 +396,12 @@ func (j actionJob) Run(ctx context.Context) {
 				Cooldown:      j.postActionWaitSeconds,
 			}, j.notifications)
 		}
+		if scriptOutput != "" {
+			logInfof("job: script output container=%s:\n%s", name, scriptOutput)
+		}
 		logInfof("job: success container=%s action=%s cycle=%d/%d duration=%s source=%s",
 			name, action, cycle, retryCount, duration.Round(time.Millisecond), source)
-		j.app.logActionHistory(j.container, j.reason, action, cycle, "success", "", duration)
+		j.app.logActionHistory(j.container, j.reason, action, cycle, "success", "", scriptOutput, duration)
 		if j.force {
 			// Manual action succeeded — reset cycle so auto-monitoring resumes cleanly.
 			j.app.resetActionCooldown(name)
@@ -422,7 +428,7 @@ func (j actionJob) Run(ctx context.Context) {
 
 	logWarnf("job: failed container=%s action=%s cycle=%d/%d duration=%s err=%v source=%s",
 		name, action, cycle, retryCount, duration.Round(time.Millisecond), err, source)
-	j.app.logActionHistory(j.container, j.reason, action, cycle, "failed", err.Error(), duration)
+	j.app.logActionHistory(j.container, j.reason, action, cycle, "failed", err.Error(), scriptOutput, duration)
 	if !j.force && retryCount > 0 && cycle >= retryCount {
 		logErrorf("job: retries exhausted container=%s action=%s cycle=%d/%d source=%s",
 			name, action, cycle, retryCount, source)
@@ -666,6 +672,7 @@ func setupMux(a *app) *http.ServeMux {
 	mux.HandleFunc("/api/containers", a.authMiddleware(a.handleContainers))
 	mux.HandleFunc("/api/settings", a.authMiddleware(a.handleSettings))
 	mux.HandleFunc("/api/settings/theme", a.authMiddleware(a.handleSettingsTheme))
+	mux.HandleFunc("/api/scripts/dry-run", a.authMiddleware(a.handleScriptDryRun))
 	mux.HandleFunc("/api/jobs", a.authMiddleware(a.handleJobs))
 	mux.HandleFunc("/api/jobs/", a.authMiddleware(a.handleJobByID))
 	mux.HandleFunc("/api/notifications", a.authMiddleware(a.handleNotifications))
@@ -841,6 +848,9 @@ func applyMatchedJobSettings(job *actionJob, matched *config.Job) {
 	if matched.ActionTimeoutSeconds > 0 {
 		job.actionTimeoutSeconds = matched.ActionTimeoutSeconds
 	}
+	if matched.ScriptTimeoutSeconds > 0 {
+		job.scriptTimeoutSeconds = matched.ScriptTimeoutSeconds
+	}
 	job.postActionWaitSeconds = matched.PostActionWaitSeconds
 	if job.postActionWaitSeconds <= 0 {
 		job.postActionWaitSeconds = matched.MonitorIntervalSeconds
@@ -908,7 +918,7 @@ func (a *app) processUnhealthyContainers(ctx context.Context, docker dockerClien
 		}
 		if remaining := a.postActionWaitRemaining(name); remaining > 0 {
 			logInfof("monitor: skip container=%s reason=post-action-wait remaining=%s", name, remaining.Round(time.Second))
-			a.logActionHistory(c, "unhealthy", selectedAction, 0, "skipped", "cooldown active", 0)
+			a.logActionHistory(c, "unhealthy", selectedAction, 0, "skipped", "cooldown active", "", 0)
 			continue
 		}
 		job := actionJob{
@@ -969,7 +979,7 @@ func (a *app) processRestartingContainers(ctx context.Context, docker dockerClie
 		}
 		if remaining := a.postActionWaitRemaining(name); remaining > 0 {
 			logInfof("monitor: skip container=%s reason=post-action-wait remaining=%s (stuck-restarting)", name, remaining.Round(time.Second))
-			a.logActionHistory(c, "stuck-restarting", selectedAction, 0, "skipped", "cooldown active", 0)
+			a.logActionHistory(c, "stuck-restarting", selectedAction, 0, "skipped", "cooldown active", "", 0)
 			continue
 		}
 		job := actionJob{
@@ -1003,7 +1013,7 @@ func (a *app) processCrashedContainer(ctx context.Context, docker dockerClient, 
 	}
 	if remaining := a.postActionWaitRemaining(name); remaining > 0 {
 		logInfof("monitor: skip container=%s reason=post-action-wait remaining=%s", name, remaining.Round(time.Second))
-		a.logActionHistory(c, reason, selectedAction, 0, "skipped", "cooldown active", 0)
+		a.logActionHistory(c, reason, selectedAction, 0, "skipped", "cooldown active", "", 0)
 		return true
 	}
 	job := actionJob{
@@ -1176,7 +1186,7 @@ func (a *app) recordHealthPulses(ctx context.Context, docker dockerClient, jobs 
 	}
 	a.mu.Unlock()
 	for _, c := range a.collectHealthPulseTargets(allCtrs, jobs, dueJobIDs, problematic) {
-		a.logActionHistory(c, "health check", "healthy", 0, "healthy", "", 0)
+		a.logActionHistory(c, "health check", "healthy", 0, "healthy", "", "", 0)
 	}
 }
 
@@ -1253,7 +1263,7 @@ func (a *app) scanOnce() {
 
 	for _, ev := range justRecovered {
 		c := containertypes.Summary{Names: []string{"/" + ev.name}}
-		a.logActionHistory(c, "container recovered", "recovered", 0, "recovered", "", 0)
+		a.logActionHistory(c, "container recovered", "recovered", 0, "recovered", "", "", 0)
 		msg := fmt.Sprintf("Container %s recovered and is healthy", ev.name)
 		if a.shouldNotify(ev.name) {
 			_ = a.sendNotification("container recovered", msg)
@@ -2236,6 +2246,114 @@ func (a *app) handleScripts(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ensureDryRunContainer returns a real running container called chowkidar-dry-run.
+// It creates one via the docker CLI if it doesn't exist yet, so that scripts
+// running in dry-run mode can use docker inspect, docker ps, etc. against a
+// real container. Falls back to a dummy summary when Docker is unavailable.
+func (a *app) ensureDryRunContainer(ctx context.Context) containertypes.Summary {
+	const name = "chowkidar-dry-run"
+	dummy := containertypes.Summary{ID: "dry-run-test", Names: []string{"/" + name}}
+
+	if a.docker != nil {
+		all, err := a.docker.AllContainers(ctx)
+		if err == nil {
+			for _, c := range all {
+				for _, n := range c.Names {
+					if strings.TrimPrefix(n, "/") == name {
+						return c
+					}
+				}
+			}
+		}
+	}
+
+	// Container not found — create it via docker CLI (available in the image).
+	out, err := exec.CommandContext(ctx, "docker", "run", "-d",
+		"--name", name,
+		"--label", "chowkidar.managed=true",
+		"--health-cmd", "echo ok",
+		"--health-interval", "30s",
+		"alpine:3", "sh", "-c", "while true; do sleep 5; done",
+	).CombinedOutput()
+	if err != nil {
+		// Container may already exist but be stopped — try starting it.
+		if strings.Contains(string(out), "already in use") {
+			_ = exec.CommandContext(ctx, "docker", "start", name).Run()
+			// Re-query
+			if a.docker != nil {
+				if all, err2 := a.docker.AllContainers(ctx); err2 == nil {
+					for _, c := range all {
+						for _, n := range c.Names {
+							if strings.TrimPrefix(n, "/") == name {
+								return c
+							}
+						}
+					}
+				}
+			}
+		}
+		logWarnf("dry-run: could not create %s container: %v — using dummy", name, err)
+		return dummy
+	}
+
+	id := strings.TrimSpace(string(out))
+	return containertypes.Summary{ID: id, Names: []string{"/" + name}, State: "running"}
+}
+
+// scheduleDryRunCleanup resets (or creates) a timer that removes the
+// chowkidar-dry-run container after the given idle duration.
+func (a *app) scheduleDryRunCleanup(after time.Duration) {
+	a.dryRunCleanupMu.Lock()
+	defer a.dryRunCleanupMu.Unlock()
+	if a.dryRunCleanupTimer != nil {
+		a.dryRunCleanupTimer.Reset(after)
+		return
+	}
+	a.dryRunCleanupTimer = time.AfterFunc(after, func() {
+		a.dryRunCleanupMu.Lock()
+		a.dryRunCleanupTimer = nil
+		a.dryRunCleanupMu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		out, err := exec.CommandContext(ctx, "docker", "rm", "-f", "chowkidar-dry-run").CombinedOutput()
+		if err != nil {
+			logWarnf("dry-run cleanup: %v — %s", err, strings.TrimSpace(string(out)))
+		} else {
+			logInfof("dry-run cleanup: removed chowkidar-dry-run container")
+		}
+	})
+}
+
+func (a *app) handleScriptDryRun(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Script string `json:"script"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Script) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "script is required"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+	defer cancel()
+
+	// Use a real dry-run container so docker commands (inspect, ps, etc.) work.
+	// DRY_RUN=1 is still injected so templates with a guard exit early safely.
+	target := a.ensureDryRunContainer(ctx)
+	output, err := a.executeRunScript(ctx, body.Script, a.getConfig(), target, containerName(target), true)
+
+	// Schedule removal of the dry-run container 90 s after the last run.
+	a.scheduleDryRunCleanup(90 * time.Second)
+
+	resp := map[string]any{"output": output}
+	if err != nil {
+		resp["error"] = err.Error()
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 func (a *app) handleJobByID(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/api/jobs/")
 	id = strings.TrimSpace(id)
@@ -2598,7 +2716,7 @@ func (a *app) persistDockerHostProfiles(profiles []config.DockerHostProfile) err
 	return nil
 }
 
-func (a *app) logActionHistory(c containertypes.Summary, reason, action string, attempt int, status, errMsg string, duration time.Duration) {
+func (a *app) logActionHistory(c containertypes.Summary, reason, action string, attempt int, status, errMsg, output string, duration time.Duration) {
 	if a.history == nil {
 		return
 	}
@@ -2611,6 +2729,7 @@ func (a *app) logActionHistory(c containertypes.Summary, reason, action string, 
 		Attempt:       attempt,
 		Status:        status,
 		Error:         errMsg,
+		Output:        strings.TrimSpace(output),
 		DurationMs:    duration.Milliseconds(),
 	}
 	if err := a.history.Append(entry); err != nil {
@@ -2751,69 +2870,131 @@ func (a *app) handleResetCooldown(w http.ResponseWriter, r *http.Request) {
 	logInfof("api: resume monitoring requested container=%s id=%.12s", name, id)
 	a.logActionHistory(
 		containertypes.Summary{ID: id, Names: []string{"/" + name}},
-		"resume monitoring", "resume", 0, "success", "", 0,
+		"resume monitoring", "resume", 0, "success", "", "", 0,
 	)
 	writeJSON(w, http.StatusOK, map[string]any{"reset": true})
 }
 
-func (a *app) executeRunScript(ctx context.Context, script string, cfg config.Config, c containertypes.Summary, name string) error {
+// resolveScriptInterpreter reads the shebang line from a script and returns
+// the interpreter path if it exists on the system, falling back to /bin/sh.
+// This prevents "no such file or directory" when e.g. bash is not installed.
+func resolveScriptInterpreter(script string) string {
+	const fallback = "/bin/sh"
+	trimmed := strings.TrimSpace(script)
+	if !strings.HasPrefix(trimmed, "#!") {
+		return fallback
+	}
+	firstLine := strings.SplitN(trimmed, "\n", 2)[0]
+	interpreter := strings.TrimSpace(strings.TrimPrefix(firstLine, "#!"))
+	// Handle cases like "#!/usr/bin/env bash" — just take the first word
+	parts := strings.Fields(interpreter)
+	if len(parts) == 0 {
+		return fallback
+	}
+	// If the shebang is "/usr/bin/env bash", resolve via LookPath on the second word
+	candidate := parts[0]
+	if candidate == "/usr/bin/env" && len(parts) > 1 {
+		if resolved, err := exec.LookPath(parts[1]); err == nil {
+			return resolved
+		}
+		return fallback
+	}
+	// Direct path: use it only if it actually exists
+	if _, err := os.Stat(candidate); err == nil {
+		return candidate
+	}
+	return fallback
+}
+
+// executeRunScript runs the inline or path-based script and returns its
+// combined stdout+stderr output alongside any error.
+func (a *app) executeRunScript(ctx context.Context, script string, cfg config.Config, c containertypes.Summary, name string, dryRun bool) (string, error) {
 	if strings.TrimSpace(script) != "" {
 		tmpFile, err := os.CreateTemp("", "chowkidar-*.sh")
 		if err != nil {
-			return fmt.Errorf("create temp script: %w", err)
+			return "", fmt.Errorf("create temp script: %w", err)
 		}
 		tmpPath := tmpFile.Name()
 		defer func() { _ = os.Remove(tmpPath) }()
 		if _, err := tmpFile.WriteString(script); err != nil {
 			_ = tmpFile.Close()
-			return fmt.Errorf("write temp script: %w", err)
+			return "", fmt.Errorf("write temp script: %w", err)
 		}
 		_ = tmpFile.Close()
-		cmd := exec.CommandContext(ctx, "/bin/sh", tmpPath, c.ID, name)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("script failed: %w (%s)", err, strings.TrimSpace(string(out)))
+		// Resolve the interpreter: read the shebang line (e.g. #!/bin/bash) and
+		// check it exists, falling back to /bin/sh when it doesn't.
+		// This avoids "no such file or directory" when bash isn't installed.
+		shell := resolveScriptInterpreter(script)
+		cmd := exec.CommandContext(ctx, shell, tmpPath, c.ID, name)
+		// Inherit environment and inject DRY_RUN when this is a test run from the
+		// UI so scripts can skip destructive steps safely.
+		cmd.Env = append(os.Environ(), "CHOWKIDAR=1")
+		if dryRun || c.ID == "dry-run-test" {
+			cmd.Env = append(cmd.Env, "DRY_RUN=1")
 		}
-		return nil
+		out, err := cmd.CombinedOutput()
+		output := strings.TrimSpace(string(out))
+		if err != nil {
+			return output, fmt.Errorf("script failed: %w", err)
+		}
+		return output, nil
 	}
 	if strings.TrimSpace(cfg.RunScriptPath) == "" {
-		return fmt.Errorf("run-script action selected but RUN_SCRIPT_PATH is empty")
+		return "", fmt.Errorf("run-script action selected but RUN_SCRIPT_PATH is empty")
 	}
 	if !a.isScriptAllowed(cfg.RunScriptPath) {
-		return fmt.Errorf("run-script path is not in scripts allowlist")
+		return "", fmt.Errorf("run-script path is not in scripts allowlist")
 	}
 	cmd := exec.CommandContext(ctx, cfg.RunScriptPath, c.ID, name)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("script failed: %w (%s)", err, strings.TrimSpace(string(out)))
+	out2, err2 := cmd.CombinedOutput()
+	output2 := strings.TrimSpace(string(out2))
+	if err2 != nil {
+		return output2, fmt.Errorf("script failed: %w", err2)
 	}
-	return nil
+	return output2, nil
 }
 
-func (a *app) executeAction(ctx context.Context, docker dockerClient, action string, script string, c containertypes.Summary, actionTimeoutSeconds int) error {
+// executeAction runs the action for a container and returns any script output
+// (non-empty only for run-script actions) alongside the error.
+// scriptTimeoutSeconds overrides actionTimeoutSeconds specifically for run-script;
+// pass 0 to use the job/global action timeout.
+func (a *app) executeAction(ctx context.Context, docker dockerClient, action string, script string, c containertypes.Summary, actionTimeoutSeconds, scriptTimeoutSeconds int) (string, error) {
 	cfg := a.getConfig()
-	timeoutSec := actionTimeoutSeconds
-	if timeoutSec < 1 {
-		timeoutSec = cfg.ActionTimeoutSeconds
+
+	// Scripts can have a dedicated timeout that is independent of the docker action timeout.
+	effectiveTimeout := func(override int) time.Duration {
+		sec := override
+		if sec < 1 {
+			sec = actionTimeoutSeconds
+		}
+		if sec < 1 {
+			sec = cfg.ActionTimeoutSeconds
+		}
+		return max(time.Duration(sec)*time.Second, 5*time.Second)
 	}
-	timeout := max(time.Duration(timeoutSec)*time.Second, 5*time.Second)
-	actionCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 
 	name := containerName(c)
 	switch action {
 	case "restart":
-		return docker.RestartContainer(actionCtx, c.ID, 10)
+		actionCtx, cancel := context.WithTimeout(ctx, effectiveTimeout(0))
+		defer cancel()
+		return "", docker.RestartContainer(actionCtx, c.ID, 10)
 	case "start":
-		return docker.StartContainer(actionCtx, c.ID)
+		actionCtx, cancel := context.WithTimeout(ctx, effectiveTimeout(0))
+		defer cancel()
+		return "", docker.StartContainer(actionCtx, c.ID)
 	case "stop":
-		return docker.StopContainer(actionCtx, c.ID, 10)
+		actionCtx, cancel := context.WithTimeout(ctx, effectiveTimeout(0))
+		defer cancel()
+		return "", docker.StopContainer(actionCtx, c.ID, 10)
 	case "none":
-		return nil
+		return "", nil
 	case "run-script":
-		return a.executeRunScript(actionCtx, script, cfg, c, name)
+		scriptCtx, cancel := context.WithTimeout(ctx, effectiveTimeout(scriptTimeoutSeconds))
+		defer cancel()
+		return a.executeRunScript(scriptCtx, script, cfg, c, name, false)
 	default:
-		return fmt.Errorf("unsupported action %q", action)
+		return "", fmt.Errorf("unsupported action %q", action)
 	}
 }
 

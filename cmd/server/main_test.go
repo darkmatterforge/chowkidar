@@ -121,7 +121,7 @@ func TestExecuteActionRestartStartStopNone(t *testing.T) {
 	app := &app{cfg: config.Config{ActionTimeoutSeconds: 5}, docker: fake, httpClient: &http.Client{Timeout: 5 * time.Second}, notifier: notify.New("")}
 	container := containertypes.Summary{ID: "abc", Names: []string{"demo"}}
 	for _, action := range []string{"restart", "start", "stop", "none"} {
-		if err := app.executeAction(context.Background(), app.docker, action, "", container, 0); err != nil {
+		if _, err := app.executeAction(context.Background(), app.docker, action, "", container, 0, 0); err != nil {
 			t.Fatalf("executeAction(%s) error = %v", action, err)
 		}
 	}
@@ -147,25 +147,24 @@ func TestExecuteActionRunScript(t *testing.T) {
 		scripts:  []config.ScriptEntry{{Path: scriptPath, Enabled: true}},
 	}
 	container := containertypes.Summary{ID: "abc", Names: []string{"demo"}}
-	if err := app.executeAction(context.Background(), app.docker, "run-script", "", container, 0); err != nil {
+	if _, err := app.executeAction(context.Background(), app.docker, "run-script", "", container, 0, 0); err != nil {
 		t.Fatalf("run-script error = %v", err)
 	}
 }
 
-
 func TestExecuteActionInvalidPathsUnsupportedAction(t *testing.T) {
 	app := &app{cfg: config.Config{ActionTimeoutSeconds: 5}, docker: &fakeDockerClient{}, httpClient: &http.Client{Timeout: 5 * time.Second}, notifier: notify.New("")}
 	container := containertypes.Summary{ID: "abc", Names: []string{"demo"}}
-	if err := app.executeAction(context.Background(), app.docker, "run-script", "", container, 0); err == nil {
+	if _, err := app.executeAction(context.Background(), app.docker, "run-script", "", container, 0, 0); err == nil {
 		t.Fatal("expected run-script error with empty path")
 	}
-	if err := app.executeAction(context.Background(), app.docker, "bogus", "", container, 0); err == nil {
+	if _, err := app.executeAction(context.Background(), app.docker, "bogus", "", container, 0, 0); err == nil {
 		t.Fatal("expected unsupported action error")
 	}
-	if err := app.executeAction(context.Background(), app.docker, "run-script", "#!/bin/sh\nexit 0\n", container, 0); err != nil {
+	if _, err := app.executeAction(context.Background(), app.docker, "run-script", "#!/bin/sh\nexit 0\n", container, 0, 0); err != nil {
 		t.Fatalf("expected inline script to succeed: %v", err)
 	}
-	if err := app.executeAction(context.Background(), app.docker, "run-script", "#!/bin/sh\nexit 1\n", container, 0); err == nil {
+	if _, err := app.executeAction(context.Background(), app.docker, "run-script", "#!/bin/sh\nexit 1\n", container, 0, 0); err == nil {
 		t.Fatal("expected inline script with exit 1 to fail")
 	}
 }
@@ -723,11 +722,11 @@ func TestHandleSettingsReloadsRuntimeAndWorkerPool(t *testing.T) {
 	transport.IdleConnTimeout = time.Duration(loaded.HttpIdleConnTimeoutSeconds) * time.Second
 
 	a := &app{
-		cfg:          loaded,
-		notifier:     notify.New("discord://token@chan"),
+		cfg:           loaded,
+		notifier:      notify.New("discord://token@chan"),
 		notifications: []config.NotificationProfile{{ID: "p1", Name: "test", Service: "discord://token@chan", Enabled: true}},
-		httpClient:   &http.Client{Timeout: time.Duration(loaded.HttpClientTimeoutSeconds) * time.Second, Transport: transport},
-		pool:         worker.NewPool(loaded.WorkerCount, loaded.QueueSize),
+		httpClient:    &http.Client{Timeout: time.Duration(loaded.HttpClientTimeoutSeconds) * time.Second, Transport: transport},
+		pool:          worker.NewPool(loaded.WorkerCount, loaded.QueueSize),
 	}
 	defer a.stopPool()
 	oldPool := a.pool

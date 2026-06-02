@@ -19,6 +19,7 @@ type Entry struct {
 	Attempt       int       `json:"attempt"`
 	Status        string    `json:"status"`
 	Error         string    `json:"error,omitempty"`
+	Output        string    `json:"output,omitempty"`
 	DurationMs    int64     `json:"durationMs"`
 }
 

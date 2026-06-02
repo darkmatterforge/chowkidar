@@ -1362,8 +1362,10 @@
             <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line);">
               <div class="label" style="margin-bottom:4px;font-size:13px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);">Dashboard Auto-Refresh</div>
               <div class="hint" style="margin-bottom:10px;">How often the dashboard polls for updated container status. Set to 0 to disable auto-refresh.</div>
-              <div style="display:flex;align-items:center;gap:10px;max-width:320px;">
-                <input type="number" id="dashboardRefreshSeconds" min="0" max="3600" style="max-width:100px;" />
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div class="field" style="margin:0;">
+                  <input type="number" id="dashboardRefreshSeconds" min="0" max="3600" style="max-width:100px;" />
+                </div>
                 <span class="hint" style="text-transform:none;letter-spacing:0;">seconds &nbsp;(0 = manual refresh only)</span>
               </div>
               <div class="field-error" id="dashboardRefreshSecondsError"></div>
@@ -1826,53 +1828,115 @@
                     </div>
 
                     <div id="jobTabScriptContent" class="job-tab-content">
+                      <!-- Template picker -->
+                      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                        <span style="font-size:12px;color:var(--muted);">Templates:</span>
+                        <select id="scriptTemplateSelect" style="font-size:12px;padding:3px 8px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--text);" onchange="applyScriptTemplate(this.value);this.value=''">
+                          <option value="">Insert example…</option>
+                          <option value="restart">Docker restart (default)</option>
+                          <option value="restart-wait">Restart + wait for healthy</option>
+                          <option value="list-containers">List all running containers</option>
+                          <option value="curl-alert">Send curl alert then restart</option>
+                          <option value="dry-run">Dry-run safe template</option>
+                        </select>
+                      </div>
+
                       <div class="script-editor-wrap">
                         <div class="script-editor-toolbar">
                           <div class="script-editor-toolbar-left">
                             <span class="script-lang-badge">BASH</span>
                             <span id="scriptValidationMsg" class="script-validation-msg"></span>
                           </div>
-                          <button class="btn" id="copyScriptBtn" type="button" style="font-size:12px;padding:5px 10px;background:#2d4157;border-color:#3a5472;color:#a0bdd4;">Copy</button>
+                          <div style="display:flex;gap:6px;">
+                            <button class="btn" id="dryRunScriptBtn" type="button" style="font-size:12px;padding:5px 10px;background:#2d4157;border-color:#3a5472;color:#a0bdd4;" title="Run script with a dummy container — safe test, no real container is affected">▶ Dry Run</button>
+                            <button class="btn" id="copyScriptBtn" type="button" style="font-size:12px;padding:5px 10px;background:#2d4157;border-color:#3a5472;color:#a0bdd4;">Copy</button>
+                          </div>
                         </div>
                         <textarea id="jobScript" class="script-editor" spellcheck="false"
-                          placeholder="#!/bin/bash&#10;# $1 = container ID, $2 = container name&#10;&#10;echo &quot;Healing: $2 ($1)&quot;"></textarea>
+                          placeholder="#!/bin/sh&#10;set -e   # fail immediately if any command fails&#10;# $1 = container ID, $2 = container name&#10;&#10;echo &quot;Healing: $2 ($1)&quot;&#10;docker restart &quot;$1&quot;"></textarea>
+                      </div>
+
+                      <!-- Template upgrade notice -->
+                      <div id="scriptUpgradeNotice" style="display:none;margin-top:8px;border:1px solid #3a5472;border-radius:6px;background:#1e2f3f;overflow:hidden;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;border-bottom:1px solid #3a5472;background:#243649;">
+                          <span style="font-size:12px;color:#a0bdd4;">⬆ Template updated: <strong id="scriptUpgradeLabel"></strong> — your script uses an older version</span>
+                          <div style="display:flex;gap:6px;">
+                            <button type="button" class="btn" style="font-size:11px;padding:3px 10px;background:#1c4d3e;border-color:#2a7a5a;color:#7de0b5;" onclick="(function(){const n=document.getElementById('scriptUpgradeNotice');applyScriptTemplate(n.dataset.key);})()">Apply update</button>
+                            <button type="button" class="btn" style="font-size:11px;padding:3px 10px;background:#2d4157;border-color:#3a5472;color:#a0bdd4;" onclick="(function(){const n=document.getElementById('scriptUpgradeNotice');dismissUpgrade(n.dataset.jobId,n.dataset.key,parseInt(n.dataset.version,10));n.style.display='none';})()">Skip</button>
+                          </div>
+                        </div>
+                        <div id="scriptUpgradeDiff" style="font-family:monospace;font-size:11px;line-height:1.6;padding:6px 8px;max-height:160px;overflow-y:auto;"></div>
+                      </div>
+
+                      <!-- Dry-run output -->
+                      <div id="dryRunResult" style="display:none;margin-top:8px;">
+                        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:4px;">Dry Run Output <span id="dryRunStatusBadge"></span></div>
+                        <pre id="dryRunOutput" style="margin:0;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:6px;font-family:monospace;font-size:11px;color:var(--text);white-space:pre-wrap;overflow-wrap:anywhere;max-height:160px;overflow-y:auto;line-height:1.5;"></pre>
+                      </div>
+
+                      <div class="hint" style="margin-top:5px;line-height:1.7;">
+                        <strong>Called once per container</strong> — if the filter matches 3 containers, the script runs 3 times in parallel (up to worker limit), each with its own <code style="font-size:11px;background:var(--bg);padding:1px 4px;border-radius:3px;">$1</code> / <code style="font-size:11px;background:var(--bg);padding:1px 4px;border-radius:3px;">$2</code>.
+                        Retry state, cooldown, and output are tracked separately per container.<br>
+                        Stored inline in <code style="font-size:11px;background:var(--bg);padding:1px 4px;border-radius:3px;">/config/config.yaml</code>.
+                        Set <code style="font-size:11px;background:var(--bg);padding:1px 4px;border-radius:3px;">DRY_RUN=1</code> in your script to skip destructive steps during a dry run.
                       </div>
                       <div class="field-error" id="jobScriptError"></div>
                     </div>
                   </div>
 
+                  <!-- Container filter — same tab-toggle style as Standard Action / Bash Script -->
                   <div class="job-filter-row" style="margin-top:14px;">
                     <div class="field">
-                      <label>Container Name Filter (csv)</label>
-                      <input type="text" id="jobNameFilter" placeholder="nginx,redis" />
-                      <div class="field-error" id="jobNameFilterError"></div>
-                    </div>
-                    <div class="field">
-                      <label>Label Filter</label>
-                      <input type="text" id="jobLabelFilter" placeholder="key=value" />
-                      <div class="field-error" id="jobLabelFilterError"></div>
-                    </div>
-                    <div class="field">
-                      <label>Env Var Filter</label>
-                      <input type="text" id="jobEnvFilter" placeholder="ENV_KEY" />
-                      <div class="field-error" id="jobEnvFilterError"></div>
+                      <label>Container Filter</label>
+                      <div class="job-tab-bar">
+                        <button class="job-tab-btn active" id="jobFilterTypeName"  type="button">Container Name</button>
+                        <button class="job-tab-btn"        id="jobFilterTypeLabel" type="button">Label</button>
+                        <button class="job-tab-btn"        id="jobFilterTypeEnv"   type="button">Env Var</button>
+                      </div>
+
+                      <!-- name filter -->
+                      <div id="jobFilterNameWrap" class="job-tab-content active">
+                        <input type="text" id="jobNameFilter" placeholder="nginx,redis" />
+                        <div class="hint" style="margin-top:4px;">Comma-separated — matches containers whose name contains any entry</div>
+                        <div class="field-error" id="jobNameFilterError"></div>
+                      </div>
+
+                      <!-- label filter — key + value inputs, capped width -->
+                      <div id="jobFilterLabelWrap" class="job-tab-content">
+                        <div style="display:flex;align-items:center;gap:6px;max-width:420px;">
+                          <input type="text" id="jobLabelKey"   placeholder="key"              style="flex:1;" />
+                          <span style="color:var(--muted);font-weight:600;flex-shrink:0;">=</span>
+                          <input type="text" id="jobLabelValue" placeholder="value (optional)" style="flex:1;" />
+                        </div>
+                        <div class="hint" style="margin-top:4px;">Leave value blank to match by key only</div>
+                        <div class="field-error" id="jobLabelFilterError"></div>
+                      </div>
+
+                      <!-- env var filter -->
+                      <div id="jobFilterEnvWrap" class="job-tab-content">
+                        <input type="text" id="jobEnvFilter" placeholder="ENV_KEY" />
+                        <div class="hint" style="margin-top:4px;">Matches containers that have this environment variable key set</div>
+                        <div class="field-error" id="jobEnvFilterError"></div>
+                      </div>
+
+                      <!-- migration notice — shown when editing a job that had multiple filters -->
+                      <div id="jobFilterMigrationNotice" style="display:none;margin-top:8px;padding:8px 12px;background:var(--warn-bg);border:1px solid var(--warn);border-radius:6px;font-size:12px;color:var(--text);">
+                        ⚠ This job previously used multiple filter types. Only one is shown below — review and save to confirm the active filter.
+                      </div>
                     </div>
                   </div>
 
+                  <!-- Row 1: Retry Limit — own full-width row so the toggle has room -->
                   <div class="job-filter-row" style="margin-top:14px;">
-                    <div class="field">
+                    <div class="field" style="grid-column:1/-1;">
                       <label>Retry Limit</label>
                       <label style="display:flex;align-items:center;gap:6px;font-weight:normal;text-transform:none;letter-spacing:0;cursor:pointer;font-size:13px;margin:4px 0 6px;">
                         <input type="checkbox" id="jobRetryLimitEnabled" /> Limit retries
                       </label>
-                      <div id="jobRetryLimitOptions" style="display:none;flex-direction:column;gap:6px;">
-                        <div style="display:flex;gap:14px;align-items:center;">
-                          <label style="display:flex;align-items:center;gap:5px;font-weight:normal;text-transform:none;letter-spacing:0;cursor:pointer;font-size:13px;">
-                            <input type="radio" name="jobRetryMode" id="jobRetryModeCount" value="count" checked /> Fixed attempts
-                          </label>
-                          <label style="display:flex;align-items:center;gap:5px;font-weight:normal;text-transform:none;letter-spacing:0;cursor:pointer;font-size:13px;">
-                            <input type="radio" name="jobRetryMode" id="jobRetryModeDuration" value="duration" /> Max duration
-                          </label>
+                      <div id="jobRetryLimitOptions" style="display:none;flex-direction:column;gap:8px;">
+                        <div class="job-tab-bar" style="margin-bottom:0;">
+                          <button class="job-tab-btn active" id="jobRetryModeCount"    type="button">Fixed attempts</button>
+                          <button class="job-tab-btn"        id="jobRetryModeDuration" type="button">Max duration</button>
                         </div>
                         <div id="jobRetryCountWrap" style="display:flex;align-items:center;gap:6px;">
                           <input type="number" id="jobRetryCount" min="1" max="100" style="max-width:80px;" placeholder="e.g. 3" />
@@ -1886,11 +1950,16 @@
                       </div>
                       <div class="field-error" id="jobRetryCountError"></div>
                     </div>
+                  </div>
+
+                  <!-- Row 2: Timing fields -->
+                  <div class="job-filter-row" style="margin-top:10px;align-items:end;">
                     <div class="field" id="jobDockerHostWrap">
                       <label>Docker Host <span class="hint" style="text-transform:none;letter-spacing:0;">(empty = all hosts)</span></label>
                       <select id="jobDockerHostID" style="max-width:220px;">
                         <option value="">All Hosts</option>
                       </select>
+                      <div class="field-error"></div>
                     </div>
                     <div class="field">
                       <label>Monitor Interval (s)</label>
@@ -1898,13 +1967,20 @@
                       <div class="field-error" id="jobMonitorIntervalError"></div>
                     </div>
                     <div class="field">
-                      <label>Action Timeout (s)</label>
+                      <label>Action Timeout (s) <span class="hint" style="text-transform:none;letter-spacing:0;">restart/stop/start</span></label>
                       <input type="number" id="jobActionTimeout" min="5" max="300" required style="max-width:120px;" />
                       <div class="field-error" id="jobActionTimeoutError"></div>
                     </div>
                     <div class="field">
                       <label>Post-Action Wait (s) <span class="hint" style="text-transform:none;letter-spacing:0;">(0 = off)</span></label>
                       <input type="number" id="jobPostWait" min="0" max="600" style="max-width:120px;" />
+                      <div class="field-error"></div>
+                    </div>
+                    <!-- Script timeout — only relevant for Bash Script jobs -->
+                    <div class="field" id="jobScriptTimeoutWrap" style="display:none;">
+                      <label>Script Timeout (s) <span class="hint" style="text-transform:none;letter-spacing:0;">(blank = use action timeout)</span></label>
+                      <input type="number" id="jobScriptTimeout" min="5" max="3600" style="max-width:120px;" placeholder="e.g. 120" />
+                      <div class="field-error"></div>
                     </div>
                   </div>
 
@@ -2167,7 +2243,7 @@
       'primaryBaseURL', 'displayTimezone', 'serverTimezone',
       'logLevel', 'logRetentionDays'
     ];
-    const jobFields = ['jobName', 'jobGroup', 'jobAction', 'jobNameFilter', 'jobLabelFilter', 'jobEnvFilter', 'jobScript', 'jobRetryCount', 'jobMonitorInterval', 'jobActionTimeout'];
+    const jobFields = ['jobName', 'jobGroup', 'jobAction', 'jobNameFilter', 'jobLabelKey', 'jobLabelValue', 'jobEnvFilter', 'jobScript', 'jobRetryCount', 'jobMonitorInterval', 'jobActionTimeout', 'jobScriptTimeout'];
     const PROVIDER_DEFS = {
       discord:  { label: 'Discord',  badge: 'DC', color: '#5865f2', description: 'Discord channel webhook',    fields: [{ key: 'webhookurl', label: 'Webhook URL', required: true, type: 'text', placeholder: 'https://discord.com/api/webhooks/ID/TOKEN', help: 'Channel Settings → Integrations → Webhooks → Copy URL' }] },
       slack:    { label: 'Slack',    badge: 'SL', color: '#4A154B', description: 'Slack incoming webhook',    fields: [
@@ -2296,6 +2372,206 @@
       if (error) error.textContent = message;
     }
 
+    // Template registry — increment version whenever a template changes meaningfully.
+    // The version is embedded in each script as  # chowkidar-template: <key>@<version>
+    // so we can detect jobs using an outdated copy and offer an upgrade.
+    const TEMPLATE_META = {
+      'restart':         { version: 2, label: 'Docker restart' },
+      'restart-wait':    { version: 2, label: 'Restart + wait for healthy' },
+      'list-containers': { version: 2, label: 'List containers' },
+      'curl-alert':      { version: 2, label: 'Curl alert + restart' },
+      'dry-run':         { version: 2, label: 'Dry-run safe template' },
+    };
+
+    const SCRIPT_TEMPLATES = {
+      'restart': `#!/bin/bash
+# chowkidar-template: restart@2
+set -e
+# $1 = container ID, $2 = container name
+if [ "$DRY_RUN" = "1" ]; then
+  echo "[DRY RUN] Would restart: $2 ($1)"
+  exit 0
+fi
+
+echo "Restarting: $2 ($1)"
+docker restart "$1"
+echo "Done"`,
+
+      'restart-wait': `#!/bin/bash
+# chowkidar-template: restart-wait@2
+set -e
+# $1 = container ID, $2 = container name
+if [ "$DRY_RUN" = "1" ]; then
+  echo "[DRY RUN] Would restart $2 then wait up to 30s for healthy"
+  exit 0
+fi
+
+echo "Restarting: $2"
+docker restart "$1"
+
+for i in $(seq 1 30); do
+  status=$(docker inspect --format='{{.State.Health.Status}}' "$1" 2>/dev/null)
+  echo "  status: \${status:-running} (\${i}s)"
+  [ "$status" = "healthy" ] && echo "Container is healthy" && exit 0
+  sleep 1
+done
+echo "Warning: container did not report healthy after 30s"`,
+
+      'list-containers': `#!/bin/bash
+# chowkidar-template: list-containers@2
+# Read-only diagnostics
+# $1 = container ID, $2 = container name
+echo "=== Affected container ==="
+docker inspect --format='Name: {{.Name}}  Status: {{.State.Status}}' "$1" 2>/dev/null || echo "(not found)"
+
+echo ""
+echo "=== All running containers ==="
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"`,
+
+      'curl-alert': `#!/bin/bash
+# chowkidar-template: curl-alert@2
+set -e
+# $1 = container ID, $2 = container name
+WEBHOOK_URL="https://hooks.example.com/your-webhook"
+
+if [ "$DRY_RUN" = "1" ]; then
+  echo "[DRY RUN] Would POST to $WEBHOOK_URL and restart $2"
+  exit 0
+fi
+
+echo "Sending alert for $2..."
+curl -s -X POST "$WEBHOOK_URL" \
+  -H "Content-Type: application/json" \
+  -d "{\"text\": \"Restarting unhealthy container: $2\"}"
+
+echo "Restarting..."
+docker restart "$1"`,
+
+      'dry-run': `#!/bin/bash
+# chowkidar-template: dry-run@2
+set -e
+# $1 = container ID, $2 = container name
+if [ "$DRY_RUN" = "1" ]; then
+  echo "[DRY RUN] Container: $2 (ID: $1)"
+  echo "[DRY RUN] Would restart — no action taken"
+  docker ps --filter "name=$2" --format "table {{.Names}}\t{{.Status}}" 2>/dev/null || true
+  exit 0
+fi
+
+echo "Restarting: $2"
+docker restart "$1"
+echo "Restart complete"`,
+    };
+
+    // ── Script template upgrade detection ────────────────────────────────────
+
+    function parseTemplateMarker(script) {
+      const m = (script || '').match(/^#\s*chowkidar-template:\s*([\w-]+)@(\d+)/m);
+      return m ? { key: m[1], version: parseInt(m[2], 10) } : null;
+    }
+
+    function isUpgradeDismissed(jobId, key, latestVersion) {
+      try {
+        const data = JSON.parse(localStorage.getItem('chowkidar-dismissed-upgrades') || '{}');
+        return data[jobId + ':' + key] >= latestVersion;
+      } catch { return false; }
+    }
+
+    function dismissUpgrade(jobId, key, latestVersion) {
+      try {
+        const data = JSON.parse(localStorage.getItem('chowkidar-dismissed-upgrades') || '{}');
+        data[jobId + ':' + key] = latestVersion;
+        localStorage.setItem('chowkidar-dismissed-upgrades', JSON.stringify(data));
+      } catch {}
+    }
+
+    // Myers-style LCS line diff — returns [{type:'equal'|'add'|'remove', line}]
+    function diffLines(oldStr, newStr) {
+      const a = (oldStr || '').split('\n'), b = (newStr || '').split('\n');
+      const m = a.length, n = b.length;
+      const dp = Array.from({length: m + 1}, () => new Array(n + 1).fill(0));
+      for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++)
+        dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] + 1 : Math.max(dp[i-1][j], dp[i][j-1]);
+      const out = []; let i = m, j = n;
+      while (i > 0 || j > 0) {
+        if (i > 0 && j > 0 && a[i-1] === b[j-1]) { out.unshift({type:'equal',  line: a[i-1]}); i--; j--; }
+        else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) { out.unshift({type:'add',    line: b[j-1]}); j--; }
+        else { out.unshift({type:'remove', line: a[i-1]}); i--; }
+      }
+      return out;
+    }
+
+    function renderDiff(diff) {
+      return diff.map(({type, line}) => {
+        const esc = escapeHtml(line);
+        if (type === 'add')    return `<div style="background:#d4f4dd;color:#1a4a2a;">+ ${esc}</div>`;
+        if (type === 'remove') return `<div style="background:#ffdede;color:#7a0010;">- ${esc}</div>`;
+        return `<div style="color:var(--muted);">  ${esc}</div>`;
+      }).join('');
+    }
+
+    function checkScriptUpgrade(jobId, script) {
+      const marker = parseTemplateMarker(script);
+      if (!marker) return;
+      const meta = TEMPLATE_META[marker.key];
+      if (!meta || marker.version >= meta.version) return;
+      if (isUpgradeDismissed(jobId, marker.key, meta.version)) return;
+
+      const newScript = SCRIPT_TEMPLATES[marker.key];
+      const diff = diffLines(script, newScript);
+      const hasChanges = diff.some(d => d.type !== 'equal');
+      if (!hasChanges) return;
+
+      const notice = document.getElementById('scriptUpgradeNotice');
+      const diffEl  = document.getElementById('scriptUpgradeDiff');
+      if (!notice || !diffEl) return;
+
+      diffEl.innerHTML = renderDiff(diff);
+      notice.dataset.jobId   = jobId || '';
+      notice.dataset.key     = marker.key;
+      notice.dataset.version = meta.version;
+      notice.dataset.label   = meta.label;
+      notice.querySelector('#scriptUpgradeLabel').textContent = `"${meta.label}"`;
+      notice.style.display = '';
+    }
+
+    function applyScriptTemplate(key) {
+      if (!key || !SCRIPT_TEMPLATES[key]) return;
+      const ta = document.getElementById('jobScript');
+      if (ta) { ta.value = SCRIPT_TEMPLATES[key]; ta.dispatchEvent(new Event('input')); }
+      document.getElementById('scriptUpgradeNotice')?.style && (document.getElementById('scriptUpgradeNotice').style.display = 'none');
+    }
+
+    async function dryRunScript() {
+      const script = document.getElementById('jobScript')?.value?.trim();
+      if (!script) { await showAlert('Write or select a template script before running a dry run.', 'No script'); return; }
+      const btn = document.getElementById('dryRunScriptBtn');
+      const resultWrap = document.getElementById('dryRunResult');
+      const outputEl = document.getElementById('dryRunOutput');
+      const badge = document.getElementById('dryRunStatusBadge');
+      btn.disabled = true; btn.textContent = 'Running…';
+      resultWrap.style.display = '';
+      outputEl.textContent = '…';
+      badge.textContent = '';
+      try {
+        const res = await fetch('/api/scripts/dry-run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ script }),
+        });
+        const data = await res.json();
+        outputEl.textContent = data.output || '(no output)';
+        badge.textContent = data.error ? '✗ failed' : '✓ ok';
+        badge.style.color = data.error ? 'var(--danger)' : 'var(--ok)';
+        if (data.error) outputEl.textContent += '\n\n' + data.error;
+      } catch (e) {
+        outputEl.textContent = 'Request failed: ' + e.message;
+        badge.textContent = '✗ error'; badge.style.color = 'var(--danger)';
+      } finally {
+        btn.disabled = false; btn.textContent = '▶ Dry Run';
+      }
+    }
+
     function validateBashScript(script) {
       const s = script.trim();
       if (!s) return { ok: false, level: 'error', msg: 'Script is empty.' };
@@ -2340,6 +2616,9 @@
       document.getElementById('jobTabScript').classList.toggle('active', isScript);
       document.getElementById('jobTabStandardContent').classList.toggle('active', !isScript);
       document.getElementById('jobTabScriptContent').classList.toggle('active', isScript);
+      // Show script timeout only for script jobs
+      const stWrap = document.getElementById('jobScriptTimeoutWrap');
+      if (stWrap) stWrap.style.display = isScript ? '' : 'none';
       if (isScript) updateScriptValidation();
     }
 
@@ -2358,6 +2637,19 @@
       document.getElementById('jobFormPanel').classList.remove('open');
     }
 
+    let currentJobRetryMode = 'count';
+
+    function setJobRetryMode(mode) {
+      currentJobRetryMode = mode;
+      document.getElementById('jobRetryModeCount').classList.toggle('active', mode === 'count');
+      document.getElementById('jobRetryModeDuration').classList.toggle('active', mode === 'duration');
+      const countWrap = document.getElementById('jobRetryCountWrap');
+      const durWrap   = document.getElementById('jobRetryDurationWrap');
+      if (countWrap) countWrap.style.display = mode === 'count'    ? 'flex' : 'none';
+      if (durWrap)   durWrap.style.display   = mode === 'duration' ? 'flex' : 'none';
+      if (mode === 'duration') updateRetryDurationHint();
+    }
+
     function updateRetryModeUI() {
       const limited = document.getElementById('jobRetryLimitEnabled')?.checked;
       const options = document.getElementById('jobRetryLimitOptions');
@@ -2365,15 +2657,10 @@
       if (!limited) {
         document.getElementById('jobRetryCount').value = '';
         document.getElementById('jobMaxMonDurationValue').value = '';
-        document.getElementById('jobRetryModeCount').checked = true;
+        setJobRetryMode('count');
         return;
       }
-      const mode = document.querySelector('input[name="jobRetryMode"]:checked')?.value || 'count';
-      const countWrap = document.getElementById('jobRetryCountWrap');
-      const durWrap = document.getElementById('jobRetryDurationWrap');
-      countWrap.style.display = mode === 'count' ? 'flex' : 'none';
-      durWrap.style.display = mode === 'duration' ? 'flex' : 'none';
-      if (mode === 'duration') updateRetryDurationHint();
+      setJobRetryMode(currentJobRetryMode);
     }
 
     function updateRetryDurationHint() {
@@ -2983,6 +3270,32 @@
       document.getElementById('secCurrentPwd').value = '';
       document.getElementById('secNewPwd').value = '';
       document.getElementById('secConfirmPwd').value = '';
+    }
+
+    function showAlert(message, title) {
+      return new Promise((resolve) => {
+        const modal = document.getElementById('confirmModal');
+        const msgEl = document.getElementById('confirmModalMsg');
+        const okBtn = document.getElementById('confirmModalOk');
+        const cancelBtn = document.getElementById('confirmModalCancel');
+        if (title) {
+          msgEl.innerHTML = `<strong style="display:block;margin-bottom:8px;font-size:14px;">${escapeHtml(title)}</strong>${escapeHtml(message)}`;
+        } else {
+          msgEl.textContent = message;
+        }
+        okBtn.textContent = 'OK';
+        okBtn.className = 'btn primary';
+        cancelBtn.style.display = 'none';
+        modal.style.display = 'flex';
+        const close = () => {
+          modal.style.display = 'none';
+          cancelBtn.style.display = '';
+          okBtn.className = 'btn danger';
+          okBtn.replaceWith(okBtn.cloneNode(true));
+          resolve();
+        };
+        document.getElementById('confirmModalOk').addEventListener('click', close);
+      });
     }
 
     function showConfirm(message, okLabel) {
@@ -3811,12 +4124,17 @@
         } else {
           actionText = h.action ? `${escapeHtml(h.action)}${h.attempt > 1 ? ` <span style="color:var(--muted);font-size:11px;">·${h.attempt}</span>` : ''}` : '—';
         }
+        // Script output — show inline below the action cell, collapsed if long
+        let outputHtml = '';
+        if (h.output) {
+          outputHtml = `<pre style="margin:4px 0 0;padding:6px 8px;background:var(--bg);border:1px solid var(--line);border-radius:5px;font-family:monospace;font-size:11px;color:var(--text);white-space:pre-wrap;overflow-wrap:anywhere;max-height:120px;overflow-y:auto;line-height:1.5;">${escapeHtml(h.output)}</pre>`;
+        }
         html += `<tr>`;
         html += `<td>${escapeHtml(name)}</td>`;
         html += `<td><span class="status-chip ${chipClass}">${statusLabel}</span></td>`;
         html += `<td>${triggerHtml}</td>`;
         html += `<td>${escapeHtml(dateTime)}</td>`;
-        html += `<td style="max-width:320px;word-break:break-word;white-space:normal;">${actionText}</td>`;
+        html += `<td style="max-width:320px;word-break:break-word;white-space:normal;">${actionText}${outputHtml}</td>`;
         html += `</tr>`;
       });
       html += `</tbody></table>`;
@@ -4354,16 +4672,33 @@
           clearJobErrors();
           document.getElementById('jobName').value = job.name || '';
           document.getElementById('jobGroup').value = job.group || '';
-          document.getElementById('jobNameFilter').value = job.containerNameFilter || '';
-          document.getElementById('jobLabelFilter').value = job.containerLabelFilter || '';
-          document.getElementById('jobEnvFilter').value = job.containerEnvVarFilter || '';
+          // Restore filter type radio + fields from saved values
+          const savedName  = job.containerNameFilter   || '';
+          const savedLabel = job.containerLabelFilter  || '';
+          const savedEnv   = job.containerEnvVarFilter || '';
+          document.getElementById('jobNameFilter').value  = savedName;
+          document.getElementById('jobEnvFilter').value   = savedEnv;
+          if (savedLabel) {
+            const eqIdx = savedLabel.indexOf('=');
+            document.getElementById('jobLabelKey').value   = eqIdx >= 0 ? savedLabel.slice(0, eqIdx)  : savedLabel;
+            document.getElementById('jobLabelValue').value = eqIdx >= 0 ? savedLabel.slice(eqIdx + 1) : '';
+          } else {
+            document.getElementById('jobLabelKey').value   = '';
+            document.getElementById('jobLabelValue').value = '';
+          }
+          // Select the right radio: prefer name, then label, then env
+          const filterType = savedName ? 'name' : savedLabel ? 'label' : savedEnv ? 'envvar' : 'name';
+          setJobFilterType(filterType);
+          // Show migration notice if the old job had more than one filter set
+          const multiFilter = [savedName, savedLabel, savedEnv].filter(Boolean).length > 1;
+          document.getElementById('jobFilterMigrationNotice').style.display = multiFilter ? '' : 'none';
           document.getElementById('jobEnabled').value = String(!!job.enabled);
           document.getElementById('jobStartExited').value = String(!!job.startExited);
           populateJobDockerHostSelect(job.dockerHostID || '');
           const hasLimit = job.retryCount > 0 || job.maxMonitoringDurationMinutes > 0;
           document.getElementById('jobRetryLimitEnabled').checked = hasLimit;
           if (job.maxMonitoringDurationMinutes > 0) {
-            document.getElementById('jobRetryModeDuration').checked = true;
+            setJobRetryMode('duration');
             const totalMin = job.maxMonitoringDurationMinutes;
             if (totalMin >= 60 && totalMin % 60 === 0) {
               document.getElementById('jobMaxMonDurationValue').value = String(totalMin / 60);
@@ -4374,7 +4709,7 @@
             }
             document.getElementById('jobRetryCount').value = '';
           } else {
-            document.getElementById('jobRetryModeCount').checked = true;
+            setJobRetryMode('count');
             document.getElementById('jobRetryCount').value = job.retryCount > 0 ? String(job.retryCount) : '';
             document.getElementById('jobMaxMonDurationValue').value = '';
           }
@@ -4382,14 +4717,17 @@
           document.getElementById('jobMonitorInterval').value = job.monitorIntervalSeconds > 0 ? String(job.monitorIntervalSeconds) : '';
           document.getElementById('jobActionTimeout').value = job.actionTimeoutSeconds > 0 ? String(job.actionTimeoutSeconds) : '';
           document.getElementById('jobPostWait').value = job.postActionWaitSeconds > 0 ? String(job.postActionWaitSeconds) : '';
+          document.getElementById('jobScriptTimeout').value = job.scriptTimeoutSeconds > 0 ? String(job.scriptTimeoutSeconds) : '';
           document.getElementById('jobStatus').textContent = '';
           renderJobNotifyChips(Array.isArray(job.notifications) ? job.notifications : []);
           if (job.action === 'run-script') {
             document.getElementById('jobScript').value = job.script || '';
             setJobActionTab('script');
+            checkScriptUpgrade(editingJobId, job.script || '');
           } else {
             document.getElementById('jobAction').value = job.action || 'restart';
             document.getElementById('jobScript').value = '';
+            document.getElementById('scriptUpgradeNotice').style.display = 'none';
             setJobActionTab('standard');
           }
           openJobForm('edit');
@@ -4459,6 +4797,21 @@
       sel.value = selectedID || '';
     }
 
+    let currentJobFilterType = 'name';
+
+    function setJobFilterType(type) {
+      currentJobFilterType = type;
+      ['name', 'label', 'envvar'].forEach(t => {
+        const btn  = document.getElementById('jobFilterType' + t.charAt(0).toUpperCase() + t.slice(1));
+        const wrap = document.getElementById('jobFilter' + (t === 'name' ? 'Name' : t === 'label' ? 'Label' : 'Env') + 'Wrap');
+        if (btn)  btn.classList.toggle('active', t === type);
+        if (wrap) wrap.classList.toggle('active', t === type);
+      });
+    }
+
+    // Keep a shim for legacy callers (edit-population code)
+    function updateJobFilterTypeUI() { /* handled by setJobFilterType */ }
+
     function resetJobForm() {
       editingJobId = null;
       document.getElementById('jobName').value = '';
@@ -4466,8 +4819,11 @@
       document.getElementById('jobAction').value = 'restart';
       document.getElementById('jobScript').value = '';
       document.getElementById('jobNameFilter').value = '';
-      document.getElementById('jobLabelFilter').value = '';
+      document.getElementById('jobLabelKey').value = '';
+      document.getElementById('jobLabelValue').value = '';
       document.getElementById('jobEnvFilter').value = '';
+      setJobFilterType('name');
+      document.getElementById('jobFilterMigrationNotice').style.display = 'none';
       document.getElementById('jobEnabled').value = 'true';
       document.getElementById('jobStartExited').value = 'false';
       populateJobDockerHostSelect('');
@@ -4479,6 +4835,8 @@
       document.getElementById('jobMonitorInterval').value = '';
       document.getElementById('jobActionTimeout').value = '';
       document.getElementById('jobPostWait').value = '0';
+      document.getElementById('jobScriptTimeout').value = '';
+      document.getElementById('scriptUpgradeNotice').style.display = 'none';
       setJobActionTab('standard');
       renderJobNotifyChips([]);
       closeJobForm();
@@ -4494,17 +4852,20 @@
       const group = document.getElementById('jobGroup').value.trim();
       const action = isScriptTab ? 'run-script' : document.getElementById('jobAction').value;
       const script = isScriptTab ? document.getElementById('jobScript').value.trim() : '';
-      const containerNameFilter = document.getElementById('jobNameFilter').value.trim();
-      const containerLabelFilter = document.getElementById('jobLabelFilter').value.trim();
-      const containerEnvVarFilter = document.getElementById('jobEnvFilter').value.trim();
+      const filterType = currentJobFilterType;
+      const containerNameFilter   = filterType === 'name'   ? document.getElementById('jobNameFilter').value.trim() : '';
+      const labelKey              = filterType === 'label'  ? document.getElementById('jobLabelKey').value.trim()   : '';
+      const labelValue            = filterType === 'label'  ? document.getElementById('jobLabelValue').value.trim() : '';
+      const containerLabelFilter  = filterType === 'label'  ? (labelKey ? (labelValue ? `${labelKey}=${labelValue}` : labelKey) : '') : '';
+      const containerEnvVarFilter = filterType === 'envvar' ? document.getElementById('jobEnvFilter').value.trim()  : '';
 
       let hasErrors = false;
       if (!name) { setFieldError('jobName', 'Job name is required.'); hasErrors = true; }
       if (!containerNameFilter && !containerLabelFilter && !containerEnvVarFilter) {
-        const filterMessage = 'At least one filter is required.';
-        setFieldError('jobNameFilter', filterMessage);
-        setFieldError('jobLabelFilter', filterMessage);
-        setFieldError('jobEnvFilter', filterMessage);
+        const filterMessage = 'A filter value is required.';
+        if (filterType === 'name')   setFieldError('jobNameFilter', filterMessage);
+        if (filterType === 'label')  setFieldError('jobLabelKey', filterMessage);
+        if (filterType === 'envvar') setFieldError('jobEnvFilter', filterMessage);
         hasErrors = true;
       }
       if (isScriptTab && script) {
@@ -4517,8 +4878,10 @@
       }
 
       const retryLimitEnabled = document.getElementById('jobRetryLimitEnabled').checked;
-      const retryMode = document.querySelector('input[name="jobRetryMode"]:checked')?.value || 'count';
+      const retryMode = currentJobRetryMode;
       const monitorIntervalRaw = document.getElementById('jobMonitorInterval').value;
+      const scriptTimeoutRaw = document.getElementById('jobScriptTimeout').value;
+      const scriptTimeoutSeconds = scriptTimeoutRaw ? (parseInt(scriptTimeoutRaw, 10) || 0) : 0;
       const actionTimeoutRaw = document.getElementById('jobActionTimeout').value;
       const monitorIntervalSeconds = parseInt(monitorIntervalRaw, 10);
       const actionTimeoutSeconds = parseInt(actionTimeoutRaw, 10);
@@ -4550,7 +4913,7 @@
         containerNameFilter, containerLabelFilter, containerEnvVarFilter,
         enabled: toBool(document.getElementById('jobEnabled').value),
         startExited: toBool(document.getElementById('jobStartExited').value),
-        retryCount, maxMonitoringDurationMinutes, monitorIntervalSeconds, actionTimeoutSeconds, postActionWaitSeconds,
+        retryCount, maxMonitoringDurationMinutes, monitorIntervalSeconds, actionTimeoutSeconds, scriptTimeoutSeconds, postActionWaitSeconds,
         dockerHostID: document.getElementById('jobDockerHostID').value || '',
       };
 
@@ -5192,8 +5555,11 @@
       document.getElementById('closeJobFormBtn').addEventListener('click', () => resetJobForm());
       document.getElementById('saveJobBtn').addEventListener('click', saveJob);
       document.getElementById('jobRetryLimitEnabled').addEventListener('change', updateRetryModeUI);
-      document.getElementById('jobRetryModeCount').addEventListener('change', updateRetryModeUI);
-      document.getElementById('jobRetryModeDuration').addEventListener('change', updateRetryModeUI);
+      document.getElementById('jobFilterTypeName').addEventListener('click',  () => setJobFilterType('name'));
+      document.getElementById('jobFilterTypeLabel').addEventListener('click', () => setJobFilterType('label'));
+      document.getElementById('jobFilterTypeEnv').addEventListener('click',   () => setJobFilterType('envvar'));
+      document.getElementById('jobRetryModeCount').addEventListener('click',    () => { setJobRetryMode('count');    updateRetryModeUI(); });
+      document.getElementById('jobRetryModeDuration').addEventListener('click', () => { setJobRetryMode('duration'); updateRetryModeUI(); });
       document.getElementById('jobMaxMonDurationValue').addEventListener('input', updateRetryDurationHint);
       document.getElementById('jobMaxMonDurationUnit').addEventListener('change', updateRetryDurationHint);
       document.getElementById('jobMonitorInterval').addEventListener('input', updateRetryDurationHint);
@@ -5201,6 +5567,7 @@
       document.getElementById('jobTabStandard').addEventListener('click', () => setJobActionTab('standard'));
       document.getElementById('jobTabScript').addEventListener('click', () => setJobActionTab('script'));
       document.getElementById('jobScript').addEventListener('input', updateScriptValidation);
+      document.getElementById('dryRunScriptBtn').addEventListener('click', dryRunScript);
       document.getElementById('copyScriptBtn').addEventListener('click', () => {
         const script = document.getElementById('jobScript').value;
         if (!script.trim()) return;
