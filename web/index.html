@@ -2219,6 +2219,10 @@
     let _hiddenSettings = {};
     let dashboardHistoryEntries = []; // activity feed (no healthy events)
     let dashboardBarEntries = [];      // mini-bar sparklines (includes healthy)
+    // Pre-computed indices rebuilt whenever the above arrays are updated.
+    // Keyed by containerName || containerId for O(1) lookup per service.
+    let _barEntriesByName = new Map();
+    let _historyEntriesByName = new Map();
     let dashboardHistoryTotal = 0;
     let historyPage = 1;
     let historyPageSize = 25;
@@ -3382,8 +3386,26 @@ echo "Restart complete"`,
       return 'unknown';
     }
 
+    function rebuildDashboardBarIndex() {
+      _barEntriesByName = new Map();
+      dashboardBarEntries.forEach((e) => {
+        const key = e.containerName || e.containerId;
+        if (!_barEntriesByName.has(key)) _barEntriesByName.set(key, []);
+        _barEntriesByName.get(key).push(e);
+      });
+    }
+
+    function rebuildDashboardHistoryIndex() {
+      _historyEntriesByName = new Map();
+      dashboardHistoryEntries.forEach((e) => {
+        const key = e.containerName || e.containerId;
+        if (!_historyEntriesByName.has(key)) _historyEntriesByName.set(key, []);
+        _historyEntriesByName.get(key).push(e);
+      });
+    }
+
     function sampleBarsForService(name, count = 25) {
-      const samples = dashboardBarEntries.filter((e) => (e.containerName || e.containerId) === name).slice(0, count).reverse();
+      const samples = (_barEntriesByName.get(name) || []).slice(0, count).reverse();
       const padded = Array(Math.max(0, count - samples.length)).fill(null);
       // When no events have been recorded yet, tint all bars with the current
       // health colour at low opacity so healthy containers don't look identical
@@ -3398,7 +3420,7 @@ echo "Restart complete"`,
     }
 
     function sampleSparkBarsForGrid(name, count = 10) {
-      const samples = dashboardBarEntries.filter((e) => (e.containerName || e.containerId) === name).slice(0, count).reverse();
+      const samples = (_barEntriesByName.get(name) || []).slice(0, count).reverse();
       const padded = Array(Math.max(0, count - samples.length)).fill(null);
       const bars = [...padded, ...samples].map((s) => {
         if (!s) return '<span class="svc-grid-spark-bar"></span>';
@@ -3411,7 +3433,7 @@ echo "Restart complete"`,
     }
 
     function heartbeatBarsForService(name, count = 30) {
-      const samples = dashboardBarEntries.filter((e) => (e.containerName || e.containerId) === name).slice(0, count).reverse();
+      const samples = (_barEntriesByName.get(name) || []).slice(0, count).reverse();
       const padded = Array(Math.max(0, count - samples.length)).fill(null);
       return [...padded, ...samples].map((s) => {
         if (!s) return '<span class="hb-block" title="No data"></span>';
@@ -3424,7 +3446,7 @@ echo "Restart complete"`,
     }
 
     function statsForService(name) {
-      const entries = dashboardHistoryEntries.filter((e) => (e.containerName || e.containerId) === name);
+      const entries = _historyEntriesByName.get(name) || [];
       const cutoff = Date.now() - 24 * 60 * 60 * 1000;
       const last24h = entries.filter((e) => new Date(e.timestamp).getTime() >= cutoff);
       const actions24h = last24h.filter((e) => e.action && e.action !== 'none');
@@ -3439,7 +3461,7 @@ echo "Restart complete"`,
     }
 
     function uptimeForService(name, fallbackStatus) {
-      const samples = dashboardHistoryEntries.filter((e) => (e.containerName || e.containerId) === name).slice(0, 40);
+      const samples = (_historyEntriesByName.get(name) || []).slice(0, 40);
       const checks = samples.filter((s) => s.status === 'success' || s.status === 'failed');
       if (!checks.length) {
         if (fallbackStatus === 'up') return 100;
@@ -3662,7 +3684,7 @@ echo "Restart complete"`,
             ? (firstJob ? `${firstJob.name} · ${firstJob.action || service.checkAction || 'restart'}` : `global · ${service.checkAction || 'restart'}`)
             : 'not monitored';
           const encodedName = encodeURIComponent(service.name);
-          const hasHistory = dashboardBarEntries.some((e) => (e.containerName || e.containerId) === service.name);
+          const hasHistory = _barEntriesByName.has(service.name);
           const upPct = uptimeForService(service.name, st);
           const uptimeBadgeText = (hasHistory || st === 'up' || st === 'down') ? `${upPct}%` : 'N/A';
           const uptimeBadgeStyle = st === 'up'
@@ -3698,13 +3720,13 @@ echo "Restart complete"`,
           const st = statusForService(service);
           const isActive = service.name === selectedServiceName ? ' active' : '';
           const encodedName = encodeURIComponent(service.name);
-          const hasHistory = dashboardBarEntries.some((e) => (e.containerName || e.containerId) === service.name);
+          const hasHistory = _barEntriesByName.has(service.name);
           const upPct = uptimeForService(service.name, st);
           const uptimeBadgeText = (hasHistory || st === 'up' || st === 'down') ? `${upPct}%` : 'N/A';
           const uptimeBadgeStyle = st === 'up'
             ? 'background:#e7f8ef;color:#147a47;'
             : (st === 'down' ? 'background:#ffecef;color:#b33141;' : 'background:#fff6e7;color:#986d0e;');
-          const lastEntry = dashboardHistoryEntries.filter((e) => (e.containerName || e.containerId) === service.name).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+          const lastEntry = (_historyEntriesByName.get(service.name) || []).slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
           const lastEvent = lastEntry ? `${lastEntry.event || lastEntry.action || ''} ${timeAgo(lastEntry.createdAt)}`.trim() : '—';
           const firstJob = (service.matchedJobs || [])[0];
           const jobLabel = service.checkEligible
@@ -3738,7 +3760,7 @@ echo "Restart complete"`,
           const st = statusForService(service);
           const isActive = service.name === selectedServiceName ? ' active' : '';
           const encodedName = encodeURIComponent(service.name);
-          const hasHistory = dashboardBarEntries.some((e) => (e.containerName || e.containerId) === service.name);
+          const hasHistory = _barEntriesByName.has(service.name);
           const upPct = uptimeForService(service.name, st);
           const uptimeBadgeText = (hasHistory || st === 'up' || st === 'down') ? `${upPct}%` : 'N/A';
           html += `<button class="svc-grid-tile ${st}${isActive}" data-service-name="${encodedName}">`;
@@ -3882,7 +3904,10 @@ echo "Restart complete"`,
       document.getElementById('statIssues').textContent = String(issues);
     }
 
+    let _dashboardLoading = false;
     async function loadDashboard() {
+      if (_dashboardLoading) return;
+      _dashboardLoading = true;
       const loadError = document.getElementById('loadError');
       loadError.style.display = 'none';
       loadError.textContent = '';
@@ -3909,6 +3934,8 @@ echo "Restart complete"`,
         dashboardHistoryTotal = history.total || 0;
         const barsData = barsRes.ok ? await barsRes.json() : { entries: [] };
         dashboardBarEntries = barsData.entries || [];
+        rebuildDashboardBarIndex();
+        rebuildDashboardHistoryIndex();
 
         // Docker stat card
         const dockerCard = document.getElementById('statDockerCard');
@@ -4006,6 +4033,8 @@ echo "Restart complete"`,
       } catch (err) {
         loadError.textContent = `Refresh failed: ${err.message || err}`;
         loadError.style.display = 'block';
+      } finally {
+        _dashboardLoading = false;
       }
     }
 
@@ -4025,6 +4054,7 @@ echo "Restart complete"`,
         const data = await res.json();
         dashboardHistoryEntries = data.entries || [];
         dashboardHistoryTotal = data.total || 0;
+        rebuildDashboardHistoryIndex();
         renderHistoryTable(dashboardHistoryEntries, dashboardServices);
         renderHistoryPagination();
       } catch (_) {}
@@ -5533,7 +5563,7 @@ echo "Restart complete"`,
       });
       document.getElementById('displayTimezone').addEventListener('change', updateTZClocks);
       document.getElementById('serverTimezone').addEventListener('change', updateTZClocks);
-      setInterval(updateTZClocks, 1000);
+      setInterval(updateTZClocks, 1000); // single-page app — interval runs for lifetime of page
 
       // Layout picker — selection only; applied when Save Settings is clicked
       applyLayoutPickerSelection();

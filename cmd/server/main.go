@@ -308,15 +308,19 @@ func (a *app) notifyRetriesExhausted(j actionJob, name, action string, cycle, re
 		msg = fmt.Sprintf("Container %s action %s failed after %d cycles (%s)", name, action, cycle, j.reason)
 	}
 	if a.shouldNotify(name) {
-		_ = a.sendNotification(event, msg)
-		_ = a.sendJobNotifications(event, notifData{
+		if err := a.sendNotification(event, msg); err != nil {
+			logWarnf("notify: send failed event=%s container=%s err=%v", event, name, err)
+		}
+		if err := a.sendJobNotifications(event, notifData{
 			ContainerName: name,
 			RuleName:      j.jobName,
 			Action:        action,
 			Reason:        j.reason,
 			Cycle:         cycle,
 			MaxRetries:    retryCount,
-		}, j.notifications)
+		}, j.notifications); err != nil {
+			logWarnf("notify: job send failed event=%s container=%s err=%v", event, name, err)
+		}
 	}
 }
 
@@ -369,14 +373,16 @@ func (j actionJob) Run(ctx context.Context) {
 		name, j.reason, action, cycle, retryCount, actionTimeout, postWait, source)
 
 	// Notify each retry attempt as it starts.
-	_ = j.app.sendJobNotifications("retrying", notifData{
+	if err := j.app.sendJobNotifications("retrying", notifData{
 		ContainerName: name,
 		RuleName:      j.jobName,
 		Action:        action,
 		Reason:        j.reason,
 		Cycle:         cycle,
 		MaxRetries:    retryCount,
-	}, j.notifications)
+	}, j.notifications); err != nil {
+		logWarnf("notify: job send failed event=retrying container=%s err=%v", name, err)
+	}
 
 	started := time.Now()
 	docker := j.docker
@@ -392,11 +398,13 @@ func (j actionJob) Run(ctx context.Context) {
 		if postWait > 0 {
 			j.app.setPostActionDeadline(name, time.Now().Add(postWait))
 			logInfof("job: post-action wait scheduled container=%s window=%s source=%s", name, postWait, source)
-			_ = j.app.sendJobNotifications("cooldown", notifData{
+			if err := j.app.sendJobNotifications("cooldown", notifData{
 				ContainerName: name,
 				RuleName:      j.jobName,
 				Cooldown:      j.postActionWaitSeconds,
-			}, j.notifications)
+			}, j.notifications); err != nil {
+				logWarnf("notify: job send failed event=cooldown container=%s err=%v", name, err)
+			}
 		}
 		if scriptOutput != "" {
 			logInfof("job: script output container=%s:\n%s", name, scriptOutput)
@@ -933,12 +941,14 @@ func (a *app) processUnhealthyContainers(ctx context.Context, docker dockerClien
 			name, selectedAction, jobID, jobName, job.retryCount, job.postActionWaitSeconds)
 		a.enqueueJob(job)
 		if a.shouldNotify(name) {
-			_ = a.sendJobNotifications("unhealthy detected", notifData{
+			if err := a.sendJobNotifications("unhealthy detected", notifData{
 				ContainerName: name,
 				RuleName:      jobName,
 				Reason:        "unhealthy",
 				MaxRetries:    job.retryCount,
-			}, jobNotifications)
+			}, jobNotifications); err != nil {
+				logWarnf("notify: job send failed event=unhealthy container=%s err=%v", name, err)
+			}
 		}
 	}
 	return filtered
@@ -1268,11 +1278,15 @@ func (a *app) scanOnce() {
 		a.logActionHistory(c, "container recovered", "recovered", 0, "recovered", "", "", 0)
 		msg := fmt.Sprintf("Container %s recovered and is healthy", ev.name)
 		if a.shouldNotify(ev.name) {
-			_ = a.sendNotification("container recovered", msg)
-			_ = a.sendJobNotifications("container recovered", notifData{
+			if err := a.sendNotification("container recovered", msg); err != nil {
+				logWarnf("notify: send failed event=recovered container=%s err=%v", ev.name, err)
+			}
+			if err := a.sendJobNotifications("container recovered", notifData{
 				ContainerName: ev.name,
 				RuleName:      ev.ruleName,
-			}, ev.notifications)
+			}, ev.notifications); err != nil {
+				logWarnf("notify: job send failed event=recovered container=%s err=%v", ev.name, err)
+			}
 		}
 	}
 
@@ -1575,15 +1589,6 @@ func (a *app) handleContainers(w http.ResponseWriter, _ *http.Request) {
 	}
 	a.mu.RUnlock()
 
-	all := make([]map[string]any, 0, len(serviceByName))
-	for _, item := range serviceByName {
-		all = append(all, item)
-	}
-	sort.Slice(all, func(i, j int) bool {
-		left := strings.ToLower(fmt.Sprint(all[i]["name"]))
-		right := strings.ToLower(fmt.Sprint(all[j]["name"]))
-		return left < right
-	})
 	cfg := a.getConfig()
 	jobs := a.getJobs()
 	if a.docker != nil {
@@ -1592,7 +1597,7 @@ func (a *app) handleContainers(w http.ResponseWriter, _ *http.Request) {
 		a.enrichContainerServiceMap(ctx, jobs, cfg, serviceByName)
 	}
 
-	all = make([]map[string]any, 0, len(serviceByName))
+	all := make([]map[string]any, 0, len(serviceByName))
 	for _, item := range serviceByName {
 		all = append(all, item)
 	}
@@ -2462,7 +2467,10 @@ func (a *app) handleTestNotification(w http.ResponseWriter, r *http.Request) {
 		ProfileID string `json:"profileId"`
 		Service   string `json:"service"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid JSON: " + err.Error()})
+		return
+	}
 
 	const testMsg = "This is a test notification from Chowkidar"
 
@@ -2778,8 +2786,8 @@ func (a *app) shouldNotify(containerID string) bool {
 
 func (a *app) setRetriesExhausted(containerID string, v bool) {
 	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.retriesExhausted[containerID] = v
-	a.mu.Unlock()
 }
 
 func (a *app) claimActiveJob(containerID string) bool {
@@ -2794,14 +2802,14 @@ func (a *app) claimActiveJob(containerID string) bool {
 
 func (a *app) releaseActiveJob(containerID string) {
 	a.mu.Lock()
+	defer a.mu.Unlock()
 	delete(a.activeJobs, containerID)
-	a.mu.Unlock()
 }
 
 func (a *app) setPostActionDeadline(containerID string, deadline time.Time) {
 	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.postActionDeadline[containerID] = deadline
-	a.mu.Unlock()
 }
 
 func (a *app) postActionWaitRemaining(containerID string) time.Duration {

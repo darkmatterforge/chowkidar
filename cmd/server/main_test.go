@@ -885,3 +885,58 @@ func TestResolveScriptInterpreterAllowlist(t *testing.T) {
 		}
 	}
 }
+
+func newMinimalTestApp(t *testing.T) *app {
+	t.Helper()
+	configDir := t.TempDir()
+	t.Setenv("APP_PATH", configDir)
+	loaded, err := config.Load()
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	return &app{
+		cfg:        loaded,
+		notifier:   notify.New(""),
+		httpClient: &http.Client{Timeout: 5 * time.Second, Transport: transport},
+		pool:       worker.NewPool(loaded.WorkerCount, loaded.QueueSize),
+	}
+}
+
+func TestHandleSettingsPUTRejectsBadJSON(t *testing.T) {
+	a := newMinimalTestApp(t)
+	body := bytes.NewBufferString(`{not valid json`)
+	req := httptest.NewRequest(http.MethodPut, "/api/settings", body)
+	rr := httptest.NewRecorder()
+	a.handleSettingsPUT(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for malformed JSON, got %d", rr.Code)
+	}
+}
+
+func TestHandleSettingsPUTClampsOutOfRangeValues(t *testing.T) {
+	// normalizeSettingsBody clamps invalid values rather than rejecting them.
+	// Verify a save with retryCount=-1 succeeds and the stored value is clamped to >=1.
+	a := newMinimalTestApp(t)
+	body := bytes.NewBufferString(`{"retryCount":-1}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/settings", body)
+	rr := httptest.NewRecorder()
+	a.handleSettingsPUT(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 (clamped), got %d (body: %s)", rr.Code, rr.Body.String())
+	}
+	if a.getConfig().RetryCount < 1 {
+		t.Fatalf("expected RetryCount >= 1 after clamp, got %d", a.getConfig().RetryCount)
+	}
+}
+
+func TestHandleTestNotificationBadJSON(t *testing.T) {
+	a := newMinimalTestApp(t)
+	body := bytes.NewBufferString(`{not valid json`)
+	req := httptest.NewRequest(http.MethodPost, "/api/test-notification", body)
+	rr := httptest.NewRecorder()
+	a.handleTestNotification(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for malformed JSON, got %d", rr.Code)
+	}
+}
