@@ -134,6 +134,11 @@ jobs:
           BASE_URL: ${{ env.BASE_URL }}
           E2E_USERNAME: testadmin
           E2E_PASSWORD: TestPassword1!
+          # Optional secrets — tests skip gracefully when not set.
+          # Add these in GitHub → Settings → Secrets → Actions.
+          E2E_DISCORD_WEBHOOK_URL: ${{ secrets.E2E_DISCORD_WEBHOOK_URL }}
+          E2E_SLACK_WEBHOOK_URL: ${{ secrets.E2E_SLACK_WEBHOOK_URL }}
+          E2E_NTFY_TOPIC: ${{ secrets.E2E_NTFY_TOPIC }}
 
       - name: Upload test report
         if: always()

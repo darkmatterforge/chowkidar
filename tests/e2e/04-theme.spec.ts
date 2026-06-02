@@ -1,5 +1,4 @@
 import { test, expect } from '@playwright/test'
-import { gotoSettings } from './helpers/nav'
 
 type Page = Parameters<Parameters<typeof test>[1]>[0]['page']
 
@@ -13,17 +12,6 @@ async function cycleToTheme(page: Page, target: string | null) {
     if (await getTheme(page) === target) return
     await btn.click()
   }
-}
-
-async function saveTheme(page: Page) {
-  // Theme is only persisted across page reloads when saved to the server.
-  // loadSettings() overwrites localStorage with the server-side theme on every load.
-  await page.locator('[data-page="settings"]').click()
-  const [res] = await Promise.all([
-    page.waitForResponse(r => r.url().includes('/api/settings') && r.request().method() !== 'GET'),
-    page.locator('#saveSettingsBtn').click(),
-  ])
-  expect(res.status()).toBeLessThan(500)
 }
 
 test.describe('Theme', () => {
@@ -59,17 +47,14 @@ test.describe('Theme', () => {
   })
 
   test('selected theme persists after page reload', async ({ page }) => {
+    // cycleTheme() now calls PUT /api/settings/theme immediately on each click,
+    // so no manual Save Settings needed — just toggle, reload, and verify.
     await cycleToTheme(page, 'dark')
-    // Save to server — loadSettings() overwrites localStorage from server settings on
-    // every load, so the toggle alone does not survive a full reload.
-    await saveTheme(page)
-
     await page.reload()
     await expect(page.locator('#themeToggleBtn')).toBeVisible()
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
 
-    // Restore to auto so server-side theme is clean for subsequent test files
-    await cycleToTheme(page, null)  // null = auto (no data-theme attribute)
-    await saveTheme(page)
+    // Restore to auto
+    await cycleToTheme(page, null)
   })
 })

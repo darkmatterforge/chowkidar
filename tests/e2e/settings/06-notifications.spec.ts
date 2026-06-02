@@ -336,4 +336,109 @@ test.describe('Settings — Notifications tab', () => {
       await deleteProfile(page, 'e2e-mock-send')
     })
   })
+
+  // ── Live credential tests ──────────────────────────────────────────────────
+  // These tests only run when the corresponding env vars are set (GitHub
+  // secrets passed into the CI job). They skip gracefully otherwise so they
+  // never block a PR. Each test creates a real profile, sends a real test
+  // notification, then cleans up.
+  //
+  // Secrets to add in GitHub → Settings → Secrets → Actions:
+  //   E2E_DISCORD_WEBHOOK_URL  — Discord channel webhook URL
+  //   E2E_SLACK_WEBHOOK_URL    — Slack incoming webhook URL
+  //   E2E_NTFY_TOPIC           — ntfy topic (uses ntfy.sh, no account needed)
+
+  test.describe('Live notification delivery (requires secrets)', () => {
+    async function liveTestProfile(
+      page: Parameters<Parameters<typeof test>[1]>[0]['page'],
+      profileName: string,
+      expectedSuccess = true,
+    ) {
+      const editBtn = page.locator('#notifyTbody tr').filter({ hasText: profileName }).getByRole('button', { name: /edit/i })
+      await editBtn.click()
+      await expect(page.locator('#notifyFormPanel')).toBeVisible()
+
+      const [res] = await Promise.all([
+        page.waitForResponse(r => r.url().includes('/api/test-notification')),
+        page.locator('#testNotifyProfilesBtn').click(),
+      ])
+      expect(res.status()).toBeLessThan(500)
+      await expect(page.locator('#notifyTestResult')).toBeVisible({ timeout: 20_000 })
+
+      if (expectedSuccess) {
+        // Verify the result banner indicates success (not failure)
+        const title = page.locator('#notifyTestResult .test-result-title')
+        await expect(title).not.toContainText(/fail|error/i, { timeout: 5_000 })
+      }
+
+      await page.locator('#cancelNotifyEditBtn').click()
+    }
+
+    test.describe.serial('Discord (live)', () => {
+      test.skip(!process.env.E2E_DISCORD_WEBHOOK_URL, 'Set E2E_DISCORD_WEBHOOK_URL secret to enable')
+
+      test('create Discord profile with live webhook', async ({ page }) => {
+        await openNotificationsTab(page)
+        await openAddForm(page)
+        await selectProvider(page, 'discord')
+        await page.locator('#notifyField_webhookurl').fill(process.env.E2E_DISCORD_WEBHOOK_URL!)
+        await saveProfile(page, 'live-discord')
+      })
+
+      test('send real Discord test notification', async ({ page }) => {
+        await openNotificationsTab(page)
+        await liveTestProfile(page, 'live-discord')
+      })
+
+      test('clean up Discord live profile', async ({ page }) => {
+        await openNotificationsTab(page)
+        await deleteProfile(page, 'live-discord')
+      })
+    })
+
+    test.describe.serial('Slack (live)', () => {
+      test.skip(!process.env.E2E_SLACK_WEBHOOK_URL, 'Set E2E_SLACK_WEBHOOK_URL secret to enable')
+
+      test('create Slack profile with live webhook', async ({ page }) => {
+        await openNotificationsTab(page)
+        await openAddForm(page)
+        await selectProvider(page, 'slack')
+        await page.locator('#notifyField_webhookurl').fill(process.env.E2E_SLACK_WEBHOOK_URL!)
+        await saveProfile(page, 'live-slack')
+      })
+
+      test('send real Slack test notification', async ({ page }) => {
+        await openNotificationsTab(page)
+        await liveTestProfile(page, 'live-slack')
+      })
+
+      test('clean up Slack live profile', async ({ page }) => {
+        await openNotificationsTab(page)
+        await deleteProfile(page, 'live-slack')
+      })
+    })
+
+    test.describe.serial('ntfy (live)', () => {
+      test.skip(!process.env.E2E_NTFY_TOPIC, 'Set E2E_NTFY_TOPIC secret to enable (uses ntfy.sh, no account needed)')
+
+      test('create ntfy profile with live topic', async ({ page }) => {
+        await openNotificationsTab(page)
+        await openAddForm(page)
+        await selectProvider(page, 'ntfy')
+        await page.locator('#notifyField_host').fill('https://ntfy.sh')
+        await page.locator('#notifyField_topic').fill(process.env.E2E_NTFY_TOPIC!)
+        await saveProfile(page, 'live-ntfy')
+      })
+
+      test('send real ntfy test notification', async ({ page }) => {
+        await openNotificationsTab(page)
+        await liveTestProfile(page, 'live-ntfy')
+      })
+
+      test('clean up ntfy live profile', async ({ page }) => {
+        await openNotificationsTab(page)
+        await deleteProfile(page, 'live-ntfy')
+      })
+    })
+  })
 })
