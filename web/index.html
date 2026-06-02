@@ -407,8 +407,8 @@
     .mini-bar.fail      { background: #ef6878; }
     .mini-bar.skip      { background: #e8bf61; }
     /* Dim version used when there is no action history yet — shows current health state */
-    .mini-bar.pulse-up   { background: var(--ok);      opacity: 0.28; }
-    .mini-bar.pulse-down { background: #ef6878;         opacity: 0.28; }
+    .mini-bar.pulse-up   { background: var(--ok);  opacity: 0.4; }
+    .mini-bar.pulse-down { background: #ef6878;    opacity: 0.4; }
 
     /* ── Layout picker (settings) ── */
     .layout-picker { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
@@ -492,9 +492,10 @@
     .svc-grid-pct.unknown, .svc-grid-pct.pause { color: var(--warn); }
     .svc-grid-spark { display: flex; gap: 1px; justify-content: center; margin-top: 6px; }
     .svc-grid-spark-bar { width: 5px; height: 12px; border-radius: 2px; background: var(--line); }
-    .svc-grid-spark-bar.up   { background: var(--ok); opacity: .8; }
-    .svc-grid-spark-bar.down { background: var(--danger); opacity: .8; }
-    .svc-grid-spark-bar.warn { background: var(--warn); opacity: .8; }
+    .svc-grid-spark-bar.up     { background: var(--ok);     opacity: .8; }
+    .svc-grid-spark-bar.action { background: var(--accent); opacity: .8; }
+    .svc-grid-spark-bar.down   { background: var(--danger); opacity: .8; }
+    .svc-grid-spark-bar.warn   { background: var(--warn);   opacity: .8; }
 
     /* Heartbeat visualization bar */
     .heartbeat-bar { display: flex; gap: 3px; align-items: stretch; margin: 6px 0 4px; overflow: hidden; }
@@ -3069,12 +3070,16 @@
       }).join('');
     }
 
-    function sampleSparkBarsForGrid(name, count = 10) {
+    function sampleSparkBarsForGrid(name, currentStatus = '', count = 10) {
       const samples = dashboardHistoryEntries.filter((e) => (e.containerName || e.containerId) === name).slice(0, count).reverse();
       const padded = Array(Math.max(0, count - samples.length)).fill(null);
+      const noHistory = samples.length === 0;
+      const pulseClass = noHistory
+        ? (currentStatus === 'up' ? 'up' : currentStatus === 'down' ? 'down' : '')
+        : '';
       const bars = [...padded, ...samples].map((s) => {
-        if (!s) return '<span class="svc-grid-spark-bar"></span>';
-        if (s.status === 'success') return '<span class="svc-grid-spark-bar up"></span>';
+        if (!s) return `<span class="svc-grid-spark-bar ${pulseClass}" style="${noHistory && pulseClass ? 'opacity:0.4' : ''}"></span>`;
+        if (s.status === 'success') return '<span class="svc-grid-spark-bar action"></span>';
         if (s.status === 'recovered' || s.status === 'healthy') return '<span class="svc-grid-spark-bar up"></span>';
         if (s.status === 'failed') return '<span class="svc-grid-spark-bar down"></span>';
         return '<span class="svc-grid-spark-bar warn"></span>';
@@ -3416,7 +3421,7 @@
           html += `<button class="svc-grid-tile ${st}${isActive}" data-service-name="${encodedName}">`;
           html += `<div class="svc-grid-name">${escapeHtml(service.name)}</div>`;
           html += `<div class="svc-grid-pct ${st}">${escapeHtml(uptimeBadgeText)}</div>`;
-          html += sampleSparkBarsForGrid(service.name);
+          html += sampleSparkBarsForGrid(service.name, st);
           html += '</button>';
         });
       });
