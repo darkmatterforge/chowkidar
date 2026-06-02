@@ -468,6 +468,9 @@ test.describe('Settings — Notifications tab', () => {
       'Set E2E_EMAIL_HOST + E2E_EMAIL_TO secrets to enable',
       async page => {
         await selectProvider(page, 'mailto')
+        // Email renders 12+ fields — wait for the required 'To' field explicitly
+        // before filling, since selectProvider only waits for the first field.
+        await expect(page.locator('#notifyField_to')).toBeVisible({ timeout: 10_000 })
         await page.locator('#notifyField_host').fill(process.env.E2E_EMAIL_HOST!)
         if (process.env.E2E_EMAIL_PORT)
           await page.locator('#notifyField_port').fill(process.env.E2E_EMAIL_PORT)

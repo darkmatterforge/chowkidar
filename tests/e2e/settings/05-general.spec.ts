@@ -32,9 +32,9 @@ test.describe('Settings — General tab', () => {
 
   test('Auto Detect button populates the Primary Base URL field', async ({ page }) => {
     await openGeneralTab(page)
-    // Any fill (even valid URLs) triggers the primaryBaseURLError validation div
-    // which overlaps the button and blocks clicks. Just click without touching
-    // the field first — the handler sets window.location.origin unconditionally.
+    // The handler sets window.location.origin unconditionally.
+    // CSS fix (pointer-events:none on .field-error) prevents the always-present
+    // 14px min-height error div from intercepting clicks.
     await page.locator('#autoDetectBaseURLBtn').click()
     await expect(page.locator('#primaryBaseURL')).toHaveValue(/http/)
   })
