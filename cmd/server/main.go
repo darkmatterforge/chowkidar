@@ -2954,11 +2954,14 @@ func (a *app) executeRunScript(ctx context.Context, script string, cfg config.Co
 			return "", fmt.Errorf("write temp script: %w", err)
 		}
 		_ = tmpFile.Close()
-		// Resolve the interpreter: read the shebang line (e.g. #!/bin/bash) and
-		// check it exists, falling back to /bin/sh when it doesn't.
-		// This avoids "no such file or directory" when bash isn't installed.
-		shell := resolveScriptInterpreter(script)
-		cmd := exec.CommandContext(ctx, shell, tmpPath, c.ID, name)
+		// Make the script executable so the kernel honours its shebang line
+		// (e.g. #!/bin/bash) and invokes the correct interpreter directly.
+		// This means we never pass a user-derived value as the command to exec —
+		// tmpPath is created by the server and is not user-controlled.
+		if err := os.Chmod(tmpPath, 0o500); err != nil {
+			return "", fmt.Errorf("chmod temp script: %w", err)
+		}
+		cmd := exec.CommandContext(ctx, tmpPath, c.ID, name) // #nosec G204 — tmpPath is server-generated
 		// Inherit environment and inject DRY_RUN when this is a test run from the
 		// UI so scripts can skip destructive steps safely.
 		cmd.Env = append(os.Environ(), "CHOWKIDAR=1")
