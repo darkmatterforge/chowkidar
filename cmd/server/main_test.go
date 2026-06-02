@@ -848,3 +848,40 @@ t.Fatal("expected dryRunCleanupTimer to be nil after cancel")
 }
 a.mu.Unlock()
 }
+
+func TestResolveScriptInterpreterAllowlist(t *testing.T) {
+	// Disallowed shebangs must always fall back to /bin/sh regardless of what
+	// binaries exist on the system, so a crafted shebang cannot invoke arbitrary binaries.
+	disallowed := []string{
+		"#!/usr/bin/python3\nprint('hi')",
+		"#!/usr/bin/env python3\nprint('hi')",
+		"#!/bin/curl\necho hi",
+		"#!/usr/bin/env wget\necho hi",
+		"#!/tmp/malicious\necho hi",
+		"echo hi", // no shebang
+	}
+	for _, script := range disallowed {
+		got := resolveScriptInterpreter(script)
+		if got != "/bin/sh" {
+			lbl := script
+			if len(lbl) > 30 {
+				lbl = lbl[:30]
+			}
+			t.Errorf("disallowed script %q: expected /bin/sh fallback, got %q", lbl, got)
+		}
+	}
+
+	// Allowed shebangs must resolve to a path in the allowlist (never something outside it).
+	allowed := []string{
+		"#!/bin/sh\necho hi",
+		"#!/bin/bash\necho hi",
+		"#!/usr/bin/env bash\necho hi",
+		"#!/usr/bin/env sh\necho hi",
+	}
+	for _, script := range allowed {
+		got := resolveScriptInterpreter(script)
+		if !allowedInterpreters[got] {
+			t.Errorf("allowed script %q: resolved to %q which is not in allowlist", script[:20], got)
+		}
+	}
+}

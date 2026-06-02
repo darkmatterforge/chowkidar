@@ -2888,9 +2888,23 @@ func (a *app) handleResetCooldown(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"reset": true})
 }
 
+// allowedInterpreters is the set of shell interpreters permitted in script shebangs.
+// Only these paths may be used as the exec.Command executable; anything else falls
+// back to /bin/sh so a crafted shebang cannot invoke arbitrary binaries.
+var allowedInterpreters = map[string]bool{
+	"/bin/sh":        true,
+	"/bin/bash":      true,
+	"/usr/bin/sh":    true,
+	"/usr/bin/bash":  true,
+	"/usr/local/bin/bash": true,
+	"/usr/local/bin/sh":   true,
+}
+
 // resolveScriptInterpreter reads the shebang line from a script and returns
-// the interpreter path if it exists on the system, falling back to /bin/sh.
-// This prevents "no such file or directory" when e.g. bash is not installed.
+// the interpreter path if it exists on the system and is in the allowlist,
+// falling back to /bin/sh otherwise.
+// This prevents "no such file or directory" when e.g. bash is not installed,
+// and prevents a crafted shebang from executing arbitrary binaries.
 func resolveScriptInterpreter(script string) string {
 	const fallback = "/bin/sh"
 	trimmed := strings.TrimSpace(script)
@@ -2904,17 +2918,26 @@ func resolveScriptInterpreter(script string) string {
 	if len(parts) == 0 {
 		return fallback
 	}
-	// If the shebang is "/usr/bin/env bash", resolve via LookPath on the second word
+	// If the shebang is "/usr/bin/env bash", resolve the named shell via LookPath
 	candidate := parts[0]
 	if candidate == "/usr/bin/env" && len(parts) > 1 {
-		if resolved, err := exec.LookPath(parts[1]); err == nil {
-			return resolved
+		shellName := parts[1]
+		// Only allow env-resolved shells that are in our allowlist by name
+		if shellName != "bash" && shellName != "sh" {
+			return fallback
+		}
+		if resolved, err := exec.LookPath(shellName); err == nil {
+			if allowedInterpreters[resolved] {
+				return resolved
+			}
 		}
 		return fallback
 	}
-	// Direct path: use it only if it actually exists
-	if _, err := os.Stat(candidate); err == nil {
-		return candidate
+	// Direct path: must be in the allowlist and actually exist
+	if allowedInterpreters[candidate] {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
 	}
 	return fallback
 }
