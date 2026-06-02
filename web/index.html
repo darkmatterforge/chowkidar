@@ -1233,7 +1233,7 @@
             <button class="btn primary" id="detailRestartBtn" type="button" disabled>↺ Restart</button>
             <button class="btn" id="detailStartBtn" type="button" disabled>▶ Start</button>
             <button class="btn danger" id="detailStopBtn" type="button" disabled>■ Stop</button>
-            <button class="btn" id="detailResumeBtn" type="button" disabled title="Clear cooldown so auto-monitoring retries this container on the next scan">⟳ Resume monitoring</button>
+            <button class="btn" id="detailResumeBtn" type="button" disabled title="Clear cooldown so auto-monitoring retries this container on the next scan">⟳ Skip Cooldown & Retry</button>
           </div>
           <!-- Hidden – used by JS to stash Docker status text -->
           <div id="diagDetails" style="display:none;"></div>
@@ -3327,13 +3327,19 @@ echo "Restart complete"`,
 
     // If a fetch returns 401, redirect to login
     async function apiFetch(url, opts) {
-      const res = await fetch(url, opts);
-      if (res.status === 401 && authStatus.enabled) {
-        authStatus.loggedIn = false;
-        showLoginPage();
-        throw new Error('unauthorized');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      try {
+        const res = await fetch(url, { signal: controller.signal, ...opts });
+        if (res.status === 401 && authStatus.enabled) {
+          authStatus.loggedIn = false;
+          showLoginPage();
+          throw new Error('unauthorized');
+        }
+        return res;
+      } finally {
+        clearTimeout(timeoutId);
       }
-      return res;
     }
 
     function escapeHtml(value) {

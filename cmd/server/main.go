@@ -253,8 +253,11 @@ func pruneOldLogs(logsDir string, retentionDays int) {
 			continue
 		}
 		if t.Before(cutoff) {
-			_ = os.Remove(filepath.Join(logsDir, name))
-			logInfof("logs: pruned file=%s", name)
+			if err := os.Remove(filepath.Join(logsDir, name)); err != nil {
+				logWarnf("logs: failed to prune file=%s err=%v", name, err)
+			} else {
+				logInfof("logs: pruned file=%s", name)
+			}
 		}
 	}
 }
@@ -635,6 +638,7 @@ func main() {
 	case <-sigCh:
 	}
 	logInfof("shutdown signal received")
+	a.cancelDryRunCleanup()
 	shutdownApplication(stopMonitor, srv, 15*time.Second)
 	logInfof("shutdown: application stopped")
 }
@@ -704,6 +708,15 @@ func startHTTPServer(srv *http.Server) <-chan error {
 		close(errCh)
 	}()
 	return errCh
+}
+
+func (a *app) cancelDryRunCleanup() {
+	a.dryRunCleanupMu.Lock()
+	defer a.dryRunCleanupMu.Unlock()
+	if a.dryRunCleanupTimer != nil {
+		a.dryRunCleanupTimer.Stop()
+		a.dryRunCleanupTimer = nil
+	}
 }
 
 func shutdownApplication(stopMonitor chan struct{}, srv *http.Server, timeout time.Duration) {

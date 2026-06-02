@@ -765,3 +765,86 @@ func TestHandleSettingsReloadsRuntimeAndWorkerPool(t *testing.T) {
 		t.Fatalf("notifier not reloaded: %#v", n)
 	}
 }
+
+func TestExecuteActionDockerRestartError(t *testing.T) {
+fake := &fakeDockerClient{restartErrs: []error{errors.New("connection refused")}}
+a := &app{cfg: config.Config{ActionTimeoutSeconds: 5}, docker: fake, httpClient: &http.Client{Timeout: 5 * time.Second}, notifier: notify.New("")}
+container := containertypes.Summary{ID: "abc", Names: []string{"demo"}}
+_, err := a.executeAction(context.Background(), a.docker, "restart", "", container, 0, 0)
+if err == nil {
+t.Fatal("expected error when docker restart fails, got nil")
+}
+if !strings.Contains(err.Error(), "connection refused") {
+t.Fatalf("expected docker error in message, got: %v", err)
+}
+}
+
+func TestExecuteActionDockerStartError(t *testing.T) {
+fake := &fakeDockerClient{startErr: errors.New("no such container")}
+a := &app{cfg: config.Config{ActionTimeoutSeconds: 5}, docker: fake, httpClient: &http.Client{Timeout: 5 * time.Second}, notifier: notify.New("")}
+container := containertypes.Summary{ID: "abc", Names: []string{"demo"}}
+_, err := a.executeAction(context.Background(), a.docker, "start", "", container, 0, 0)
+if err == nil {
+t.Fatal("expected error when docker start fails, got nil")
+}
+}
+
+func TestExecuteActionDockerStopError(t *testing.T) {
+fake := &fakeDockerClient{stopErr: errors.New("timeout stopping container")}
+a := &app{cfg: config.Config{ActionTimeoutSeconds: 5}, docker: fake, httpClient: &http.Client{Timeout: 5 * time.Second}, notifier: notify.New("")}
+container := containertypes.Summary{ID: "abc", Names: []string{"demo"}}
+_, err := a.executeAction(context.Background(), a.docker, "stop", "", container, 0, 0)
+if err == nil {
+t.Fatal("expected error when docker stop fails, got nil")
+}
+}
+
+func TestIncrementActionCycleConcurrent(t *testing.T) {
+a := &app{
+cfg:         config.Config{},
+actionCycle: make(map[string]int),
+}
+var wg sync.WaitGroup
+const goroutines = 50
+for i := 0; i < goroutines; i++ {
+wg.Add(1)
+go func() {
+defer wg.Done()
+a.incrementActionCycle("concurrent-container")
+}()
+}
+wg.Wait()
+a.mu.RLock()
+got := a.actionCycle["concurrent-container"]
+a.mu.RUnlock()
+if got != goroutines {
+t.Fatalf("expected actionCycle=%d after %d concurrent increments, got %d", goroutines, goroutines, got)
+}
+}
+
+func TestCancelDryRunCleanupSafety(t *testing.T) {
+a := &app{}
+// Calling cancel with no timer set must not panic
+a.cancelDryRunCleanup()
+
+// Set a timer that should never fire, then cancel it
+fired := make(chan struct{})
+a.dryRunCleanupMu.Lock()
+a.dryRunCleanupTimer = time.AfterFunc(10*time.Second, func() { close(fired) })
+a.dryRunCleanupMu.Unlock()
+
+a.cancelDryRunCleanup()
+
+select {
+case <-fired:
+t.Fatal("timer fired after cancel")
+case <-time.After(50 * time.Millisecond):
+// expected: timer was stopped
+}
+
+a.mu.Lock()
+if a.dryRunCleanupTimer != nil {
+t.Fatal("expected dryRunCleanupTimer to be nil after cancel")
+}
+a.mu.Unlock()
+}
