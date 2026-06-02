@@ -4297,6 +4297,7 @@ echo "Restart complete"`,
 
     async function loadSettings() {
       const res = await fetch('/api/settings');
+      if (!res.ok) return;
       const s = await res.json();
       document.getElementById('workerCount').value = s.workerCount ?? 2;
       document.getElementById('queueSize').value = s.queueSize ?? 64;
@@ -4399,50 +4400,58 @@ echo "Restart complete"`,
       if (logToFile && (logRetentionDays < 1 || logRetentionDays > 365)) { setFieldError('logRetentionDays', 'Use 1-365 days.'); hasErrors = true; }
       if (hasErrors) { showSaveResult('settingsStatus', false, 'Please fix highlighted settings fields.', ''); return; }
 
-      const body = {
-        workerCount,
-        queueSize,
-        httpClientTimeoutSeconds,
-        httpMaxIdleConns,
-        httpMaxIdleConnsPerHost,
-        httpIdleConnTimeoutSeconds,
-        dockerPingTimeoutSeconds,
-        dockerClientRetryCount,
-        dockerClientRetryDelaySeconds,
-        notificationCooldownSeconds,
-        startupDelaySeconds,
-        notificationRatePerSec,
-        action,
-        externalHostname,
-        bootNotification: document.getElementById('bootNotification').checked,
-        bootNotificationProfiles: [...bootNotifySelectedProfiles],
-        primaryBaseURL: document.getElementById('primaryBaseURL').value.trim(),
-        displayTimezone: document.getElementById('displayTimezone').value,
-        serverTimezone: document.getElementById('serverTimezone').value,
-        sqlitePath,
-        sqliteBusyTimeoutSeconds,
-        sqlitePragmas,
-        logLevel,
-        logToFile,
-        logRetentionDays,
-        dashboardLayout: pendingDashLayout,
-        dashboardRefreshSeconds: Number(document.getElementById('dashboardRefreshSeconds').value ?? 30),
-        theme: getStoredTheme(),
-        ..._hiddenSettings,
-      };
+      const saveBtn = document.getElementById('saveSettingsBtn');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+      try {
+        const body = {
+          workerCount,
+          queueSize,
+          httpClientTimeoutSeconds,
+          httpMaxIdleConns,
+          httpMaxIdleConnsPerHost,
+          httpIdleConnTimeoutSeconds,
+          dockerPingTimeoutSeconds,
+          dockerClientRetryCount,
+          dockerClientRetryDelaySeconds,
+          notificationCooldownSeconds,
+          startupDelaySeconds,
+          notificationRatePerSec,
+          action,
+          externalHostname,
+          bootNotification: document.getElementById('bootNotification').checked,
+          bootNotificationProfiles: [...bootNotifySelectedProfiles],
+          primaryBaseURL: document.getElementById('primaryBaseURL').value.trim(),
+          displayTimezone: document.getElementById('displayTimezone').value,
+          serverTimezone: document.getElementById('serverTimezone').value,
+          sqlitePath,
+          sqliteBusyTimeoutSeconds,
+          sqlitePragmas,
+          logLevel,
+          logToFile,
+          logRetentionDays,
+          dashboardLayout: pendingDashLayout,
+          dashboardRefreshSeconds: Number(document.getElementById('dashboardRefreshSeconds').value ?? 30),
+          theme: getStoredTheme(),
+          ..._hiddenSettings,
+        };
 
-      const res = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      if (!res.ok) {
-        const err = await res.json();
-        showSaveResult('settingsStatus', false, 'Save failed', err.error || String(res.status));
-        return;
+        const res = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (!res.ok) {
+          const err = await res.json();
+          showSaveResult('settingsStatus', false, 'Save failed', err.error || String(res.status));
+          return;
+        }
+        showSaveResult('settingsStatus', true, 'Settings saved', '');
+        // Re-arm poll timer so the new interval takes effect immediately
+        if (typeof scheduleDashboardPoll === 'function') scheduleDashboardPoll();
+        currentDashLayout = pendingDashLayout;
+        localStorage.setItem('dashLayout', currentDashLayout);
+        await loadDashboard();
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Settings';
       }
-      showSaveResult('settingsStatus', true, 'Settings saved', '');
-      // Re-arm poll timer so the new interval takes effect immediately
-      if (typeof scheduleDashboardPoll === 'function') scheduleDashboardPoll();
-      currentDashLayout = pendingDashLayout;
-      localStorage.setItem('dashLayout', currentDashLayout);
-      await loadDashboard();
     }
 
     function toggleBootNotify(forceOpen) {
@@ -4471,7 +4480,9 @@ echo "Restart complete"`,
     async function saveBootNotification() {
       const headerStatus = document.getElementById('bootNotifyHeaderStatus');
       try {
-        const current = await (await fetch('/api/settings')).json();
+        const settingsRes = await fetch('/api/settings');
+        if (!settingsRes.ok) { showSaveResult('bootNotifyStatus', false, 'Save failed', 'Could not load current settings'); return; }
+        const current = await settingsRes.json();
         const body = { ...current, bootNotification: document.getElementById('bootNotification').checked, bootNotificationProfiles: [...bootNotifySelectedProfiles] };
         const res = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         if (!res.ok) { const err = await res.json(); showSaveResult('bootNotifyStatus', false, 'Save failed', err.error || String(res.status)); return; }
@@ -4509,7 +4520,9 @@ echo "Restart complete"`,
     async function saveJobQueueSettings() {
       const headerStatus = document.getElementById('jobQueueHeaderStatus');
       try {
-        const current = await (await fetch('/api/settings')).json();
+        const settingsRes = await fetch('/api/settings');
+        if (!settingsRes.ok) { showSaveResult('jobQueueStatus', false, 'Save failed', 'Could not load current settings'); return; }
+        const current = await settingsRes.json();
         const body = {
           ...current,
           workerCount: Number(document.getElementById('workerCount').value || 2),
@@ -4953,19 +4966,28 @@ echo "Restart complete"`,
         dockerHostID: document.getElementById('jobDockerHostID').value || '',
       };
 
-      const method = editingJobId ? 'PUT' : 'POST';
-      const url = editingJobId ? `/api/jobs/${editingJobId}` : '/api/jobs';
-      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      if (!res.ok) {
-        const err = await res.json();
-        statusEl.textContent = `Save failed: ${err.error || res.status}`;
-        return;
-      }
+      const saveBtn = document.getElementById('saveJobBtn');
+      const origLabel = saveBtn.textContent;
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+      try {
+        const method = editingJobId ? 'PUT' : 'POST';
+        const url = editingJobId ? `/api/jobs/${editingJobId}` : '/api/jobs';
+        const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (!res.ok) {
+          const err = await res.json();
+          statusEl.textContent = `Save failed: ${err.error || res.status}`;
+          return;
+        }
 
-      statusEl.textContent = editingJobId ? 'Job updated.' : 'Job added.';
-      resetJobForm();
-      jobsPage = 1;
-      await loadJobs();
+        statusEl.textContent = editingJobId ? 'Job updated.' : 'Job added.';
+        resetJobForm();
+        jobsPage = 1;
+        await loadJobs();
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = origLabel;
+      }
     }
 
     function toggleNotifyTemplates() {

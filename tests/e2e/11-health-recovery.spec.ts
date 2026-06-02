@@ -87,7 +87,6 @@ test.describe('Health recovery', () => {
         page.waitForResponse(r => r.url().includes('/api/containers')),
         page.locator('#refreshBtn').click(),
       ])
-      await page.waitForTimeout(3_000)
     }
 
     await expect(feed).toContainText(CONTAINER)

@@ -1109,7 +1109,6 @@ func (a *app) fetchStartingContainers(ctx context.Context, docker dockerClient) 
 // finalizeState builds the problematic container set, detects recoveries, updates
 // shared state, and returns the list of just-recovered containers for notification.
 func (a *app) finalizeState(filtered, exitedFiltered, restarting, starting []containertypes.Summary) ([]recoveredContainer, map[string]bool) {
-	a.mu.RLock()
 	problematic := make(map[string]bool, len(filtered)+len(exitedFiltered)+len(restarting))
 	for _, c := range filtered {
 		problematic[containerName(c)] = true
@@ -1120,16 +1119,16 @@ func (a *app) finalizeState(filtered, exitedFiltered, restarting, starting []con
 	for _, c := range restarting {
 		problematic[containerName(c)] = true
 	}
+
+	var justRecovered []recoveredContainer
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	for _, c := range starting {
 		name := containerName(c)
 		if a.actionCycle[name] > 0 {
 			problematic[name] = true
 		}
 	}
-	a.mu.RUnlock()
-
-	var justRecovered []recoveredContainer
-	a.mu.Lock()
 	for name := range a.actionCycle {
 		if a.retriesExhausted[name] {
 			continue
@@ -1150,7 +1149,6 @@ func (a *app) finalizeState(filtered, exitedFiltered, restarting, starting []con
 	a.exited = exitedFiltered
 	a.restarting = restarting
 	a.lastScan = time.Now().UTC()
-	a.mu.Unlock()
 	return justRecovered, problematic
 }
 
@@ -1513,16 +1511,33 @@ func (a *app) enrichContainerServiceMap(ctx context.Context, jobs []config.Job, 
 	}); err != nil {
 		return
 	}
-	for _, c := range listed {
+
+	type inspectResult struct {
+		c       containertypes.Summary
+		envKeys []string
+		envPairs []string
+	}
+	results := make([]inspectResult, len(listed))
+	var wg sync.WaitGroup
+	for i, c := range listed {
+		wg.Add(1)
+		go func(i int, c containertypes.Summary) {
+			defer wg.Done()
+			r := inspectResult{c: c}
+			if inspected, err := a.docker.InspectContainer(ctx, c.ID); err == nil && inspected.Config != nil {
+				r.envPairs = inspected.Config.Env
+				r.envKeys = extractEnvKeys(r.envPairs)
+			}
+			results[i] = r
+		}(i, c)
+	}
+	wg.Wait()
+
+	for _, r := range results {
+		c := r.c
 		name := containerName(c)
-		var envKeys []string
-		var envPairs []string
-		if inspected, err := a.docker.InspectContainer(ctx, c.ID); err == nil && inspected.Config != nil {
-			envPairs = inspected.Config.Env
-			envKeys = extractEnvKeys(envPairs)
-		}
-		matchedJobs := matchedJobsSummary(name, c.Labels, envPairs, jobs)
-		globalMatch := !hasEnabledJobs && hasAnyFilters(cfg) && matchesConfigFiltersSnapshot(name, c.Labels, envPairs, cfg)
+		matchedJobs := matchedJobsSummary(name, c.Labels, r.envPairs, jobs)
+		globalMatch := !hasEnabledJobs && hasAnyFilters(cfg) && matchesConfigFiltersSnapshot(name, c.Labels, r.envPairs, cfg)
 		checkEligible := len(matchedJobs) > 0 || globalMatch
 		if !checkEligible {
 			continue
@@ -1539,7 +1554,7 @@ func (a *app) enrichContainerServiceMap(ctx context.Context, jobs []config.Job, 
 			"status":        c.Status,
 			"state":         c.State,
 			"labels":        c.Labels,
-			"envKeys":       envKeys,
+			"envKeys":       r.envKeys,
 			"matchedJobs":   matchedJobs,
 			"checkEligible": checkEligible,
 			"checkSource":   checkSource,
@@ -3521,8 +3536,8 @@ func (a *app) handleAuthDisable(w http.ResponseWriter, r *http.Request) {
 		_ = config.SaveAuthConfig(a.cfg.ConfigDir, a.authCfg)
 	}
 	a.sessionMu.Lock()
+	defer a.sessionMu.Unlock()
 	a.sessions = make(map[string]sessionEntry)
-	a.sessionMu.Unlock()
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    "",
