@@ -89,14 +89,22 @@ jobs:
       - name: Load Docker image
         run: docker load < /tmp/chowkidar.tar.gz
 
-      - name: Start a monitored test container with health check
+      - name: Start test containers
         run: |
+          # Always-healthy container
           docker run -d --name e2e-target \
             --health-cmd="echo ok" \
-            --health-interval=5s \
-            --health-timeout=3s \
+            --health-interval=3s \
+            --health-timeout=2s \
             --health-retries=1 \
             alpine:3 sh -c "while true; do sleep 5; done"
+          # Goes unhealthy after 15s, chowkidar restarts it, it recovers
+          docker run -d --name e2e-unhealthy \
+            --health-cmd='[ -f /tmp/ok ]' \
+            --health-interval=3s \
+            --health-timeout=2s \
+            --health-retries=1 \
+            alpine:3 sh -c 'touch /tmp/ok; sleep 15; rm -f /tmp/ok; while true; do sleep 5; done'
 
       - name: Start app container
         run: |
@@ -118,14 +126,14 @@ jobs:
             fi
           done
 
-      - name: Bootstrap monitoring job for test container
+      - name: Bootstrap monitoring job for test containers
         run: |
-          # No auth yet — app starts open. Create a job so e2e-target appears in
-          # the monitored list, then wait one poll cycle for it to be discovered.
+          # No auth yet — app starts open. Create a job covering both containers,
+          # with a short monitor interval so health recovery happens quickly.
           curl -s -X POST http://localhost:${{ env.APP_PORT }}/api/jobs \
             -H 'Content-Type: application/json' \
-            -d '{"name":"e2e-monitor","action":"restart","containerNameFilter":"e2e-target","enabled":true,"startExited":false}'
-          sleep 8
+            -d '{"name":"e2e-monitor","action":"restart","containerNameFilter":"e2e-target,e2e-unhealthy","monitorIntervalSeconds":8,"enabled":true,"startExited":false}'
+          sleep 10
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -173,4 +181,4 @@ jobs:
 
       - name: Stop containers
         if: always()
-        run: docker rm -f chowkidar-e2e e2e-target || true
+        run: docker rm -f chowkidar-e2e e2e-target e2e-unhealthy || true

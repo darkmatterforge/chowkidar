@@ -27,7 +27,7 @@ error() { echo -e "${RED}✖ $*${NC}"; }
 # ── Cleanup on exit ──────────────────────────────────────────────────────────
 cleanup() {
   info "Cleaning up containers..."
-  docker rm -f "${APP}" "${TARGET}" >/dev/null 2>&1 || true
+  docker rm -f "${APP}" "${TARGET}" e2e-unhealthy >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -40,14 +40,22 @@ else
   info "Build complete."
 fi
 
-# ── 2. Start a target container with a Docker HEALTHCHECK ────────────────────
-info "Starting monitored target container..."
+# ── 2. Start test containers ──────────────────────────────────────────────────
+info "Starting always-healthy target container..."
 docker run -d --name "${TARGET}" \
   --health-cmd="echo ok" \
-  --health-interval=5s \
-  --health-timeout=3s \
+  --health-interval=3s \
+  --health-timeout=2s \
   --health-retries=1 \
   alpine:3 sh -c "while true; do sleep 5; done" >/dev/null
+
+info "Starting e2e-unhealthy container (goes unhealthy after 15s)..."
+docker run -d --name "e2e-unhealthy" \
+  --health-cmd='[ -f /tmp/ok ]' \
+  --health-interval=3s \
+  --health-timeout=2s \
+  --health-retries=1 \
+  alpine:3 sh -c 'touch /tmp/ok; sleep 15; rm -f /tmp/ok; while true; do sleep 5; done' >/dev/null
 
 # ── 3. Start the app on an isolated port with a clean tmp config ─────────────
 info "Starting app on port ${PORT}..."
@@ -71,14 +79,14 @@ for i in $(seq 1 60); do
   fi
 done
 
-# ── 4. Bootstrap a monitoring job so the target container appears in the UI ───
-info "Creating monitoring job for ${TARGET}..."
+# ── 4. Bootstrap a monitoring job covering both test containers ───────────────
+info "Creating monitoring job for test containers..."
 curl -s -X POST "${BASE_URL}/api/jobs" \
   -H 'Content-Type: application/json' \
-  -d "{\"name\":\"e2e-monitor\",\"action\":\"restart\",\"containerNameFilter\":\"${TARGET}\",\"enabled\":true,\"startExited\":false}" \
+  -d "{\"name\":\"e2e-monitor\",\"action\":\"restart\",\"containerNameFilter\":\"${TARGET},e2e-unhealthy\",\"monitorIntervalSeconds\":8,\"enabled\":true,\"startExited\":false}" \
   >/dev/null
-# Give the app one poll cycle to discover and list the container
-sleep 8
+# Give the app one poll cycle to discover and list both containers
+sleep 10
 
 # ── 5. Run Playwright ─────────────────────────────────────────────────────────
 info "Running Playwright tests against ${BASE_URL}..."
