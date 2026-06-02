@@ -406,9 +406,7 @@
     .mini-bar.recovered { background: var(--ok); }
     .mini-bar.fail      { background: #ef6878; }
     .mini-bar.skip      { background: #e8bf61; }
-    /* Dim version used when there is no action history yet — shows current health state */
-    .mini-bar.pulse-up   { background: var(--ok);  opacity: 0.4; }
-    .mini-bar.pulse-down { background: #ef6878;    opacity: 0.4; }
+    /* No history yet — bars stay neutral grey (default .mini-bar colour) */
 
     /* ── Layout picker (settings) ── */
     .layout-picker { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
@@ -1357,6 +1355,16 @@
 
               </div><!-- end layoutPicker -->
             </div><!-- end Dashboard Layout section -->
+
+            <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line);">
+              <div class="label" style="margin-bottom:4px;font-size:13px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);">Dashboard Auto-Refresh</div>
+              <div class="hint" style="margin-bottom:10px;">How often the dashboard polls for updated container status. Set to 0 to disable auto-refresh.</div>
+              <div style="display:flex;align-items:center;gap:10px;max-width:320px;">
+                <input type="number" id="dashboardRefreshSeconds" min="0" max="3600" style="max-width:100px;" />
+                <span class="hint" style="text-transform:none;letter-spacing:0;">seconds &nbsp;(0 = manual refresh only)</span>
+              </div>
+              <div class="field-error" id="dashboardRefreshSecondsError"></div>
+            </div>
 
             <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line);">
               <div class="label" style="margin-bottom:12px;font-size:13px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);">Logging</div>
@@ -3051,18 +3059,14 @@
       return 'unknown';
     }
 
-    function sampleBarsForService(name, currentStatus = '', count = 25) {
+    function sampleBarsForService(name, count = 25) {
       const samples = dashboardHistoryEntries.filter((e) => (e.containerName || e.containerId) === name).slice(0, count).reverse();
       const padded = Array(Math.max(0, count - samples.length)).fill(null);
       // When no events have been recorded yet, tint all bars with the current
       // health colour at low opacity so healthy containers don't look identical
       // to unconfigured ones.
-      const noHistory = samples.length === 0;
-      const pulseClass = noHistory
-        ? (currentStatus === 'up' ? 'pulse-up' : currentStatus === 'down' ? 'pulse-down' : '')
-        : '';
       return [...padded, ...samples].map((s) => {
-        if (!s) return `<span class="mini-bar ${pulseClass}"></span>`;
+        if (!s) return '<span class="mini-bar"></span>';
         if (s.status === 'success') return '<span class="mini-bar up"></span>';
         if (s.status === 'recovered' || s.status === 'healthy') return '<span class="mini-bar recovered"></span>';
         if (s.status === 'failed') return '<span class="mini-bar fail"></span>';
@@ -3070,15 +3074,11 @@
       }).join('');
     }
 
-    function sampleSparkBarsForGrid(name, currentStatus = '', count = 10) {
+    function sampleSparkBarsForGrid(name, count = 10) {
       const samples = dashboardHistoryEntries.filter((e) => (e.containerName || e.containerId) === name).slice(0, count).reverse();
       const padded = Array(Math.max(0, count - samples.length)).fill(null);
-      const noHistory = samples.length === 0;
-      const pulseClass = noHistory
-        ? (currentStatus === 'up' ? 'up' : currentStatus === 'down' ? 'down' : '')
-        : '';
       const bars = [...padded, ...samples].map((s) => {
-        if (!s) return `<span class="svc-grid-spark-bar ${pulseClass}" style="${noHistory && pulseClass ? 'opacity:0.4' : ''}"></span>`;
+        if (!s) return '<span class="svc-grid-spark-bar"></span>';
         if (s.status === 'success') return '<span class="svc-grid-spark-bar action"></span>';
         if (s.status === 'recovered' || s.status === 'healthy') return '<span class="svc-grid-spark-bar up"></span>';
         if (s.status === 'failed') return '<span class="svc-grid-spark-bar down"></span>';
@@ -3351,7 +3351,7 @@
           html += `<span class="service-name">${escapeHtml(service.name)}</span>`;
           html += `<span class="service-badge" style="${uptimeBadgeStyle}">${escapeHtml(uptimeBadgeText)}</span>`;
           html += `</div>`;
-          html += `<div class="mini-bars">${sampleBarsForService(service.name, st)}</div>`;
+          html += `<div class="mini-bars">${sampleBarsForService(service.name)}</div>`;
           html += `<div class="hint" style="font-size:10px;">${escapeHtml(checkSummary)}</div>`;
           html += `</div>`;
           html += '</button>';
@@ -3421,7 +3421,7 @@
           html += `<button class="svc-grid-tile ${st}${isActive}" data-service-name="${encodedName}">`;
           html += `<div class="svc-grid-name">${escapeHtml(service.name)}</div>`;
           html += `<div class="svc-grid-pct ${st}">${escapeHtml(uptimeBadgeText)}</div>`;
-          html += sampleSparkBarsForGrid(service.name, st);
+          html += sampleSparkBarsForGrid(service.name);
           html += '</button>';
         });
       });
@@ -3959,15 +3959,26 @@
       buildTZSelect('displayTimezone', s.displayTimezone ?? '');
       buildTZSelect('serverTimezone', s.serverTimezone ?? '');
       updateTZClocks();
-      document.getElementById('logLevel').value = s.logLevel ?? 'info';
+      document.getElementById('dashboardRefreshSeconds').value = s.dashboardRefreshSeconds ?? 30;
+      document.getElementById('logLevel').value = s.logLevel || 'info';
       const logToFile = s.logToFile ?? true;
       document.getElementById('logToFile').checked = logToFile;
       document.getElementById('logRetentionDays').value = s.logRetentionDays ?? 7;
       document.getElementById('logRetentionWrap').style.display = logToFile ? '' : 'none';
+      // Preserve ALL fields not exposed in the UI so they are never silently
+      // reset to zero/empty when the user clicks Save on any settings tab.
       _hiddenSettings = {
-        dockerSocketPath:       s.dockerSocketPath ?? '/var/run/docker.sock',
-        startExited:            s.startExited ?? false,
+        dockerSocketPath:       s.dockerSocketPath       ?? '/var/run/docker.sock',
+        startExited:            s.startExited            ?? false,
         requireFilterForExited: s.requireFilterForExited ?? true,
+        retryCount:             s.retryCount             ?? 3,
+        retryDelaySeconds:      s.retryDelaySeconds      ?? 10,
+        actionTimeoutSeconds:   s.actionTimeoutSeconds   ?? 20,
+        containerNameFilter:    s.containerNameFilter    ?? '',
+        containerLabelFilter:   s.containerLabelFilter   ?? '',
+        containerEnvVarFilter:  s.containerEnvVarFilter  ?? '',
+        runScriptPath:          s.runScriptPath          ?? '',
+        port:                   s.port                   ?? '8080',
       };
       const bootEnabled = s.bootNotification ?? false;
       document.getElementById('bootNotification').checked = bootEnabled;
@@ -4054,6 +4065,7 @@
         logToFile,
         logRetentionDays,
         dashboardLayout: pendingDashLayout,
+        dashboardRefreshSeconds: Number(document.getElementById('dashboardRefreshSeconds').value ?? 30),
         theme: getStoredTheme(),
         ..._hiddenSettings,
       };
@@ -4065,6 +4077,8 @@
         return;
       }
       showSaveResult('settingsStatus', true, 'Settings saved', '');
+      // Re-arm poll timer so the new interval takes effect immediately
+      if (typeof scheduleDashboardPoll === 'function') scheduleDashboardPoll();
       currentDashLayout = pendingDashLayout;
       localStorage.setItem('dashLayout', currentDashLayout);
       await loadDashboard();
@@ -5263,11 +5277,18 @@
       await loadDockerHosts();
       await loadDashboard();
       let dashboardPollTimer = null;
+      function getDashboardPollMs() {
+        const v = Number(document.getElementById('dashboardRefreshSeconds')?.value ?? 30);
+        return (v > 0 ? v : 0) * 1000;
+      }
       function scheduleDashboardPoll() {
+        clearTimeout(dashboardPollTimer);
+        const ms = getDashboardPollMs();
+        if (ms === 0) return; // auto-refresh disabled
         dashboardPollTimer = setTimeout(async () => {
           if (!document.hidden) await loadDashboard();
           scheduleDashboardPoll();
-        }, 10000);
+        }, ms);
       }
       scheduleDashboardPoll();
       document.addEventListener('visibilitychange', () => {

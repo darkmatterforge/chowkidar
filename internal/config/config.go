@@ -92,6 +92,7 @@ type FileConfig struct {
 	LogToFile                     bool     `yaml:"logToFile"                     json:"logToFile"`
 	LogRetentionDays              int      `yaml:"logRetentionDays"              json:"logRetentionDays"`
 	DashboardLayout               string   `yaml:"dashboardLayout"               json:"dashboardLayout"`
+	DashboardRefreshSeconds       int      `yaml:"dashboardRefreshSeconds"       json:"dashboardRefreshSeconds"`
 	Theme                         string   `yaml:"theme"                         json:"theme"`
 }
 
@@ -312,6 +313,7 @@ func defaultFileConfig() FileConfig {
 		LogToFile:                     true,
 		LogRetentionDays:              7,
 		DashboardLayout:               "cards",
+		DashboardRefreshSeconds:       30,
 		Theme:                         "auto",
 	}
 }
