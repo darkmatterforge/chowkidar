@@ -104,7 +104,6 @@ type notifierClient interface {
 type actionJob struct {
 	app                   *app
 	docker                dockerClient
-	hostID                string
 	container             containertypes.Summary
 	reason                string
 	action                string
@@ -868,16 +867,6 @@ func applyMatchedJobSettings(job *actionJob, matched *config.Job) {
 	if job.postActionWaitSeconds <= 0 {
 		job.postActionWaitSeconds = matched.MonitorIntervalSeconds
 	}
-}
-
-func countEnabledJobs(jobs []config.Job) int {
-	n := 0
-	for _, r := range jobs {
-		if r.Enabled {
-			n++
-		}
-	}
-	return n
 }
 
 // computeDueJobs returns the subset of jobs whose scan interval has elapsed and
