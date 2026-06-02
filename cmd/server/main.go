@@ -67,6 +67,8 @@ type app struct {
 	httpClient           *http.Client
 	jobs                 []config.Job
 	notifications        []config.NotificationProfile
+	notifUsage           map[string]*notifProfileUsage // profile ID → in-memory usage (reset on restart)
+	notifUsageMu         sync.Mutex
 	dockerHosts          []config.DockerHostProfile
 	scripts              []config.ScriptEntry
 	history              *history.Store
@@ -80,6 +82,8 @@ type app struct {
 	authCfg              *config.AuthConfig
 	sessions             map[string]sessionEntry
 	sessionMu            sync.Mutex
+	dryRunCleanupMu      sync.Mutex
+	dryRunCleanupTimer   *time.Timer
 }
 
 type dockerClient interface {
@@ -102,7 +106,6 @@ type notifierClient interface {
 type actionJob struct {
 	app                   *app
 	docker                dockerClient
-	hostID                string
 	container             containertypes.Summary
 	reason                string
 	action                string
@@ -113,6 +116,7 @@ type actionJob struct {
 	force                 bool
 	retryCount            int
 	actionTimeoutSeconds  int
+	scriptTimeoutSeconds  int
 	postActionWaitSeconds int
 }
 
@@ -250,8 +254,11 @@ func pruneOldLogs(logsDir string, retentionDays int) {
 			continue
 		}
 		if t.Before(cutoff) {
-			_ = os.Remove(filepath.Join(logsDir, name))
-			logInfof("logs: pruned file=%s", name)
+			if err := os.Remove(filepath.Join(logsDir, name)); err != nil {
+				logWarnf("logs: failed to prune file=%s err=%v", name, err)
+			} else {
+				logInfof("logs: pruned file=%s", name)
+			}
 		}
 	}
 }
@@ -295,7 +302,7 @@ func resolveJobSettings(j actionJob, cfg config.Config) (retryCount, actionTimeo
 
 func (a *app) notifyRetriesExhausted(j actionJob, name, action string, cycle, retryCount int, failed bool) {
 	a.setRetriesExhausted(name, true)
-	a.logActionHistory(j.container, j.reason, action, cycle, "exhausted", "monitoring paused — max retries reached", 0)
+	a.logActionHistory(j.container, j.reason, action, cycle, "exhausted", "monitoring paused — max retries reached", "", 0)
 	event := "retry limit reached"
 	msg := fmt.Sprintf("Container %s monitoring paused after %d cycles (%s)", name, cycle, j.reason)
 	if failed {
@@ -303,15 +310,19 @@ func (a *app) notifyRetriesExhausted(j actionJob, name, action string, cycle, re
 		msg = fmt.Sprintf("Container %s action %s failed after %d cycles (%s)", name, action, cycle, j.reason)
 	}
 	if a.shouldNotify(name) {
-		_ = a.sendNotification(event, msg)
-		_ = a.sendJobNotifications(event, notifData{
+		if err := a.sendNotification(event, msg); err != nil {
+			logWarnf("notify: send failed event=%s container=%s err=%v", event, name, err)
+		}
+		if err := a.sendJobNotifications(event, notifData{
 			ContainerName: name,
 			RuleName:      j.jobName,
 			Action:        action,
 			Reason:        j.reason,
 			Cycle:         cycle,
 			MaxRetries:    retryCount,
-		}, j.notifications)
+		}, j.notifications); err != nil {
+			logWarnf("notify: job send failed event=%s container=%s err=%v", event, name, err)
+		}
 	}
 }
 
@@ -345,7 +356,7 @@ func (j actionJob) Run(ctx context.Context) {
 
 		if j.app.isRetriesExhausted(name) {
 			logInfof("job: skipping container=%s reason=retries-exhausted source=%s", name, source)
-			j.app.logActionHistory(j.container, j.reason, action, 0, "skipped", "retries exhausted", 0)
+			j.app.logActionHistory(j.container, j.reason, action, 0, "skipped", "retries exhausted", "", 0)
 			return
 		}
 
@@ -353,7 +364,7 @@ func (j actionJob) Run(ctx context.Context) {
 		if remaining := j.app.postActionWaitRemaining(name); remaining > 0 {
 			logInfof("job: skipping container=%s reason=post-action-wait remaining=%s source=%s",
 				name, remaining.Round(time.Second), source)
-			j.app.logActionHistory(j.container, j.reason, action, 0, "skipped", "cooldown active", 0)
+			j.app.logActionHistory(j.container, j.reason, action, 0, "skipped", "cooldown active", "", 0)
 			return
 		}
 	}
@@ -364,21 +375,23 @@ func (j actionJob) Run(ctx context.Context) {
 		name, j.reason, action, cycle, retryCount, actionTimeout, postWait, source)
 
 	// Notify each retry attempt as it starts.
-	_ = j.app.sendJobNotifications("retrying", notifData{
+	if err := j.app.sendJobNotifications("retrying", notifData{
 		ContainerName: name,
 		RuleName:      j.jobName,
 		Action:        action,
 		Reason:        j.reason,
 		Cycle:         cycle,
 		MaxRetries:    retryCount,
-	}, j.notifications)
+	}, j.notifications); err != nil {
+		logWarnf("notify: job send failed event=retrying container=%s err=%v", name, err)
+	}
 
 	started := time.Now()
 	docker := j.docker
 	if docker == nil {
 		docker = j.app.docker
 	}
-	err := j.app.executeAction(ctx, docker, action, j.script, j.container, actionTimeout)
+	scriptOutput, err := j.app.executeAction(ctx, docker, action, j.script, j.container, actionTimeout, j.scriptTimeoutSeconds)
 	duration := time.Since(started)
 
 	if err == nil {
@@ -387,15 +400,20 @@ func (j actionJob) Run(ctx context.Context) {
 		if postWait > 0 {
 			j.app.setPostActionDeadline(name, time.Now().Add(postWait))
 			logInfof("job: post-action wait scheduled container=%s window=%s source=%s", name, postWait, source)
-			_ = j.app.sendJobNotifications("cooldown", notifData{
+			if err := j.app.sendJobNotifications("cooldown", notifData{
 				ContainerName: name,
 				RuleName:      j.jobName,
 				Cooldown:      j.postActionWaitSeconds,
-			}, j.notifications)
+			}, j.notifications); err != nil {
+				logWarnf("notify: job send failed event=cooldown container=%s err=%v", name, err)
+			}
+		}
+		if scriptOutput != "" {
+			logInfof("job: script output container=%s:\n%s", name, scriptOutput)
 		}
 		logInfof("job: success container=%s action=%s cycle=%d/%d duration=%s source=%s",
 			name, action, cycle, retryCount, duration.Round(time.Millisecond), source)
-		j.app.logActionHistory(j.container, j.reason, action, cycle, "success", "", duration)
+		j.app.logActionHistory(j.container, j.reason, action, cycle, "success", "", scriptOutput, duration)
 		if j.force {
 			// Manual action succeeded — reset cycle so auto-monitoring resumes cleanly.
 			j.app.resetActionCooldown(name)
@@ -422,7 +440,7 @@ func (j actionJob) Run(ctx context.Context) {
 
 	logWarnf("job: failed container=%s action=%s cycle=%d/%d duration=%s err=%v source=%s",
 		name, action, cycle, retryCount, duration.Round(time.Millisecond), err, source)
-	j.app.logActionHistory(j.container, j.reason, action, cycle, "failed", err.Error(), duration)
+	j.app.logActionHistory(j.container, j.reason, action, cycle, "failed", err.Error(), scriptOutput, duration)
 	if !j.force && retryCount > 0 && cycle >= retryCount {
 		logErrorf("job: retries exhausted container=%s action=%s cycle=%d/%d source=%s",
 			name, action, cycle, retryCount, source)
@@ -572,6 +590,7 @@ func main() {
 		activeJobs:           make(map[string]bool),
 		lastJobScan:          make(map[string]time.Time),
 		lastJobNotifications: make(map[string][]string),
+		notifUsage:           make(map[string]*notifProfileUsage),
 		lastJobRuleName:      make(map[string]string),
 		knownNames:           make(map[string]string),
 		authCfg:              authCfg,
@@ -629,6 +648,7 @@ func main() {
 	case <-sigCh:
 	}
 	logInfof("shutdown signal received")
+	a.cancelDryRunCleanup()
 	shutdownApplication(stopMonitor, srv, 15*time.Second)
 	logInfof("shutdown: application stopped")
 }
@@ -665,9 +685,13 @@ func setupMux(a *app) *http.ServeMux {
 	mux.HandleFunc("/api/diagnostics", a.authMiddleware(a.handleDiagnostics))
 	mux.HandleFunc("/api/containers", a.authMiddleware(a.handleContainers))
 	mux.HandleFunc("/api/settings", a.authMiddleware(a.handleSettings))
+	mux.HandleFunc("/api/settings/theme", a.authMiddleware(a.handleSettingsTheme))
+	mux.HandleFunc("/api/scripts/dry-run", a.authMiddleware(a.handleScriptDryRun))
 	mux.HandleFunc("/api/jobs", a.authMiddleware(a.handleJobs))
 	mux.HandleFunc("/api/jobs/", a.authMiddleware(a.handleJobByID))
 	mux.HandleFunc("/api/notifications", a.authMiddleware(a.handleNotifications))
+	mux.HandleFunc("/api/notifications/", a.authMiddleware(a.handleNotificationByID))
+	mux.HandleFunc("/api/system-alerts", a.authMiddleware(a.handleSystemAlerts))
 	mux.HandleFunc("/api/docker-hosts", a.authMiddleware(a.handleDockerHosts))
 	mux.HandleFunc("/api/docker-hosts/status", a.authMiddleware(a.handleDockerHostsStatus))
 	mux.HandleFunc("/api/scripts", a.authMiddleware(a.handleScripts))
@@ -696,6 +720,15 @@ func startHTTPServer(srv *http.Server) <-chan error {
 		close(errCh)
 	}()
 	return errCh
+}
+
+func (a *app) cancelDryRunCleanup() {
+	a.dryRunCleanupMu.Lock()
+	defer a.dryRunCleanupMu.Unlock()
+	if a.dryRunCleanupTimer != nil {
+		a.dryRunCleanupTimer.Stop()
+		a.dryRunCleanupTimer = nil
+	}
 }
 
 func shutdownApplication(stopMonitor chan struct{}, srv *http.Server, timeout time.Duration) {
@@ -825,6 +858,16 @@ func (a *app) retryDocker(ctx context.Context, fn func() error) error {
 	return fmt.Errorf("docker operation failed after %d attempts", cfg.DockerClientRetryCount)
 }
 
+// notifProfileUsage tracks in-memory send counts for rate limiting.
+// Counts reset on server restart — this is acceptable since SuspendedUntil
+// (the hard enforcement) is persisted to notifications.yaml.
+type notifProfileUsage struct {
+	dayKey     string // "YYYY-MM-DD" — reset when day changes
+	dayCount   int
+	burstKey   string // truncated time bucket
+	burstCount int
+}
+
 type recoveredContainer struct {
 	name          string
 	notifications []string
@@ -840,20 +883,13 @@ func applyMatchedJobSettings(job *actionJob, matched *config.Job) {
 	if matched.ActionTimeoutSeconds > 0 {
 		job.actionTimeoutSeconds = matched.ActionTimeoutSeconds
 	}
+	if matched.ScriptTimeoutSeconds > 0 {
+		job.scriptTimeoutSeconds = matched.ScriptTimeoutSeconds
+	}
 	job.postActionWaitSeconds = matched.PostActionWaitSeconds
 	if job.postActionWaitSeconds <= 0 {
 		job.postActionWaitSeconds = matched.MonitorIntervalSeconds
 	}
-}
-
-func countEnabledJobs(jobs []config.Job) int {
-	n := 0
-	for _, r := range jobs {
-		if r.Enabled {
-			n++
-		}
-	}
-	return n
 }
 
 // computeDueJobs returns the subset of jobs whose scan interval has elapsed and
@@ -907,7 +943,7 @@ func (a *app) processUnhealthyContainers(ctx context.Context, docker dockerClien
 		}
 		if remaining := a.postActionWaitRemaining(name); remaining > 0 {
 			logInfof("monitor: skip container=%s reason=post-action-wait remaining=%s", name, remaining.Round(time.Second))
-			a.logActionHistory(c, "unhealthy", selectedAction, 0, "skipped", "cooldown active", 0)
+			a.logActionHistory(c, "unhealthy", selectedAction, 0, "skipped", "cooldown active", "", 0)
 			continue
 		}
 		job := actionJob{
@@ -920,12 +956,14 @@ func (a *app) processUnhealthyContainers(ctx context.Context, docker dockerClien
 			name, selectedAction, jobID, jobName, job.retryCount, job.postActionWaitSeconds)
 		a.enqueueJob(job)
 		if a.shouldNotify(name) {
-			_ = a.sendJobNotifications("unhealthy detected", notifData{
+			if err := a.sendJobNotifications("unhealthy detected", notifData{
 				ContainerName: name,
 				RuleName:      jobName,
 				Reason:        "unhealthy",
 				MaxRetries:    job.retryCount,
-			}, jobNotifications)
+			}, jobNotifications); err != nil {
+				logWarnf("notify: job send failed event=unhealthy container=%s err=%v", name, err)
+			}
 		}
 	}
 	return filtered
@@ -968,7 +1006,7 @@ func (a *app) processRestartingContainers(ctx context.Context, docker dockerClie
 		}
 		if remaining := a.postActionWaitRemaining(name); remaining > 0 {
 			logInfof("monitor: skip container=%s reason=post-action-wait remaining=%s (stuck-restarting)", name, remaining.Round(time.Second))
-			a.logActionHistory(c, "stuck-restarting", selectedAction, 0, "skipped", "cooldown active", 0)
+			a.logActionHistory(c, "stuck-restarting", selectedAction, 0, "skipped", "cooldown active", "", 0)
 			continue
 		}
 		job := actionJob{
@@ -1002,7 +1040,7 @@ func (a *app) processCrashedContainer(ctx context.Context, docker dockerClient, 
 	}
 	if remaining := a.postActionWaitRemaining(name); remaining > 0 {
 		logInfof("monitor: skip container=%s reason=post-action-wait remaining=%s", name, remaining.Round(time.Second))
-		a.logActionHistory(c, reason, selectedAction, 0, "skipped", "cooldown active", 0)
+		a.logActionHistory(c, reason, selectedAction, 0, "skipped", "cooldown active", "", 0)
 		return true
 	}
 	job := actionJob{
@@ -1086,7 +1124,6 @@ func (a *app) fetchStartingContainers(ctx context.Context, docker dockerClient) 
 // finalizeState builds the problematic container set, detects recoveries, updates
 // shared state, and returns the list of just-recovered containers for notification.
 func (a *app) finalizeState(filtered, exitedFiltered, restarting, starting []containertypes.Summary) ([]recoveredContainer, map[string]bool) {
-	a.mu.RLock()
 	problematic := make(map[string]bool, len(filtered)+len(exitedFiltered)+len(restarting))
 	for _, c := range filtered {
 		problematic[containerName(c)] = true
@@ -1097,16 +1134,16 @@ func (a *app) finalizeState(filtered, exitedFiltered, restarting, starting []con
 	for _, c := range restarting {
 		problematic[containerName(c)] = true
 	}
+
+	var justRecovered []recoveredContainer
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	for _, c := range starting {
 		name := containerName(c)
 		if a.actionCycle[name] > 0 {
 			problematic[name] = true
 		}
 	}
-	a.mu.RUnlock()
-
-	var justRecovered []recoveredContainer
-	a.mu.Lock()
 	for name := range a.actionCycle {
 		if a.retriesExhausted[name] {
 			continue
@@ -1127,7 +1164,6 @@ func (a *app) finalizeState(filtered, exitedFiltered, restarting, starting []con
 	a.exited = exitedFiltered
 	a.restarting = restarting
 	a.lastScan = time.Now().UTC()
-	a.mu.Unlock()
 	return justRecovered, problematic
 }
 
@@ -1175,7 +1211,7 @@ func (a *app) recordHealthPulses(ctx context.Context, docker dockerClient, jobs 
 	}
 	a.mu.Unlock()
 	for _, c := range a.collectHealthPulseTargets(allCtrs, jobs, dueJobIDs, problematic) {
-		a.logActionHistory(c, "health check", "healthy", 0, "healthy", "", 0)
+		a.logActionHistory(c, "health check", "healthy", 0, "healthy", "", "", 0)
 	}
 }
 
@@ -1252,14 +1288,18 @@ func (a *app) scanOnce() {
 
 	for _, ev := range justRecovered {
 		c := containertypes.Summary{Names: []string{"/" + ev.name}}
-		a.logActionHistory(c, "container recovered", "recovered", 0, "recovered", "", 0)
+		a.logActionHistory(c, "container recovered", "recovered", 0, "recovered", "", "", 0)
 		msg := fmt.Sprintf("Container %s recovered and is healthy", ev.name)
 		if a.shouldNotify(ev.name) {
-			_ = a.sendNotification("container recovered", msg)
-			_ = a.sendJobNotifications("container recovered", notifData{
+			if err := a.sendNotification("container recovered", msg); err != nil {
+				logWarnf("notify: send failed event=recovered container=%s err=%v", ev.name, err)
+			}
+			if err := a.sendJobNotifications("container recovered", notifData{
 				ContainerName: ev.name,
 				RuleName:      ev.ruleName,
-			}, ev.notifications)
+			}, ev.notifications); err != nil {
+				logWarnf("notify: job send failed event=recovered container=%s err=%v", ev.name, err)
+			}
 		}
 	}
 
@@ -1486,16 +1526,33 @@ func (a *app) enrichContainerServiceMap(ctx context.Context, jobs []config.Job, 
 	}); err != nil {
 		return
 	}
-	for _, c := range listed {
+
+	type inspectResult struct {
+		c       containertypes.Summary
+		envKeys []string
+		envPairs []string
+	}
+	results := make([]inspectResult, len(listed))
+	var wg sync.WaitGroup
+	for i, c := range listed {
+		wg.Add(1)
+		go func(i int, c containertypes.Summary) {
+			defer wg.Done()
+			r := inspectResult{c: c}
+			if inspected, err := a.docker.InspectContainer(ctx, c.ID); err == nil && inspected.Config != nil {
+				r.envPairs = inspected.Config.Env
+				r.envKeys = extractEnvKeys(r.envPairs)
+			}
+			results[i] = r
+		}(i, c)
+	}
+	wg.Wait()
+
+	for _, r := range results {
+		c := r.c
 		name := containerName(c)
-		var envKeys []string
-		var envPairs []string
-		if inspected, err := a.docker.InspectContainer(ctx, c.ID); err == nil && inspected.Config != nil {
-			envPairs = inspected.Config.Env
-			envKeys = extractEnvKeys(envPairs)
-		}
-		matchedJobs := matchedJobsSummary(name, c.Labels, envPairs, jobs)
-		globalMatch := !hasEnabledJobs && hasAnyFilters(cfg) && matchesConfigFiltersSnapshot(name, c.Labels, envPairs, cfg)
+		matchedJobs := matchedJobsSummary(name, c.Labels, r.envPairs, jobs)
+		globalMatch := !hasEnabledJobs && hasAnyFilters(cfg) && matchesConfigFiltersSnapshot(name, c.Labels, r.envPairs, cfg)
 		checkEligible := len(matchedJobs) > 0 || globalMatch
 		if !checkEligible {
 			continue
@@ -1512,7 +1569,7 @@ func (a *app) enrichContainerServiceMap(ctx context.Context, jobs []config.Job, 
 			"status":        c.Status,
 			"state":         c.State,
 			"labels":        c.Labels,
-			"envKeys":       envKeys,
+			"envKeys":       r.envKeys,
 			"matchedJobs":   matchedJobs,
 			"checkEligible": checkEligible,
 			"checkSource":   checkSource,
@@ -1562,15 +1619,6 @@ func (a *app) handleContainers(w http.ResponseWriter, _ *http.Request) {
 	}
 	a.mu.RUnlock()
 
-	all := make([]map[string]any, 0, len(serviceByName))
-	for _, item := range serviceByName {
-		all = append(all, item)
-	}
-	sort.Slice(all, func(i, j int) bool {
-		left := strings.ToLower(fmt.Sprint(all[i]["name"]))
-		right := strings.ToLower(fmt.Sprint(all[j]["name"]))
-		return left < right
-	})
 	cfg := a.getConfig()
 	jobs := a.getJobs()
 	if a.docker != nil {
@@ -1579,7 +1627,7 @@ func (a *app) handleContainers(w http.ResponseWriter, _ *http.Request) {
 		a.enrichContainerServiceMap(ctx, jobs, cfg, serviceByName)
 	}
 
-	all = make([]map[string]any, 0, len(serviceByName))
+	all := make([]map[string]any, 0, len(serviceByName))
 	for _, item := range serviceByName {
 		all = append(all, item)
 	}
@@ -1886,6 +1934,39 @@ func (a *app) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (a *app) handleSettingsTheme(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Theme string `json:"theme"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid JSON"})
+		return
+	}
+	if body.Theme != "auto" && body.Theme != "light" && body.Theme != "dark" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "theme must be auto, light, or dark"})
+		return
+	}
+	cfg := a.getConfig()
+	fileCfg, err := config.LoadFileConfig(cfg.ConfigDir)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	fileCfg.Theme = body.Theme
+	if err := config.SaveFileConfig(cfg.ConfigDir, fileCfg); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	a.mu.Lock()
+	a.cfg.Theme = body.Theme
+	a.mu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 func jobMatchesFilters(job config.Job, qStr, actionFilter, enabledFilter, groupFilter string) bool {
 	if actionFilter != "" && strings.ToLower(job.Action) != actionFilter {
 		return false
@@ -1980,7 +2061,35 @@ func (a *app) handleJobs(w http.ResponseWriter, r *http.Request) {
 func (a *app) handleNotifications(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, map[string]any{"profiles": a.getNotificationProfiles()})
+		profiles := a.getNotificationProfiles()
+		// Enrich each profile with live usage counters so the UI can show
+		// the progress bar without the server needing a separate endpoint.
+		type enriched struct {
+			config.NotificationProfile
+			DailyUsage int `json:"dailyUsage"`
+			BurstUsage int `json:"burstUsage"`
+		}
+		out := make([]enriched, len(profiles))
+		a.notifUsageMu.Lock()
+		for i, p := range profiles {
+			e := enriched{NotificationProfile: p}
+			if u, ok := a.notifUsage[p.ID]; ok {
+				today := time.Now().UTC().Format("2006-01-02")
+				if u.dayKey == today {
+					e.DailyUsage = u.dayCount
+				}
+				if p.BurstWindowMinutes > 0 {
+					bw := time.Duration(p.BurstWindowMinutes) * time.Minute
+					bk := time.Now().UTC().Truncate(bw).Format(time.RFC3339)
+					if u.burstKey == bk {
+						e.BurstUsage = u.burstCount
+					}
+				}
+			}
+			out[i] = e
+		}
+		a.notifUsageMu.Unlock()
+		writeJSON(w, http.StatusOK, map[string]any{"profiles": out})
 	case http.MethodPut:
 		var body struct {
 			Profiles []config.NotificationProfile `json:"profiles"`
@@ -2008,6 +2117,83 @@ func (a *app) handleNotifications(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleNotificationByID handles per-profile actions:
+//
+//	POST /api/notifications/{id}/suspend  body: {"until":"RFC3339 or 'midnight'|'month-end'"}
+//	POST /api/notifications/{id}/resume
+//	POST /api/notifications/{id}/dismiss-error
+func (a *app) handleNotificationByID(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	// parse  /api/notifications/{id}/{action}
+	parts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/api/notifications/"), "/", 2)
+	if len(parts) != 2 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid path"})
+		return
+	}
+	profileID, action := parts[0], parts[1]
+
+	switch action {
+	case "suspend":
+		var body struct {
+			Until string `json:"until"` // RFC3339 OR "midnight" | "1h" | "24h" | "month-end"
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		var until time.Time
+		tz := a.getConfig().DisplayTimezone
+		switch body.Until {
+		case "", "midnight":
+			until = nextMidnight(tz)
+		case "month-end":
+			until = endOfMonth(tz)
+		default:
+			// Generic duration patterns: Nm = minutes, Nh = hours, Nd = days, Nw = weeks
+			// e.g. "6h", "2d", "3w", "45m"
+			d, parseErr := parseSuspendDuration(body.Until)
+			if parseErr == nil {
+				until = time.Now().Add(d)
+			} else {
+				// Fall back to RFC3339 literal timestamp
+				parsed, err := time.Parse(time.RFC3339, body.Until)
+				if err != nil {
+					writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid until value — use Nm/Nh/Nd/Nw, 'midnight', 'month-end', or RFC3339"})
+					return
+				}
+				until = parsed
+			}
+		}
+		a.suspendProfile(profileID, until, "")
+		writeJSON(w, http.StatusOK, map[string]any{"suspended": true, "until": until})
+
+	case "resume":
+		a.resumeProfile(profileID)
+		writeJSON(w, http.StatusOK, map[string]any{"resumed": true})
+
+	case "dismiss-error":
+		// Clear the persisted rate-limit error without changing suspension state
+		a.mu.Lock()
+		profiles := make([]config.NotificationProfile, len(a.notifications))
+		copy(profiles, a.notifications)
+		for i, p := range profiles {
+			if p.ID == profileID {
+				profiles[i].LastRateLimitError = ""
+				profiles[i].LastRateLimitAt = nil
+				break
+			}
+		}
+		a.notifications = profiles
+		configDir := a.cfg.ConfigDir
+		a.mu.Unlock()
+		_ = config.SaveNotificationProfiles(configDir, profiles)
+		writeJSON(w, http.StatusOK, map[string]any{"dismissed": true})
+
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "unknown action: " + action})
+	}
+}
+
 func builtInDockerHostProfile(socketPath string) config.DockerHostProfile {
 	return config.DockerHostProfile{
 		ID:       "local",
@@ -2017,6 +2203,78 @@ func builtInDockerHostProfile(socketPath string) config.DockerHostProfile {
 		Enabled:  true,
 		BuiltIn:  true,
 	}
+}
+
+// handleSystemAlerts returns recent critical system events — failed recoveries,
+// paused monitoring, and monitoring-started — independently of notification
+// agents. These always show in the bell regardless of whether any agent is
+// configured or enabled.
+func (a *app) handleSystemAlerts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	type SystemAlert struct {
+		ID            string    `json:"id"`
+		Type          string    `json:"type"`
+		ContainerName string    `json:"containerName,omitempty"`
+		Message       string    `json:"message"`
+		Timestamp     time.Time `json:"timestamp"`
+		Action        string    `json:"action,omitempty"`
+	}
+
+	var alerts []SystemAlert
+
+	// Monitoring-started event — always present when the monitor has run at least once
+	a.mu.RLock()
+	lastScan := a.lastScan
+	a.mu.RUnlock()
+	if !lastScan.IsZero() {
+		alerts = append(alerts, SystemAlert{
+			ID:        "monitoring-started",
+			Type:      "monitoring_started",
+			Message:   "Monitoring is active",
+			Timestamp: lastScan,
+		})
+	}
+
+	// Pull recent failed recoveries + paused monitoring from history
+	if a.history != nil {
+		entries, _, err := a.history.ListPage(history.ListOptions{
+			Limit:        50,
+			OnlyStatuses: []string{"failed", "exhausted"},
+		})
+		if err == nil {
+			seen := make(map[string]bool) // deduplicate by container name
+			for _, e := range entries {
+				key := e.ContainerName + ":" + e.Status
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				alertType := "failed_recovery"
+				msg := "Recovery action failed"
+				if e.Status == "exhausted" {
+					alertType = "paused_monitoring"
+					msg = "Monitoring paused — max retries reached"
+				}
+				if e.Error != "" {
+					msg = e.Error
+				}
+				alerts = append(alerts, SystemAlert{
+					ID:            e.ContainerID + "-" + e.Status,
+					Type:          alertType,
+					ContainerName: e.ContainerName,
+					Message:       msg,
+					Timestamp:     e.Timestamp,
+					Action:        e.Action,
+				})
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"alerts": alerts})
 }
 
 func (a *app) handleDockerHostsGET(w http.ResponseWriter) {
@@ -2202,6 +2460,114 @@ func (a *app) handleScripts(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ensureDryRunContainer returns a real running container called chowkidar-dry-run.
+// It creates one via the docker CLI if it doesn't exist yet, so that scripts
+// running in dry-run mode can use docker inspect, docker ps, etc. against a
+// real container. Falls back to a dummy summary when Docker is unavailable.
+func (a *app) ensureDryRunContainer(ctx context.Context) containertypes.Summary {
+	const name = "chowkidar-dry-run"
+	dummy := containertypes.Summary{ID: "dry-run-test", Names: []string{"/" + name}}
+
+	if a.docker != nil {
+		all, err := a.docker.AllContainers(ctx)
+		if err == nil {
+			for _, c := range all {
+				for _, n := range c.Names {
+					if strings.TrimPrefix(n, "/") == name {
+						return c
+					}
+				}
+			}
+		}
+	}
+
+	// Container not found — create it via docker CLI (available in the image).
+	out, err := exec.CommandContext(ctx, "docker", "run", "-d",
+		"--name", name,
+		"--label", "chowkidar.managed=true",
+		"--health-cmd", "echo ok",
+		"--health-interval", "30s",
+		"alpine:3", "sh", "-c", "while true; do sleep 5; done",
+	).CombinedOutput()
+	if err != nil {
+		// Container may already exist but be stopped — try starting it.
+		if strings.Contains(string(out), "already in use") {
+			_ = exec.CommandContext(ctx, "docker", "start", name).Run()
+			// Re-query
+			if a.docker != nil {
+				if all, err2 := a.docker.AllContainers(ctx); err2 == nil {
+					for _, c := range all {
+						for _, n := range c.Names {
+							if strings.TrimPrefix(n, "/") == name {
+								return c
+							}
+						}
+					}
+				}
+			}
+		}
+		logWarnf("dry-run: could not create %s container: %v — using dummy", name, err)
+		return dummy
+	}
+
+	id := strings.TrimSpace(string(out))
+	return containertypes.Summary{ID: id, Names: []string{"/" + name}, State: "running"}
+}
+
+// scheduleDryRunCleanup resets (or creates) a timer that removes the
+// chowkidar-dry-run container after the given idle duration.
+func (a *app) scheduleDryRunCleanup(after time.Duration) {
+	a.dryRunCleanupMu.Lock()
+	defer a.dryRunCleanupMu.Unlock()
+	if a.dryRunCleanupTimer != nil {
+		a.dryRunCleanupTimer.Reset(after)
+		return
+	}
+	a.dryRunCleanupTimer = time.AfterFunc(after, func() {
+		a.dryRunCleanupMu.Lock()
+		a.dryRunCleanupTimer = nil
+		a.dryRunCleanupMu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		out, err := exec.CommandContext(ctx, "docker", "rm", "-f", "chowkidar-dry-run").CombinedOutput()
+		if err != nil {
+			logWarnf("dry-run cleanup: %v — %s", err, strings.TrimSpace(string(out)))
+		} else {
+			logInfof("dry-run cleanup: removed chowkidar-dry-run container")
+		}
+	})
+}
+
+func (a *app) handleScriptDryRun(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Script string `json:"script"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Script) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "script is required"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+	defer cancel()
+
+	// Use a real dry-run container so docker commands (inspect, ps, etc.) work.
+	// DRY_RUN=1 is still injected so templates with a guard exit early safely.
+	target := a.ensureDryRunContainer(ctx)
+	output, err := a.executeRunScript(ctx, body.Script, a.getConfig(), target, containerName(target), true)
+
+	// Schedule removal of the dry-run container 90 s after the last run.
+	a.scheduleDryRunCleanup(90 * time.Second)
+
+	resp := map[string]any{"output": output}
+	if err != nil {
+		resp["error"] = err.Error()
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 func (a *app) handleJobByID(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/api/jobs/")
 	id = strings.TrimSpace(id)
@@ -2273,11 +2639,18 @@ func (a *app) handleHistory(w http.ResponseWriter, r *http.Request) {
 
 	service := strings.TrimSpace(q.Get("service"))
 
+	// ?bars=true is used by the dashboard sparklines — include healthy pulse
+	// events so bars turn green for containers with no action history.
+	// The activity feed always excludes healthy to keep it readable.
+	excludeStatus := "healthy"
+	if q.Get("bars") == "true" {
+		excludeStatus = ""
+	}
 	entries, total, err := a.history.ListPage(history.ListOptions{
 		Limit:         limit,
 		Offset:        offset,
 		Service:       service,
-		ExcludeStatus: "healthy",
+		ExcludeStatus: excludeStatus,
 	})
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
@@ -2301,7 +2674,10 @@ func (a *app) handleTestNotification(w http.ResponseWriter, r *http.Request) {
 		ProfileID string `json:"profileId"`
 		Service   string `json:"service"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid JSON: " + err.Error()})
+		return
+	}
 
 	const testMsg = "This is a test notification from Chowkidar"
 
@@ -2557,7 +2933,7 @@ func (a *app) persistDockerHostProfiles(profiles []config.DockerHostProfile) err
 	return nil
 }
 
-func (a *app) logActionHistory(c containertypes.Summary, reason, action string, attempt int, status, errMsg string, duration time.Duration) {
+func (a *app) logActionHistory(c containertypes.Summary, reason, action string, attempt int, status, errMsg, output string, duration time.Duration) {
 	if a.history == nil {
 		return
 	}
@@ -2570,6 +2946,7 @@ func (a *app) logActionHistory(c containertypes.Summary, reason, action string, 
 		Attempt:       attempt,
 		Status:        status,
 		Error:         errMsg,
+		Output:        strings.TrimSpace(output),
 		DurationMs:    duration.Milliseconds(),
 	}
 	if err := a.history.Append(entry); err != nil {
@@ -2616,8 +2993,8 @@ func (a *app) shouldNotify(containerID string) bool {
 
 func (a *app) setRetriesExhausted(containerID string, v bool) {
 	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.retriesExhausted[containerID] = v
-	a.mu.Unlock()
 }
 
 func (a *app) claimActiveJob(containerID string) bool {
@@ -2632,14 +3009,14 @@ func (a *app) claimActiveJob(containerID string) bool {
 
 func (a *app) releaseActiveJob(containerID string) {
 	a.mu.Lock()
+	defer a.mu.Unlock()
 	delete(a.activeJobs, containerID)
-	a.mu.Unlock()
 }
 
 func (a *app) setPostActionDeadline(containerID string, deadline time.Time) {
 	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.postActionDeadline[containerID] = deadline
-	a.mu.Unlock()
 }
 
 func (a *app) postActionWaitRemaining(containerID string) time.Duration {
@@ -2710,69 +3087,157 @@ func (a *app) handleResetCooldown(w http.ResponseWriter, r *http.Request) {
 	logInfof("api: resume monitoring requested container=%s id=%.12s", name, id)
 	a.logActionHistory(
 		containertypes.Summary{ID: id, Names: []string{"/" + name}},
-		"resume monitoring", "resume", 0, "success", "", 0,
+		"resume monitoring", "resume", 0, "success", "", "", 0,
 	)
 	writeJSON(w, http.StatusOK, map[string]any{"reset": true})
 }
 
-func (a *app) executeRunScript(ctx context.Context, script string, cfg config.Config, c containertypes.Summary, name string) error {
+// allowedInterpreters is the set of shell interpreters permitted in script shebangs.
+// Only these paths may be used as the exec.Command executable; anything else falls
+// back to /bin/sh so a crafted shebang cannot invoke arbitrary binaries.
+var allowedInterpreters = map[string]bool{
+	"/bin/sh":        true,
+	"/bin/bash":      true,
+	"/usr/bin/sh":    true,
+	"/usr/bin/bash":  true,
+	"/usr/local/bin/bash": true,
+	"/usr/local/bin/sh":   true,
+}
+
+// resolveScriptInterpreter reads the shebang line from a script and returns
+// the interpreter path if it exists on the system and is in the allowlist,
+// falling back to /bin/sh otherwise.
+// This prevents "no such file or directory" when e.g. bash is not installed,
+// and prevents a crafted shebang from executing arbitrary binaries.
+func resolveScriptInterpreter(script string) string {
+	const fallback = "/bin/sh"
+	trimmed := strings.TrimSpace(script)
+	if !strings.HasPrefix(trimmed, "#!") {
+		return fallback
+	}
+	firstLine := strings.SplitN(trimmed, "\n", 2)[0]
+	interpreter := strings.TrimSpace(strings.TrimPrefix(firstLine, "#!"))
+	// Handle cases like "#!/usr/bin/env bash" — just take the first word
+	parts := strings.Fields(interpreter)
+	if len(parts) == 0 {
+		return fallback
+	}
+	// If the shebang is "/usr/bin/env bash", resolve the named shell via LookPath
+	candidate := parts[0]
+	if candidate == "/usr/bin/env" && len(parts) > 1 {
+		shellName := parts[1]
+		// Only allow env-resolved shells that are in our allowlist by name
+		if shellName != "bash" && shellName != "sh" {
+			return fallback
+		}
+		if resolved, err := exec.LookPath(shellName); err == nil {
+			if allowedInterpreters[resolved] {
+				return resolved
+			}
+		}
+		return fallback
+	}
+	// Direct path: must be in the allowlist and actually exist
+	if allowedInterpreters[candidate] {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return fallback
+}
+
+// executeRunScript runs the inline or path-based script and returns its
+// combined stdout+stderr output alongside any error.
+func (a *app) executeRunScript(ctx context.Context, script string, cfg config.Config, c containertypes.Summary, name string, dryRun bool) (string, error) {
 	if strings.TrimSpace(script) != "" {
 		tmpFile, err := os.CreateTemp("", "chowkidar-*.sh")
 		if err != nil {
-			return fmt.Errorf("create temp script: %w", err)
+			return "", fmt.Errorf("create temp script: %w", err)
 		}
 		tmpPath := tmpFile.Name()
 		defer func() { _ = os.Remove(tmpPath) }()
 		if _, err := tmpFile.WriteString(script); err != nil {
 			_ = tmpFile.Close()
-			return fmt.Errorf("write temp script: %w", err)
+			return "", fmt.Errorf("write temp script: %w", err)
 		}
 		_ = tmpFile.Close()
-		cmd := exec.CommandContext(ctx, "/bin/sh", tmpPath, c.ID, name)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("script failed: %w (%s)", err, strings.TrimSpace(string(out)))
+		// Make the script executable so the kernel honours its shebang line
+		// (e.g. #!/bin/bash) and invokes the correct interpreter directly.
+		// This means we never pass a user-derived value as the command to exec —
+		// tmpPath is created by the server and is not user-controlled.
+		if err := os.Chmod(tmpPath, 0o500); err != nil {
+			return "", fmt.Errorf("chmod temp script: %w", err)
 		}
-		return nil
+		cmd := exec.CommandContext(ctx, tmpPath, c.ID, name) // #nosec G204 — tmpPath is server-generated
+		// Inherit environment and inject DRY_RUN when this is a test run from the
+		// UI so scripts can skip destructive steps safely.
+		cmd.Env = append(os.Environ(), "CHOWKIDAR=1")
+		if dryRun || c.ID == "dry-run-test" {
+			cmd.Env = append(cmd.Env, "DRY_RUN=1")
+		}
+		out, err := cmd.CombinedOutput()
+		output := strings.TrimSpace(string(out))
+		if err != nil {
+			return output, fmt.Errorf("script failed: %w", err)
+		}
+		return output, nil
 	}
 	if strings.TrimSpace(cfg.RunScriptPath) == "" {
-		return fmt.Errorf("run-script action selected but RUN_SCRIPT_PATH is empty")
+		return "", fmt.Errorf("run-script action selected but RUN_SCRIPT_PATH is empty")
 	}
 	if !a.isScriptAllowed(cfg.RunScriptPath) {
-		return fmt.Errorf("run-script path is not in scripts allowlist")
+		return "", fmt.Errorf("run-script path is not in scripts allowlist")
 	}
 	cmd := exec.CommandContext(ctx, cfg.RunScriptPath, c.ID, name)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("script failed: %w (%s)", err, strings.TrimSpace(string(out)))
+	out2, err2 := cmd.CombinedOutput()
+	output2 := strings.TrimSpace(string(out2))
+	if err2 != nil {
+		return output2, fmt.Errorf("script failed: %w", err2)
 	}
-	return nil
+	return output2, nil
 }
 
-func (a *app) executeAction(ctx context.Context, docker dockerClient, action string, script string, c containertypes.Summary, actionTimeoutSeconds int) error {
+// executeAction runs the action for a container and returns any script output
+// (non-empty only for run-script actions) alongside the error.
+// scriptTimeoutSeconds overrides actionTimeoutSeconds specifically for run-script;
+// pass 0 to use the job/global action timeout.
+func (a *app) executeAction(ctx context.Context, docker dockerClient, action string, script string, c containertypes.Summary, actionTimeoutSeconds, scriptTimeoutSeconds int) (string, error) {
 	cfg := a.getConfig()
-	timeoutSec := actionTimeoutSeconds
-	if timeoutSec < 1 {
-		timeoutSec = cfg.ActionTimeoutSeconds
+
+	// Scripts can have a dedicated timeout that is independent of the docker action timeout.
+	effectiveTimeout := func(override int) time.Duration {
+		sec := override
+		if sec < 1 {
+			sec = actionTimeoutSeconds
+		}
+		if sec < 1 {
+			sec = cfg.ActionTimeoutSeconds
+		}
+		return max(time.Duration(sec)*time.Second, 5*time.Second)
 	}
-	timeout := max(time.Duration(timeoutSec)*time.Second, 5*time.Second)
-	actionCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 
 	name := containerName(c)
 	switch action {
 	case "restart":
-		return docker.RestartContainer(actionCtx, c.ID, 10)
+		actionCtx, cancel := context.WithTimeout(ctx, effectiveTimeout(0))
+		defer cancel()
+		return "", docker.RestartContainer(actionCtx, c.ID, 10)
 	case "start":
-		return docker.StartContainer(actionCtx, c.ID)
+		actionCtx, cancel := context.WithTimeout(ctx, effectiveTimeout(0))
+		defer cancel()
+		return "", docker.StartContainer(actionCtx, c.ID)
 	case "stop":
-		return docker.StopContainer(actionCtx, c.ID, 10)
+		actionCtx, cancel := context.WithTimeout(ctx, effectiveTimeout(0))
+		defer cancel()
+		return "", docker.StopContainer(actionCtx, c.ID, 10)
 	case "none":
-		return nil
+		return "", nil
 	case "run-script":
-		return a.executeRunScript(actionCtx, script, cfg, c, name)
+		scriptCtx, cancel := context.WithTimeout(ctx, effectiveTimeout(scriptTimeoutSeconds))
+		defer cancel()
+		return a.executeRunScript(scriptCtx, script, cfg, c, name, false)
 	default:
-		return fmt.Errorf("unsupported action %q", action)
+		return "", fmt.Errorf("unsupported action %q", action)
 	}
 }
 
@@ -2860,6 +3325,148 @@ func buildNotifierServicesFromProfiles(profiles []config.NotificationProfile) st
 	return strings.Join(services, ",")
 }
 
+// ── Notification rate limiting & suspension helpers ───────────────────────
+
+func isRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, kw := range []string{"quota", "rate limit", "too many", "429", "limit reached", "throttl", "42908", "daily message", "exceeded"} {
+		if strings.Contains(msg, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+// nextMidnight returns midnight in the given IANA timezone, falling back to UTC.
+// parseSuspendDuration parses strings like "6h", "30m", "3d", "2w" into a time.Duration.
+func parseSuspendDuration(s string) (time.Duration, error) {
+	if len(s) < 2 {
+		return 0, fmt.Errorf("too short")
+	}
+	unit := s[len(s)-1]
+	n, err := strconv.Atoi(s[:len(s)-1])
+	if err != nil || n < 1 {
+		return 0, fmt.Errorf("invalid number")
+	}
+	switch unit {
+	case 'm':
+		return time.Duration(n) * time.Minute, nil
+	case 'h':
+		return time.Duration(n) * time.Hour, nil
+	case 'd':
+		return time.Duration(n) * 24 * time.Hour, nil
+	case 'w':
+		return time.Duration(n) * 7 * 24 * time.Hour, nil
+	default:
+		return 0, fmt.Errorf("unknown unit %q — use m/h/d/w", unit)
+	}
+}
+
+func nextMidnight(ianaZone string) time.Time {
+	loc, err := time.LoadLocation(ianaZone)
+	if err != nil || ianaZone == "" {
+		loc = time.UTC
+	}
+	n := time.Now().In(loc)
+	return time.Date(n.Year(), n.Month(), n.Day()+1, 0, 0, 0, 0, loc)
+}
+
+// nextMidnightUTC kept as a convenience alias used in spots without cfg access.
+func nextMidnightUTC() time.Time { return nextMidnight("") }
+
+func endOfMonthUTC() time.Time {
+	n := time.Now().UTC()
+	first := time.Date(n.Year(), n.Month()+1, 1, 0, 0, 0, 0, time.UTC)
+	return first
+}
+
+func endOfMonth(ianaZone string) time.Time {
+	loc, err := time.LoadLocation(ianaZone)
+	if err != nil || ianaZone == "" {
+		loc = time.UTC
+	}
+	n := time.Now().In(loc)
+	first := time.Date(n.Year(), n.Month()+1, 1, 0, 0, 0, 0, loc)
+	return first
+}
+
+func (a *app) isProfileSuspended(p config.NotificationProfile) bool {
+	return p.SuspendedUntil != nil && p.SuspendedUntil.After(time.Now().UTC())
+}
+
+// getOrCreateUsage returns the usage bucket for a profile, resetting stale counters.
+func (a *app) getOrCreateUsage(profileID string, p config.NotificationProfile) *notifProfileUsage {
+	a.notifUsageMu.Lock()
+	defer a.notifUsageMu.Unlock()
+	u, ok := a.notifUsage[profileID]
+	if !ok {
+		u = &notifProfileUsage{}
+		a.notifUsage[profileID] = u
+	}
+	today := time.Now().UTC().Format("2006-01-02")
+	if u.dayKey != today {
+		u.dayKey = today
+		u.dayCount = 0
+	}
+	if p.BurstWindowMinutes > 0 {
+		bw := time.Duration(p.BurstWindowMinutes) * time.Minute
+		bucketKey := time.Now().UTC().Truncate(bw).Format(time.RFC3339)
+		if u.burstKey != bucketKey {
+			u.burstKey = bucketKey
+			u.burstCount = 0
+		}
+	}
+	return u
+}
+
+// suspendProfile writes SuspendedUntil + optional error to the profile and persists.
+func (a *app) suspendProfile(profileID string, until time.Time, reason string) {
+	a.mu.Lock()
+	profiles := make([]config.NotificationProfile, len(a.notifications))
+	copy(profiles, a.notifications)
+	for i, p := range profiles {
+		if p.ID != profileID {
+			continue
+		}
+		t := until
+		profiles[i].SuspendedUntil = &t
+		if reason != "" {
+			profiles[i].LastRateLimitError = reason
+			now := time.Now().UTC()
+			profiles[i].LastRateLimitAt = &now
+		}
+		break
+	}
+	a.notifications = profiles
+	configDir := a.cfg.ConfigDir
+	a.mu.Unlock()
+	if err := config.SaveNotificationProfiles(configDir, profiles); err != nil {
+		logWarnf("notif: failed to persist suspension for profile=%s: %v", profileID, err)
+	}
+}
+
+// resumeProfile clears the suspension and persists.
+func (a *app) resumeProfile(profileID string) {
+	a.mu.Lock()
+	profiles := make([]config.NotificationProfile, len(a.notifications))
+	copy(profiles, a.notifications)
+	for i, p := range profiles {
+		if p.ID == profileID {
+			profiles[i].SuspendedUntil = nil
+			break
+		}
+	}
+	a.notifications = profiles
+	configDir := a.cfg.ConfigDir
+	a.mu.Unlock()
+	if err := config.SaveNotificationProfiles(configDir, profiles); err != nil {
+		logWarnf("notif: failed to persist resume for profile=%s: %v", profileID, err)
+	}
+}
+
 func (a *app) sendJobNotifications(event string, data notifData, profileIDs []string) error {
 	if len(profileIDs) == 0 {
 		return nil
@@ -2890,6 +3497,41 @@ func (a *app) sendJobNotifications(event string, data notifData, profileIDs []st
 		if !ok || !p.Enabled || strings.TrimSpace(p.Service) == "" {
 			continue
 		}
+
+		// ── Suspension check ──────────────────────────────────────────────
+		if a.isProfileSuspended(p) {
+			logInfof("notif: skip suspended profile=%s until=%s", p.Name, p.SuspendedUntil.Format(time.RFC3339))
+			continue
+		}
+
+		// ── Rate limit checks (in-memory counters) ────────────────────────
+		if p.DailyLimit > 0 || p.BurstLimit > 0 {
+			u := a.getOrCreateUsage(id, p)
+			a.notifUsageMu.Lock()
+			hitBurst := p.BurstLimit > 0 && u.burstCount >= p.BurstLimit
+			hitDaily := p.DailyLimit > 0 && u.dayCount >= p.DailyLimit
+			a.notifUsageMu.Unlock()
+			if hitBurst || hitDaily {
+				reason := "daily limit reached"
+				if hitBurst {
+					reason = "burst limit reached"
+				}
+				logWarnf("notif: limit hit profile=%s reason=%s", p.Name, reason)
+				action := p.OnLimitAction
+				if action == "" {
+					action = "auto-suspend"
+				}
+				switch action {
+				case "auto-suspend":
+					a.suspendProfile(id, nextMidnight(a.getConfig().DisplayTimezone), reason)
+				case "drop":
+					// silently drop
+				}
+				lastErr = fmt.Errorf("notification limit hit: %s", reason)
+				continue
+			}
+		}
+
 		titleTmpl := p.AppliedTitleTemplate(event)
 		var title string
 		if titleTmpl != "" {
@@ -2905,6 +3547,26 @@ func (a *app) sendJobNotifications(event string, data notifData, profileIDs []st
 		if err := n.Send(title, body); err != nil {
 			logWarnf("job notification failed profile=%s err=%v", p.Name, err)
 			lastErr = err
+
+			// ── Auto-suspend on quota / rate-limit error ───────────────
+			if isRateLimitError(err) {
+				shouldAutoSuspend := p.AutoSuspendOnError || p.OnLimitAction == "auto-suspend" || p.OnLimitAction == ""
+				if shouldAutoSuspend && !a.isProfileSuspended(p) {
+					tz := a.getConfig().DisplayTimezone
+					until := nextMidnight(tz)
+					logInfof("notif: auto-suspending profile=%s until=%s tz=%s reason=rate-limit", p.Name, until.Format(time.RFC3339), tz)
+					a.suspendProfile(id, until, err.Error())
+				}
+			}
+		} else {
+			// Increment usage counters on successful send
+			if p.DailyLimit > 0 || p.BurstLimit > 0 {
+				u := a.getOrCreateUsage(id, p)
+				a.notifUsageMu.Lock()
+				u.dayCount++
+				u.burstCount++
+				a.notifUsageMu.Unlock()
+			}
 		}
 	}
 	return lastErr
@@ -3263,8 +3925,8 @@ func (a *app) handleAuthDisable(w http.ResponseWriter, r *http.Request) {
 		_ = config.SaveAuthConfig(a.cfg.ConfigDir, a.authCfg)
 	}
 	a.sessionMu.Lock()
+	defer a.sessionMu.Unlock()
 	a.sessions = make(map[string]sessionEntry)
-	a.sessionMu.Unlock()
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    "",

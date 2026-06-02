@@ -21,6 +21,7 @@ Chowkidar watches your containers for `unhealthy` health events and exited state
 - **Multi-provider notifications** — Discord, Slack, Telegram, ntfy, Gotify, Pushover, SMTP/email, raw Apprise URLs
 - **Notification templates** — customise message content per provider per lifecycle event
 - **Jobs system** — define targeted monitoring rules with container name/label/env var filters
+- **Bash script action** — run a custom inline script per job with built-in templates, dry-run execution, per-job script timeout, and automatic template upgrade detection
 - **Multi-Docker-host** — monitor containers across multiple Docker hosts or sockets
 - **Web UI** — dashboard, jobs, notification profiles, action history, settings
 - **Authentication** — optional username/password protection with bcrypt hashing
@@ -184,6 +185,7 @@ Templates can be customised per provider for each lifecycle event:
 | `GET/POST` | `/api/jobs` | List / create jobs |
 | `PUT/DELETE` | `/api/jobs/{id}` | Update / delete a job |
 | `GET/PUT` | `/api/notifications` | Notification profiles |
+| `POST` | `/api/scripts/dry-run` | Execute a script in an isolated container without triggering real actions |
 | `GET/PUT` | `/api/scripts` | Script allowlist |
 | `GET/PUT` | `/api/docker-hosts` | Multi-host profiles |
 | `GET` | `/api/docker-hosts/status` | Multi-host status |

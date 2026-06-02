@@ -406,6 +406,7 @@
     .mini-bar.recovered { background: var(--ok); }
     .mini-bar.fail      { background: #ef6878; }
     .mini-bar.skip      { background: #e8bf61; }
+    /* No history yet — bars stay neutral grey (default .mini-bar colour) */
 
     /* ── Layout picker (settings) ── */
     .layout-picker { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
@@ -489,9 +490,10 @@
     .svc-grid-pct.unknown, .svc-grid-pct.pause { color: var(--warn); }
     .svc-grid-spark { display: flex; gap: 1px; justify-content: center; margin-top: 6px; }
     .svc-grid-spark-bar { width: 5px; height: 12px; border-radius: 2px; background: var(--line); }
-    .svc-grid-spark-bar.up   { background: var(--ok); opacity: .8; }
-    .svc-grid-spark-bar.down { background: var(--danger); opacity: .8; }
-    .svc-grid-spark-bar.warn { background: var(--warn); opacity: .8; }
+    .svc-grid-spark-bar.up     { background: var(--ok);     opacity: .8; }
+    .svc-grid-spark-bar.action { background: var(--accent); opacity: .8; }
+    .svc-grid-spark-bar.down   { background: var(--danger); opacity: .8; }
+    .svc-grid-spark-bar.warn   { background: var(--warn);   opacity: .8; }
 
     /* Heartbeat visualization bar */
     .heartbeat-bar { display: flex; gap: 3px; align-items: stretch; margin: 6px 0 4px; overflow: hidden; }
@@ -628,7 +630,7 @@
       border-color: var(--danger);
       background: var(--error-bg);
     }
-    .field-error { color: #b93847; min-height: 14px; font-size: 12px; }
+    .field-error { color: #b93847; min-height: 14px; font-size: 12px; pointer-events: none; }
 
     /* Jobs tab */
     .job-form-panel {
@@ -1091,6 +1093,9 @@
       </div>
       <button id="loginBtn" onclick="doLogin()" style="width:100%;padding:14px;border:none;border-radius:26px;background:var(--ok);color:#fff;font-size:15px;font-weight:700;cursor:pointer;letter-spacing:.3px;transition:opacity .15s;">Login</button>
     </div>
+    <div style="margin-top:28px;font-size:13px;color:var(--muted);text-align:center;">
+      A product by <strong>Dark Matter Forge</strong>
+    </div>
   </div>
   <main class="wrap">
     <div class="topbar">
@@ -1102,6 +1107,22 @@
         <button id="themeToggleBtn" class="nav-btn" title="Toggle theme" style="font-size:16px;padding:8px 12px;" type="button">⊙</button>
         <button class="nav-btn active" data-page="dashboard">Dashboard</button>
         <button class="nav-btn" data-page="settings">Settings</button>
+        <!-- Notification bell -->
+        <div style="position:relative;display:inline-flex;align-items:center;">
+          <button id="notifBellBtn" class="nav-btn" title="Notification alerts" style="padding:8px 12px;position:relative;display:inline-flex;align-items:center;justify-content:center;" type="button">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16" style="display:block;opacity:.75;">
+              <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2M8 1.918l-.797.161A4 4 0 0 0 4 6c0 .628-.134 2.197-.459 3.742-.16.767-.376 1.566-.663 2.258h10.244c-.287-.692-.502-1.49-.663-2.258C12.134 8.197 12 6.628 12 6a4 4 0 0 0-3.203-3.92zM14.22 12c.223.447.481.801.78 1H1c.299-.199.557-.553.78-1C2.68 10.2 3 6.88 3 6c0-2.42 1.72-4.44 4.005-4.901a1 1 0 1 1 1.99 0A5 5 0 0 1 13 6c0 .88.32 4.2 1.22 6"/>
+            </svg>
+            <span id="notifBellBadge" style="display:none;position:absolute;top:5px;right:5px;background:#e5a92a;color:#2a1500;font-size:9px;font-weight:800;padding:1px 4px;border-radius:10px;line-height:1.2;pointer-events:none;min-width:14px;text-align:center;"></span>
+          </button>
+          <div id="notifBellDropdown" style="display:none;position:absolute;top:calc(100% + 8px);right:0;width:360px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 32px rgba(18,38,63,.18);z-index:9000;overflow:hidden;">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--bg);">
+              <span style="font-size:13px;font-weight:700;color:var(--text);">Notification Alerts</span>
+              <button type="button" onclick="dismissAllNotifAlerts()" style="font-size:12px;color:var(--accent);background:none;border:none;cursor:pointer;font-weight:600;">Mark all read</button>
+            </div>
+            <div id="notifBellList" style="max-height:360px;overflow-y:auto;"></div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1228,7 +1249,7 @@
             <button class="btn primary" id="detailRestartBtn" type="button" disabled>↺ Restart</button>
             <button class="btn" id="detailStartBtn" type="button" disabled>▶ Start</button>
             <button class="btn danger" id="detailStopBtn" type="button" disabled>■ Stop</button>
-            <button class="btn" id="detailResumeBtn" type="button" disabled title="Clear cooldown so auto-monitoring retries this container on the next scan">⟳ Resume monitoring</button>
+            <button class="btn" id="detailResumeBtn" type="button" disabled title="Clear cooldown so auto-monitoring retries this container on the next scan">⟳ Restart Monitoring</button>
           </div>
           <!-- Hidden – used by JS to stash Docker status text -->
           <div id="diagDetails" style="display:none;"></div>
@@ -1355,6 +1376,18 @@
             </div><!-- end Dashboard Layout section -->
 
             <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line);">
+              <div class="label" style="margin-bottom:4px;font-size:13px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);">Dashboard Auto-Refresh</div>
+              <div class="hint" style="margin-bottom:10px;">How often the dashboard polls for updated container status. Set to 0 to disable auto-refresh.</div>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div class="field" style="margin:0;">
+                  <input type="number" id="dashboardRefreshSeconds" min="0" max="3600" style="max-width:100px;" />
+                </div>
+                <span class="hint" style="text-transform:none;letter-spacing:0;">seconds &nbsp;(0 = manual refresh only)</span>
+              </div>
+              <div class="field-error" id="dashboardRefreshSecondsError"></div>
+            </div>
+
+            <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line);">
               <div class="label" style="margin-bottom:12px;font-size:13px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);">Logging</div>
               <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;align-items:start;">
                 <div class="field">
@@ -1458,6 +1491,73 @@
                     <input type="checkbox" id="notifyAddToAllJobs" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" />
                     <label for="notifyAddToAllJobs" style="margin:0;cursor:pointer;text-transform:none;letter-spacing:0;font-size:14px;">Add to all jobs</label>
                   </div>
+                </div>
+
+                <!-- Rate limiting & suspension -->
+                <div style="margin-top:14px;padding:14px 16px;background:var(--bg);border:1px solid var(--line);border-radius:10px;">
+                  <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);font-weight:700;margin-bottom:12px;">Notification Limits <span style="text-transform:none;letter-spacing:0;font-weight:400;">(optional — leave blank for no limit)</span></div>
+
+                  <div class="form-grid" style="margin-bottom:12px;">
+                    <div class="field">
+                      <label>Burst limit</label>
+                      <div style="display:flex;align-items:center;gap:8px;">
+                        <input type="number" id="notifyBurstLimit" min="1" placeholder="e.g. 3" style="max-width:90px;" />
+                        <span style="font-size:13px;color:var(--muted);">per</span>
+                        <select id="notifyBurstWindow">
+                          <option value="5">5 minutes</option>
+                          <option value="10">10 minutes</option>
+                          <option value="30">30 minutes</option>
+                          <option value="60">1 hour</option>
+                        </select>
+                      </div>
+                      <div class="hint" style="margin-top:4px;">Stops rapid-fire floods</div>
+                    </div>
+                    <div class="field">
+                      <label>Daily cap</label>
+                      <div style="display:flex;align-items:center;gap:8px;">
+                        <input type="number" id="notifyDailyLimit" min="1" placeholder="e.g. 20" style="max-width:90px;" />
+                        <span style="font-size:13px;color:var(--muted);">per day</span>
+                      </div>
+                      <div class="hint" style="margin-top:4px;">Matches provider free-tier caps</div>
+                    </div>
+                  </div>
+
+                  <div class="field" style="margin-bottom:12px;">
+                    <label>When limit is reached</label>
+                    <div style="display:flex;flex-direction:column;gap:7px;margin-top:6px;">
+                      <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;font-weight:normal;text-transform:none;letter-spacing:0;">
+                        <input type="radio" name="notifyOnLimit" id="notifyOnLimitSuspend" value="auto-suspend" checked style="accent-color:var(--accent);width:14px;height:14px;" />
+                        <span><strong>Auto-suspend until period resets</strong> — show alert in bell</span>
+                      </label>
+                      <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;font-weight:normal;text-transform:none;letter-spacing:0;">
+                        <input type="radio" name="notifyOnLimit" id="notifyOnLimitDrop" value="drop" style="accent-color:var(--accent);width:14px;height:14px;" />
+                        <span><strong>Drop silently</strong> — skip sending, no dashboard warning</span>
+                      </label>
+                    </div>
+                    <label style="display:flex;align-items:center;gap:7px;margin-top:10px;font-size:13px;cursor:pointer;font-weight:normal;text-transform:none;letter-spacing:0;">
+                      <input type="checkbox" id="notifyAutoSuspendOnError" style="accent-color:var(--accent);width:14px;height:14px;" />
+                      <span>Auto-suspend to midnight if a quota / rate-limit error is detected</span>
+                    </label>
+                  </div>
+
+                  <div class="field" style="margin-bottom:0;">
+                    <label>Suspend now</label>
+                    <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;">
+                      <input type="number" id="notifySuspendAmount" min="1" placeholder="e.g. 6" style="max-width:80px;" />
+                      <select id="notifySuspendUnit" onchange="toggleSuspendAmount(this.value)">
+                        <option value="h" selected>hours</option>
+                        <option value="m">minutes</option>
+                        <option value="d">days</option>
+                        <option value="w">weeks</option>
+                        <option value="midnight">— Until midnight (server tz)</option>
+                        <option value="month-end">— Until month end</option>
+                      </select>
+                      <button type="button" class="btn" onclick="suspendNotifAgentCustom()">Suspend</button>
+                    </div>
+                    <div class="hint" style="margin-top:4px;">Agent auto-resumes when the period ends</div>
+                  </div>
+
+                  <div id="notifSuspendStatus" style="display:none;margin-top:10px;padding:8px 12px;border-radius:7px;font-size:12px;"></div>
                 </div>
 
                 <!-- Message Templates collapsible -->
@@ -1633,8 +1733,8 @@
               <div><div class="test-result-title"></div><div class="test-result-detail"></div></div>
             </div>
             <table>
-              <thead><tr><th>Name</th><th>Provider</th><th>Service</th><th>Enabled</th><th>Test</th><th>Edit</th><th>Delete</th></tr></thead>
-              <tbody id="notifyTbody"><tr><td colspan="7">No notification profiles</td></tr></tbody>
+              <thead><tr><th>Name</th><th>Provider</th><th>Status</th><th>Daily usage</th><th>Test</th><th>Edit</th><th>Delete</th></tr></thead>
+              <tbody id="notifyTbody"><tr><td colspan="7">No notification agents configured</td></tr></tbody>
             </table>
 
 
@@ -1811,53 +1911,115 @@
                     </div>
 
                     <div id="jobTabScriptContent" class="job-tab-content">
+                      <!-- Template picker -->
+                      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                        <span style="font-size:12px;color:var(--muted);">Templates:</span>
+                        <select id="scriptTemplateSelect" style="font-size:12px;padding:3px 8px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--text);" onchange="applyScriptTemplate(this.value);this.value=''">
+                          <option value="">Insert example…</option>
+                          <option value="restart">Docker restart (default)</option>
+                          <option value="restart-wait">Restart + wait for healthy</option>
+                          <option value="list-containers">List all running containers</option>
+                          <option value="curl-alert">Send curl alert then restart</option>
+                          <option value="dry-run">Dry-run safe template</option>
+                        </select>
+                      </div>
+
                       <div class="script-editor-wrap">
                         <div class="script-editor-toolbar">
                           <div class="script-editor-toolbar-left">
                             <span class="script-lang-badge">BASH</span>
                             <span id="scriptValidationMsg" class="script-validation-msg"></span>
                           </div>
-                          <button class="btn" id="copyScriptBtn" type="button" style="font-size:12px;padding:5px 10px;background:#2d4157;border-color:#3a5472;color:#a0bdd4;">Copy</button>
+                          <div style="display:flex;gap:6px;">
+                            <button class="btn" id="dryRunScriptBtn" type="button" style="font-size:12px;padding:5px 10px;background:#2d4157;border-color:#3a5472;color:#a0bdd4;" title="Run script with a dummy container — safe test, no real container is affected">▶ Dry Run</button>
+                            <button class="btn" id="copyScriptBtn" type="button" style="font-size:12px;padding:5px 10px;background:#2d4157;border-color:#3a5472;color:#a0bdd4;">Copy</button>
+                          </div>
                         </div>
                         <textarea id="jobScript" class="script-editor" spellcheck="false"
-                          placeholder="#!/bin/bash&#10;# $1 = container ID, $2 = container name&#10;&#10;echo &quot;Healing: $2 ($1)&quot;"></textarea>
+                          placeholder="#!/bin/sh&#10;set -e   # fail immediately if any command fails&#10;# $1 = container ID, $2 = container name&#10;&#10;echo &quot;Healing: $2 ($1)&quot;&#10;docker restart &quot;$1&quot;"></textarea>
+                      </div>
+
+                      <!-- Template upgrade notice -->
+                      <div id="scriptUpgradeNotice" style="display:none;margin-top:8px;border:1px solid #3a5472;border-radius:6px;background:#1e2f3f;overflow:hidden;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;border-bottom:1px solid #3a5472;background:#243649;">
+                          <span style="font-size:12px;color:#a0bdd4;">⬆ Template updated: <strong id="scriptUpgradeLabel"></strong> — your script uses an older version</span>
+                          <div style="display:flex;gap:6px;">
+                            <button type="button" class="btn" style="font-size:11px;padding:3px 10px;background:#1c4d3e;border-color:#2a7a5a;color:#7de0b5;" onclick="(function(){const n=document.getElementById('scriptUpgradeNotice');applyScriptTemplate(n.dataset.key);})()">Apply update</button>
+                            <button type="button" class="btn" style="font-size:11px;padding:3px 10px;background:#2d4157;border-color:#3a5472;color:#a0bdd4;" onclick="(function(){const n=document.getElementById('scriptUpgradeNotice');dismissUpgrade(n.dataset.jobId,n.dataset.key,parseInt(n.dataset.version,10));n.style.display='none';})()">Skip</button>
+                          </div>
+                        </div>
+                        <div id="scriptUpgradeDiff" style="font-family:monospace;font-size:11px;line-height:1.6;padding:6px 8px;max-height:160px;overflow-y:auto;"></div>
+                      </div>
+
+                      <!-- Dry-run output -->
+                      <div id="dryRunResult" style="display:none;margin-top:8px;">
+                        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:4px;">Dry Run Output <span id="dryRunStatusBadge"></span></div>
+                        <pre id="dryRunOutput" style="margin:0;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:6px;font-family:monospace;font-size:11px;color:var(--text);white-space:pre-wrap;overflow-wrap:anywhere;max-height:160px;overflow-y:auto;line-height:1.5;"></pre>
+                      </div>
+
+                      <div class="hint" style="margin-top:5px;line-height:1.7;">
+                        <strong>Called once per container</strong> — if the filter matches 3 containers, the script runs 3 times in parallel (up to worker limit), each with its own <code style="font-size:11px;background:var(--bg);padding:1px 4px;border-radius:3px;">$1</code> / <code style="font-size:11px;background:var(--bg);padding:1px 4px;border-radius:3px;">$2</code>.
+                        Retry state, cooldown, and output are tracked separately per container.<br>
+                        Stored inline in <code style="font-size:11px;background:var(--bg);padding:1px 4px;border-radius:3px;">/config/config.yaml</code>.
+                        Set <code style="font-size:11px;background:var(--bg);padding:1px 4px;border-radius:3px;">DRY_RUN=1</code> in your script to skip destructive steps during a dry run.
                       </div>
                       <div class="field-error" id="jobScriptError"></div>
                     </div>
                   </div>
 
+                  <!-- Container filter — same tab-toggle style as Standard Action / Bash Script -->
                   <div class="job-filter-row" style="margin-top:14px;">
                     <div class="field">
-                      <label>Container Name Filter (csv)</label>
-                      <input type="text" id="jobNameFilter" placeholder="nginx,redis" />
-                      <div class="field-error" id="jobNameFilterError"></div>
-                    </div>
-                    <div class="field">
-                      <label>Label Filter</label>
-                      <input type="text" id="jobLabelFilter" placeholder="key=value" />
-                      <div class="field-error" id="jobLabelFilterError"></div>
-                    </div>
-                    <div class="field">
-                      <label>Env Var Filter</label>
-                      <input type="text" id="jobEnvFilter" placeholder="ENV_KEY" />
-                      <div class="field-error" id="jobEnvFilterError"></div>
+                      <label>Container Filter</label>
+                      <div class="job-tab-bar">
+                        <button class="job-tab-btn active" id="jobFilterTypeName"  type="button">Container Name</button>
+                        <button class="job-tab-btn"        id="jobFilterTypeLabel" type="button">Label</button>
+                        <button class="job-tab-btn"        id="jobFilterTypeEnv"   type="button">Env Var</button>
+                      </div>
+
+                      <!-- name filter -->
+                      <div id="jobFilterNameWrap" class="job-tab-content active">
+                        <input type="text" id="jobNameFilter" placeholder="nginx,redis" />
+                        <div class="hint" style="margin-top:4px;">Comma-separated — matches containers whose name contains any entry</div>
+                        <div class="field-error" id="jobNameFilterError"></div>
+                      </div>
+
+                      <!-- label filter — key + value inputs, capped width -->
+                      <div id="jobFilterLabelWrap" class="job-tab-content">
+                        <div style="display:flex;align-items:center;gap:6px;max-width:420px;">
+                          <input type="text" id="jobLabelKey"   placeholder="key"              style="flex:1;" />
+                          <span style="color:var(--muted);font-weight:600;flex-shrink:0;">=</span>
+                          <input type="text" id="jobLabelValue" placeholder="value (optional)" style="flex:1;" />
+                        </div>
+                        <div class="hint" style="margin-top:4px;">Leave value blank to match by key only</div>
+                        <div class="field-error" id="jobLabelFilterError"></div>
+                      </div>
+
+                      <!-- env var filter -->
+                      <div id="jobFilterEnvWrap" class="job-tab-content">
+                        <input type="text" id="jobEnvFilter" placeholder="ENV_KEY" />
+                        <div class="hint" style="margin-top:4px;">Matches containers that have this environment variable key set</div>
+                        <div class="field-error" id="jobEnvFilterError"></div>
+                      </div>
+
+                      <!-- migration notice — shown when editing a job that had multiple filters -->
+                      <div id="jobFilterMigrationNotice" style="display:none;margin-top:8px;padding:8px 12px;background:var(--warn-bg);border:1px solid var(--warn);border-radius:6px;font-size:12px;color:var(--text);">
+                        ⚠ This job previously used multiple filter types. Only one is shown below — review and save to confirm the active filter.
+                      </div>
                     </div>
                   </div>
 
+                  <!-- Row 1: Retry Limit — own full-width row so the toggle has room -->
                   <div class="job-filter-row" style="margin-top:14px;">
-                    <div class="field">
+                    <div class="field" style="grid-column:1/-1;">
                       <label>Retry Limit</label>
                       <label style="display:flex;align-items:center;gap:6px;font-weight:normal;text-transform:none;letter-spacing:0;cursor:pointer;font-size:13px;margin:4px 0 6px;">
                         <input type="checkbox" id="jobRetryLimitEnabled" /> Limit retries
                       </label>
-                      <div id="jobRetryLimitOptions" style="display:none;flex-direction:column;gap:6px;">
-                        <div style="display:flex;gap:14px;align-items:center;">
-                          <label style="display:flex;align-items:center;gap:5px;font-weight:normal;text-transform:none;letter-spacing:0;cursor:pointer;font-size:13px;">
-                            <input type="radio" name="jobRetryMode" id="jobRetryModeCount" value="count" checked /> Fixed attempts
-                          </label>
-                          <label style="display:flex;align-items:center;gap:5px;font-weight:normal;text-transform:none;letter-spacing:0;cursor:pointer;font-size:13px;">
-                            <input type="radio" name="jobRetryMode" id="jobRetryModeDuration" value="duration" /> Max duration
-                          </label>
+                      <div id="jobRetryLimitOptions" style="display:none;flex-direction:column;gap:8px;">
+                        <div class="job-tab-bar" style="margin-bottom:0;">
+                          <button class="job-tab-btn active" id="jobRetryModeCount"    type="button">Fixed attempts</button>
+                          <button class="job-tab-btn"        id="jobRetryModeDuration" type="button">Max duration</button>
                         </div>
                         <div id="jobRetryCountWrap" style="display:flex;align-items:center;gap:6px;">
                           <input type="number" id="jobRetryCount" min="1" max="100" style="max-width:80px;" placeholder="e.g. 3" />
@@ -1871,11 +2033,16 @@
                       </div>
                       <div class="field-error" id="jobRetryCountError"></div>
                     </div>
+                  </div>
+
+                  <!-- Row 2: Timing fields -->
+                  <div class="job-filter-row" style="margin-top:10px;align-items:end;">
                     <div class="field" id="jobDockerHostWrap">
                       <label>Docker Host <span class="hint" style="text-transform:none;letter-spacing:0;">(empty = all hosts)</span></label>
                       <select id="jobDockerHostID" style="max-width:220px;">
                         <option value="">All Hosts</option>
                       </select>
+                      <div class="field-error"></div>
                     </div>
                     <div class="field">
                       <label>Monitor Interval (s)</label>
@@ -1883,13 +2050,20 @@
                       <div class="field-error" id="jobMonitorIntervalError"></div>
                     </div>
                     <div class="field">
-                      <label>Action Timeout (s)</label>
+                      <label>Action Timeout (s) <span class="hint" style="text-transform:none;letter-spacing:0;">restart/stop/start</span></label>
                       <input type="number" id="jobActionTimeout" min="5" max="300" required style="max-width:120px;" />
                       <div class="field-error" id="jobActionTimeoutError"></div>
                     </div>
                     <div class="field">
                       <label>Post-Action Wait (s) <span class="hint" style="text-transform:none;letter-spacing:0;">(0 = off)</span></label>
                       <input type="number" id="jobPostWait" min="0" max="600" style="max-width:120px;" />
+                      <div class="field-error"></div>
+                    </div>
+                    <!-- Script timeout — only relevant for Bash Script jobs -->
+                    <div class="field" id="jobScriptTimeoutWrap" style="display:none;">
+                      <label>Script Timeout (s) <span class="hint" style="text-transform:none;letter-spacing:0;">(blank = use action timeout)</span></label>
+                      <input type="number" id="jobScriptTimeout" min="5" max="3600" style="max-width:120px;" placeholder="e.g. 120" />
+                      <div class="field-error"></div>
                     </div>
                   </div>
 
@@ -2126,7 +2300,12 @@
     let editingDockerHostId = null;
     let selectedDockerConnType = 'socket';
     let _hiddenSettings = {};
-    let dashboardHistoryEntries = [];
+    let dashboardHistoryEntries = []; // activity feed (no healthy events)
+    let dashboardBarEntries = [];      // mini-bar sparklines (includes healthy)
+    // Pre-computed indices rebuilt whenever the above arrays are updated.
+    // Keyed by containerName || containerId for O(1) lookup per service.
+    let _barEntriesByName = new Map();
+    let _historyEntriesByName = new Map();
     let dashboardHistoryTotal = 0;
     let historyPage = 1;
     let historyPageSize = 25;
@@ -2151,7 +2330,7 @@
       'primaryBaseURL', 'displayTimezone', 'serverTimezone',
       'logLevel', 'logRetentionDays'
     ];
-    const jobFields = ['jobName', 'jobGroup', 'jobAction', 'jobNameFilter', 'jobLabelFilter', 'jobEnvFilter', 'jobScript', 'jobRetryCount', 'jobMonitorInterval', 'jobActionTimeout'];
+    const jobFields = ['jobName', 'jobGroup', 'jobAction', 'jobNameFilter', 'jobLabelKey', 'jobLabelValue', 'jobEnvFilter', 'jobScript', 'jobRetryCount', 'jobMonitorInterval', 'jobActionTimeout', 'jobScriptTimeout'];
     const PROVIDER_DEFS = {
       discord:  { label: 'Discord',  badge: 'DC', color: '#5865f2', description: 'Discord channel webhook',    fields: [{ key: 'webhookurl', label: 'Webhook URL', required: true, type: 'text', placeholder: 'https://discord.com/api/webhooks/ID/TOKEN', help: 'Channel Settings → Integrations → Webhooks → Copy URL' }] },
       slack:    { label: 'Slack',    badge: 'SL', color: '#4A154B', description: 'Slack incoming webhook',    fields: [
@@ -2256,6 +2435,12 @@
       const next = order[(order.indexOf(getStoredTheme()) + 1) % order.length];
       localStorage.setItem('chowkidar-theme', next);
       applyTheme(next);
+      // Persist to config.yaml immediately so the choice survives page reloads.
+      fetch('/api/settings/theme', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ theme: next }),
+      }).catch(() => {});
     }
 
     function toBool(v) { return String(v) === 'true'; }
@@ -2272,6 +2457,206 @@
       const error = document.getElementById(`${fieldId}Error`);
       if (input) input.classList.add('invalid');
       if (error) error.textContent = message;
+    }
+
+    // Template registry — increment version whenever a template changes meaningfully.
+    // The version is embedded in each script as  # chowkidar-template: <key>@<version>
+    // so we can detect jobs using an outdated copy and offer an upgrade.
+    const TEMPLATE_META = {
+      'restart':         { version: 2, label: 'Docker restart' },
+      'restart-wait':    { version: 2, label: 'Restart + wait for healthy' },
+      'list-containers': { version: 2, label: 'List containers' },
+      'curl-alert':      { version: 2, label: 'Curl alert + restart' },
+      'dry-run':         { version: 2, label: 'Dry-run safe template' },
+    };
+
+    const SCRIPT_TEMPLATES = {
+      'restart': `#!/bin/bash
+# chowkidar-template: restart@2
+set -e
+# $1 = container ID, $2 = container name
+if [ "$DRY_RUN" = "1" ]; then
+  echo "[DRY RUN] Would restart: $2 ($1)"
+  exit 0
+fi
+
+echo "Restarting: $2 ($1)"
+docker restart "$1"
+echo "Done"`,
+
+      'restart-wait': `#!/bin/bash
+# chowkidar-template: restart-wait@2
+set -e
+# $1 = container ID, $2 = container name
+if [ "$DRY_RUN" = "1" ]; then
+  echo "[DRY RUN] Would restart $2 then wait up to 30s for healthy"
+  exit 0
+fi
+
+echo "Restarting: $2"
+docker restart "$1"
+
+for i in $(seq 1 30); do
+  status=$(docker inspect --format='{{.State.Health.Status}}' "$1" 2>/dev/null)
+  echo "  status: \${status:-running} (\${i}s)"
+  [ "$status" = "healthy" ] && echo "Container is healthy" && exit 0
+  sleep 1
+done
+echo "Warning: container did not report healthy after 30s"`,
+
+      'list-containers': `#!/bin/bash
+# chowkidar-template: list-containers@2
+# Read-only diagnostics
+# $1 = container ID, $2 = container name
+echo "=== Affected container ==="
+docker inspect --format='Name: {{.Name}}  Status: {{.State.Status}}' "$1" 2>/dev/null || echo "(not found)"
+
+echo ""
+echo "=== All running containers ==="
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"`,
+
+      'curl-alert': `#!/bin/bash
+# chowkidar-template: curl-alert@2
+set -e
+# $1 = container ID, $2 = container name
+WEBHOOK_URL="https://hooks.example.com/your-webhook"
+
+if [ "$DRY_RUN" = "1" ]; then
+  echo "[DRY RUN] Would POST to $WEBHOOK_URL and restart $2"
+  exit 0
+fi
+
+echo "Sending alert for $2..."
+curl -s -X POST "$WEBHOOK_URL" \
+  -H "Content-Type: application/json" \
+  -d "{\"text\": \"Restarting unhealthy container: $2\"}"
+
+echo "Restarting..."
+docker restart "$1"`,
+
+      'dry-run': `#!/bin/bash
+# chowkidar-template: dry-run@2
+set -e
+# $1 = container ID, $2 = container name
+if [ "$DRY_RUN" = "1" ]; then
+  echo "[DRY RUN] Container: $2 (ID: $1)"
+  echo "[DRY RUN] Would restart — no action taken"
+  docker ps --filter "name=$2" --format "table {{.Names}}\t{{.Status}}" 2>/dev/null || true
+  exit 0
+fi
+
+echo "Restarting: $2"
+docker restart "$1"
+echo "Restart complete"`,
+    };
+
+    // ── Script template upgrade detection ────────────────────────────────────
+
+    function parseTemplateMarker(script) {
+      const m = (script || '').match(/^#\s*chowkidar-template:\s*([\w-]+)@(\d+)/m);
+      return m ? { key: m[1], version: parseInt(m[2], 10) } : null;
+    }
+
+    function isUpgradeDismissed(jobId, key, latestVersion) {
+      try {
+        const data = JSON.parse(localStorage.getItem('chowkidar-dismissed-upgrades') || '{}');
+        return data[jobId + ':' + key] >= latestVersion;
+      } catch { return false; }
+    }
+
+    function dismissUpgrade(jobId, key, latestVersion) {
+      try {
+        const data = JSON.parse(localStorage.getItem('chowkidar-dismissed-upgrades') || '{}');
+        data[jobId + ':' + key] = latestVersion;
+        localStorage.setItem('chowkidar-dismissed-upgrades', JSON.stringify(data));
+      } catch {}
+    }
+
+    // Myers-style LCS line diff — returns [{type:'equal'|'add'|'remove', line}]
+    function diffLines(oldStr, newStr) {
+      const a = (oldStr || '').split('\n'), b = (newStr || '').split('\n');
+      const m = a.length, n = b.length;
+      const dp = Array.from({length: m + 1}, () => new Array(n + 1).fill(0));
+      for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++)
+        dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] + 1 : Math.max(dp[i-1][j], dp[i][j-1]);
+      const out = []; let i = m, j = n;
+      while (i > 0 || j > 0) {
+        if (i > 0 && j > 0 && a[i-1] === b[j-1]) { out.unshift({type:'equal',  line: a[i-1]}); i--; j--; }
+        else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) { out.unshift({type:'add',    line: b[j-1]}); j--; }
+        else { out.unshift({type:'remove', line: a[i-1]}); i--; }
+      }
+      return out;
+    }
+
+    function renderDiff(diff) {
+      return diff.map(({type, line}) => {
+        const esc = escapeHtml(line);
+        if (type === 'add')    return `<div style="background:#d4f4dd;color:#1a4a2a;">+ ${esc}</div>`;
+        if (type === 'remove') return `<div style="background:#ffdede;color:#7a0010;">- ${esc}</div>`;
+        return `<div style="color:var(--muted);">  ${esc}</div>`;
+      }).join('');
+    }
+
+    function checkScriptUpgrade(jobId, script) {
+      const marker = parseTemplateMarker(script);
+      if (!marker) return;
+      const meta = TEMPLATE_META[marker.key];
+      if (!meta || marker.version >= meta.version) return;
+      if (isUpgradeDismissed(jobId, marker.key, meta.version)) return;
+
+      const newScript = SCRIPT_TEMPLATES[marker.key];
+      const diff = diffLines(script, newScript);
+      const hasChanges = diff.some(d => d.type !== 'equal');
+      if (!hasChanges) return;
+
+      const notice = document.getElementById('scriptUpgradeNotice');
+      const diffEl  = document.getElementById('scriptUpgradeDiff');
+      if (!notice || !diffEl) return;
+
+      diffEl.innerHTML = renderDiff(diff);
+      notice.dataset.jobId   = jobId || '';
+      notice.dataset.key     = marker.key;
+      notice.dataset.version = meta.version;
+      notice.dataset.label   = meta.label;
+      notice.querySelector('#scriptUpgradeLabel').textContent = `"${meta.label}"`;
+      notice.style.display = '';
+    }
+
+    function applyScriptTemplate(key) {
+      if (!key || !SCRIPT_TEMPLATES[key]) return;
+      const ta = document.getElementById('jobScript');
+      if (ta) { ta.value = SCRIPT_TEMPLATES[key]; ta.dispatchEvent(new Event('input')); }
+      document.getElementById('scriptUpgradeNotice')?.style && (document.getElementById('scriptUpgradeNotice').style.display = 'none');
+    }
+
+    async function dryRunScript() {
+      const script = document.getElementById('jobScript')?.value?.trim();
+      if (!script) { await showAlert('Write or select a template script before running a dry run.', 'No script'); return; }
+      const btn = document.getElementById('dryRunScriptBtn');
+      const resultWrap = document.getElementById('dryRunResult');
+      const outputEl = document.getElementById('dryRunOutput');
+      const badge = document.getElementById('dryRunStatusBadge');
+      btn.disabled = true; btn.textContent = 'Running…';
+      resultWrap.style.display = '';
+      outputEl.textContent = '…';
+      badge.textContent = '';
+      try {
+        const res = await fetch('/api/scripts/dry-run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ script }),
+        });
+        const data = await res.json();
+        outputEl.textContent = data.output || '(no output)';
+        badge.textContent = data.error ? '✗ failed' : '✓ ok';
+        badge.style.color = data.error ? 'var(--danger)' : 'var(--ok)';
+        if (data.error) outputEl.textContent += '\n\n' + data.error;
+      } catch (e) {
+        outputEl.textContent = 'Request failed: ' + e.message;
+        badge.textContent = '✗ error'; badge.style.color = 'var(--danger)';
+      } finally {
+        btn.disabled = false; btn.textContent = '▶ Dry Run';
+      }
     }
 
     function validateBashScript(script) {
@@ -2318,6 +2703,9 @@
       document.getElementById('jobTabScript').classList.toggle('active', isScript);
       document.getElementById('jobTabStandardContent').classList.toggle('active', !isScript);
       document.getElementById('jobTabScriptContent').classList.toggle('active', isScript);
+      // Show script timeout only for script jobs
+      const stWrap = document.getElementById('jobScriptTimeoutWrap');
+      if (stWrap) stWrap.style.display = isScript ? '' : 'none';
       if (isScript) updateScriptValidation();
     }
 
@@ -2336,6 +2724,19 @@
       document.getElementById('jobFormPanel').classList.remove('open');
     }
 
+    let currentJobRetryMode = 'count';
+
+    function setJobRetryMode(mode) {
+      currentJobRetryMode = mode;
+      document.getElementById('jobRetryModeCount').classList.toggle('active', mode === 'count');
+      document.getElementById('jobRetryModeDuration').classList.toggle('active', mode === 'duration');
+      const countWrap = document.getElementById('jobRetryCountWrap');
+      const durWrap   = document.getElementById('jobRetryDurationWrap');
+      if (countWrap) countWrap.style.display = mode === 'count'    ? 'flex' : 'none';
+      if (durWrap)   durWrap.style.display   = mode === 'duration' ? 'flex' : 'none';
+      if (mode === 'duration') updateRetryDurationHint();
+    }
+
     function updateRetryModeUI() {
       const limited = document.getElementById('jobRetryLimitEnabled')?.checked;
       const options = document.getElementById('jobRetryLimitOptions');
@@ -2343,15 +2744,10 @@
       if (!limited) {
         document.getElementById('jobRetryCount').value = '';
         document.getElementById('jobMaxMonDurationValue').value = '';
-        document.getElementById('jobRetryModeCount').checked = true;
+        setJobRetryMode('count');
         return;
       }
-      const mode = document.querySelector('input[name="jobRetryMode"]:checked')?.value || 'count';
-      const countWrap = document.getElementById('jobRetryCountWrap');
-      const durWrap = document.getElementById('jobRetryDurationWrap');
-      countWrap.style.display = mode === 'count' ? 'flex' : 'none';
-      durWrap.style.display = mode === 'duration' ? 'flex' : 'none';
-      if (mode === 'duration') updateRetryDurationHint();
+      setJobRetryMode(currentJobRetryMode);
     }
 
     function updateRetryDurationHint() {
@@ -2963,6 +3359,32 @@
       document.getElementById('secConfirmPwd').value = '';
     }
 
+    function showAlert(message, title) {
+      return new Promise((resolve) => {
+        const modal = document.getElementById('confirmModal');
+        const msgEl = document.getElementById('confirmModalMsg');
+        const okBtn = document.getElementById('confirmModalOk');
+        const cancelBtn = document.getElementById('confirmModalCancel');
+        if (title) {
+          msgEl.innerHTML = `<strong style="display:block;margin-bottom:8px;font-size:14px;">${escapeHtml(title)}</strong>${escapeHtml(message)}`;
+        } else {
+          msgEl.textContent = message;
+        }
+        okBtn.textContent = 'OK';
+        okBtn.className = 'btn primary';
+        cancelBtn.style.display = 'none';
+        modal.style.display = 'flex';
+        const close = () => {
+          modal.style.display = 'none';
+          cancelBtn.style.display = '';
+          okBtn.className = 'btn danger';
+          okBtn.replaceWith(okBtn.cloneNode(true));
+          resolve();
+        };
+        document.getElementById('confirmModalOk').addEventListener('click', close);
+      });
+    }
+
     function showConfirm(message, okLabel) {
       return new Promise((resolve) => {
         const modal = document.getElementById('confirmModal');
@@ -2992,13 +3414,19 @@
 
     // If a fetch returns 401, redirect to login
     async function apiFetch(url, opts) {
-      const res = await fetch(url, opts);
-      if (res.status === 401 && authStatus.enabled) {
-        authStatus.loggedIn = false;
-        showLoginPage();
-        throw new Error('unauthorized');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      try {
+        const res = await fetch(url, { signal: controller.signal, ...opts });
+        if (res.status === 401 && authStatus.enabled) {
+          authStatus.loggedIn = false;
+          showLoginPage();
+          throw new Error('unauthorized');
+        }
+        return res;
+      } finally {
+        clearTimeout(timeoutId);
       }
-      return res;
     }
 
     function escapeHtml(value) {
@@ -3041,9 +3469,30 @@
       return 'unknown';
     }
 
+    function rebuildDashboardBarIndex() {
+      _barEntriesByName = new Map();
+      dashboardBarEntries.forEach((e) => {
+        const key = e.containerName || e.containerId;
+        if (!_barEntriesByName.has(key)) _barEntriesByName.set(key, []);
+        _barEntriesByName.get(key).push(e);
+      });
+    }
+
+    function rebuildDashboardHistoryIndex() {
+      _historyEntriesByName = new Map();
+      dashboardHistoryEntries.forEach((e) => {
+        const key = e.containerName || e.containerId;
+        if (!_historyEntriesByName.has(key)) _historyEntriesByName.set(key, []);
+        _historyEntriesByName.get(key).push(e);
+      });
+    }
+
     function sampleBarsForService(name, count = 25) {
-      const samples = dashboardHistoryEntries.filter((e) => (e.containerName || e.containerId) === name).slice(0, count).reverse();
+      const samples = (_barEntriesByName.get(name) || []).slice(0, count).reverse();
       const padded = Array(Math.max(0, count - samples.length)).fill(null);
+      // When no events have been recorded yet, tint all bars with the current
+      // health colour at low opacity so healthy containers don't look identical
+      // to unconfigured ones.
       return [...padded, ...samples].map((s) => {
         if (!s) return '<span class="mini-bar"></span>';
         if (s.status === 'success') return '<span class="mini-bar up"></span>';
@@ -3054,11 +3503,11 @@
     }
 
     function sampleSparkBarsForGrid(name, count = 10) {
-      const samples = dashboardHistoryEntries.filter((e) => (e.containerName || e.containerId) === name).slice(0, count).reverse();
+      const samples = (_barEntriesByName.get(name) || []).slice(0, count).reverse();
       const padded = Array(Math.max(0, count - samples.length)).fill(null);
       const bars = [...padded, ...samples].map((s) => {
         if (!s) return '<span class="svc-grid-spark-bar"></span>';
-        if (s.status === 'success') return '<span class="svc-grid-spark-bar up"></span>';
+        if (s.status === 'success') return '<span class="svc-grid-spark-bar action"></span>';
         if (s.status === 'recovered' || s.status === 'healthy') return '<span class="svc-grid-spark-bar up"></span>';
         if (s.status === 'failed') return '<span class="svc-grid-spark-bar down"></span>';
         return '<span class="svc-grid-spark-bar warn"></span>';
@@ -3067,7 +3516,7 @@
     }
 
     function heartbeatBarsForService(name, count = 30) {
-      const samples = dashboardHistoryEntries.filter((e) => (e.containerName || e.containerId) === name).slice(0, count).reverse();
+      const samples = (_barEntriesByName.get(name) || []).slice(0, count).reverse();
       const padded = Array(Math.max(0, count - samples.length)).fill(null);
       return [...padded, ...samples].map((s) => {
         if (!s) return '<span class="hb-block" title="No data"></span>';
@@ -3080,7 +3529,7 @@
     }
 
     function statsForService(name) {
-      const entries = dashboardHistoryEntries.filter((e) => (e.containerName || e.containerId) === name);
+      const entries = _historyEntriesByName.get(name) || [];
       const cutoff = Date.now() - 24 * 60 * 60 * 1000;
       const last24h = entries.filter((e) => new Date(e.timestamp).getTime() >= cutoff);
       const actions24h = last24h.filter((e) => e.action && e.action !== 'none');
@@ -3095,7 +3544,7 @@
     }
 
     function uptimeForService(name, fallbackStatus) {
-      const samples = dashboardHistoryEntries.filter((e) => (e.containerName || e.containerId) === name).slice(0, 40);
+      const samples = (_historyEntriesByName.get(name) || []).slice(0, 40);
       const checks = samples.filter((s) => s.status === 'success' || s.status === 'failed');
       if (!checks.length) {
         if (fallbackStatus === 'up') return 100;
@@ -3318,7 +3767,7 @@
             ? (firstJob ? `${firstJob.name} · ${firstJob.action || service.checkAction || 'restart'}` : `global · ${service.checkAction || 'restart'}`)
             : 'not monitored';
           const encodedName = encodeURIComponent(service.name);
-          const hasHistory = dashboardHistoryEntries.some((e) => (e.containerName || e.containerId) === service.name);
+          const hasHistory = _barEntriesByName.has(service.name);
           const upPct = uptimeForService(service.name, st);
           const uptimeBadgeText = (hasHistory || st === 'up' || st === 'down') ? `${upPct}%` : 'N/A';
           const uptimeBadgeStyle = st === 'up'
@@ -3354,13 +3803,13 @@
           const st = statusForService(service);
           const isActive = service.name === selectedServiceName ? ' active' : '';
           const encodedName = encodeURIComponent(service.name);
-          const hasHistory = dashboardHistoryEntries.some((e) => (e.containerName || e.containerId) === service.name);
+          const hasHistory = _barEntriesByName.has(service.name);
           const upPct = uptimeForService(service.name, st);
           const uptimeBadgeText = (hasHistory || st === 'up' || st === 'down') ? `${upPct}%` : 'N/A';
           const uptimeBadgeStyle = st === 'up'
             ? 'background:#e7f8ef;color:#147a47;'
             : (st === 'down' ? 'background:#ffecef;color:#b33141;' : 'background:#fff6e7;color:#986d0e;');
-          const lastEntry = dashboardHistoryEntries.filter((e) => (e.containerName || e.containerId) === service.name).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+          const lastEntry = (_historyEntriesByName.get(service.name) || []).slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
           const lastEvent = lastEntry ? `${lastEntry.event || lastEntry.action || ''} ${timeAgo(lastEntry.createdAt)}`.trim() : '—';
           const firstJob = (service.matchedJobs || [])[0];
           const jobLabel = service.checkEligible
@@ -3394,7 +3843,7 @@
           const st = statusForService(service);
           const isActive = service.name === selectedServiceName ? ' active' : '';
           const encodedName = encodeURIComponent(service.name);
-          const hasHistory = dashboardHistoryEntries.some((e) => (e.containerName || e.containerId) === service.name);
+          const hasHistory = _barEntriesByName.has(service.name);
           const upPct = uptimeForService(service.name, st);
           const uptimeBadgeText = (hasHistory || st === 'up' || st === 'down') ? `${upPct}%` : 'N/A';
           html += `<button class="svc-grid-tile ${st}${isActive}" data-service-name="${encodedName}">`;
@@ -3538,22 +3987,26 @@
       document.getElementById('statIssues').textContent = String(issues);
     }
 
+    let _dashboardLoading = false;
     async function loadDashboard() {
+      if (_dashboardLoading) return;
+      _dashboardLoading = true;
       const loadError = document.getElementById('loadError');
       loadError.style.display = 'none';
       loadError.textContent = '';
 
       try {
-        const [healthRes, diagRes, containersRes, historyRes, jobsRes, dockerStatusRes] = await Promise.all([
+        const [healthRes, diagRes, containersRes, historyRes, barsRes, jobsRes, dockerStatusRes] = await Promise.all([
           apiFetch('/api/health'),
           apiFetch('/api/diagnostics'),
           apiFetch('/api/containers'),
           apiFetch(historyApiUrl()),
+          apiFetch('/api/history?bars=true&limit=1000'),
           apiFetch('/api/jobs?enabled=true&limit=1'),
           apiFetch('/api/docker-hosts/status'),
         ]);
         if (!healthRes.ok || !diagRes.ok || !containersRes.ok || !historyRes.ok) {
-          throw new Error(`API request failed (health=${healthRes.status}, diag=${diagRes.status}, containers=${containersRes.status}, history=${historyRes.status})`);
+          throw new Error(`API request failed (health=${healthRes.status}, diag=${diagRes.status}, containers=${containersRes.status}, history=${historyRes.status}, bars=${barsRes.status})`);
         }
 
         const health = await healthRes.json();
@@ -3562,6 +4015,10 @@
         const history = await historyRes.json();
         dashboardHistoryEntries = history.entries || [];
         dashboardHistoryTotal = history.total || 0;
+        const barsData = barsRes.ok ? await barsRes.json() : { entries: [] };
+        dashboardBarEntries = barsData.entries || [];
+        rebuildDashboardBarIndex();
+        rebuildDashboardHistoryIndex();
 
         // Docker stat card
         const dockerCard = document.getElementById('statDockerCard');
@@ -3659,6 +4116,8 @@
       } catch (err) {
         loadError.textContent = `Refresh failed: ${err.message || err}`;
         loadError.style.display = 'block';
+      } finally {
+        _dashboardLoading = false;
       }
     }
 
@@ -3678,6 +4137,7 @@
         const data = await res.json();
         dashboardHistoryEntries = data.entries || [];
         dashboardHistoryTotal = data.total || 0;
+        rebuildDashboardHistoryIndex();
         renderHistoryTable(dashboardHistoryEntries, dashboardServices);
         renderHistoryPagination();
       } catch (_) {}
@@ -3783,12 +4243,17 @@
         } else {
           actionText = h.action ? `${escapeHtml(h.action)}${h.attempt > 1 ? ` <span style="color:var(--muted);font-size:11px;">·${h.attempt}</span>` : ''}` : '—';
         }
+        // Script output — show inline below the action cell, collapsed if long
+        let outputHtml = '';
+        if (h.output) {
+          outputHtml = `<pre style="margin:4px 0 0;padding:6px 8px;background:var(--bg);border:1px solid var(--line);border-radius:5px;font-family:monospace;font-size:11px;color:var(--text);white-space:pre-wrap;overflow-wrap:anywhere;max-height:120px;overflow-y:auto;line-height:1.5;">${escapeHtml(h.output)}</pre>`;
+        }
         html += `<tr>`;
         html += `<td>${escapeHtml(name)}</td>`;
         html += `<td><span class="status-chip ${chipClass}">${statusLabel}</span></td>`;
         html += `<td>${triggerHtml}</td>`;
         html += `<td>${escapeHtml(dateTime)}</td>`;
-        html += `<td style="max-width:320px;word-break:break-word;white-space:normal;">${actionText}</td>`;
+        html += `<td style="max-width:320px;word-break:break-word;white-space:normal;">${actionText}${outputHtml}</td>`;
         html += `</tr>`;
       });
       html += `</tbody></table>`;
@@ -3915,6 +4380,7 @@
 
     async function loadSettings() {
       const res = await fetch('/api/settings');
+      if (!res.ok) return;
       const s = await res.json();
       document.getElementById('workerCount').value = s.workerCount ?? 2;
       document.getElementById('queueSize').value = s.queueSize ?? 64;
@@ -3938,15 +4404,26 @@
       buildTZSelect('displayTimezone', s.displayTimezone ?? '');
       buildTZSelect('serverTimezone', s.serverTimezone ?? '');
       updateTZClocks();
-      document.getElementById('logLevel').value = s.logLevel ?? 'info';
+      document.getElementById('dashboardRefreshSeconds').value = s.dashboardRefreshSeconds ?? 30;
+      document.getElementById('logLevel').value = s.logLevel || 'info';
       const logToFile = s.logToFile ?? true;
       document.getElementById('logToFile').checked = logToFile;
       document.getElementById('logRetentionDays').value = s.logRetentionDays ?? 7;
       document.getElementById('logRetentionWrap').style.display = logToFile ? '' : 'none';
+      // Preserve ALL fields not exposed in the UI so they are never silently
+      // reset to zero/empty when the user clicks Save on any settings tab.
       _hiddenSettings = {
-        dockerSocketPath:       s.dockerSocketPath ?? '/var/run/docker.sock',
-        startExited:            s.startExited ?? false,
+        dockerSocketPath:       s.dockerSocketPath       ?? '/var/run/docker.sock',
+        startExited:            s.startExited            ?? false,
         requireFilterForExited: s.requireFilterForExited ?? true,
+        retryCount:             s.retryCount             ?? 3,
+        retryDelaySeconds:      s.retryDelaySeconds      ?? 10,
+        actionTimeoutSeconds:   s.actionTimeoutSeconds   ?? 20,
+        containerNameFilter:    s.containerNameFilter    ?? '',
+        containerLabelFilter:   s.containerLabelFilter   ?? '',
+        containerEnvVarFilter:  s.containerEnvVarFilter  ?? '',
+        runScriptPath:          s.runScriptPath          ?? '',
+        port:                   s.port                   ?? '8080',
       };
       const bootEnabled = s.bootNotification ?? false;
       document.getElementById('bootNotification').checked = bootEnabled;
@@ -4006,47 +4483,58 @@
       if (logToFile && (logRetentionDays < 1 || logRetentionDays > 365)) { setFieldError('logRetentionDays', 'Use 1-365 days.'); hasErrors = true; }
       if (hasErrors) { showSaveResult('settingsStatus', false, 'Please fix highlighted settings fields.', ''); return; }
 
-      const body = {
-        workerCount,
-        queueSize,
-        httpClientTimeoutSeconds,
-        httpMaxIdleConns,
-        httpMaxIdleConnsPerHost,
-        httpIdleConnTimeoutSeconds,
-        dockerPingTimeoutSeconds,
-        dockerClientRetryCount,
-        dockerClientRetryDelaySeconds,
-        notificationCooldownSeconds,
-        startupDelaySeconds,
-        notificationRatePerSec,
-        action,
-        externalHostname,
-        bootNotification: document.getElementById('bootNotification').checked,
-        bootNotificationProfiles: [...bootNotifySelectedProfiles],
-        primaryBaseURL: document.getElementById('primaryBaseURL').value.trim(),
-        displayTimezone: document.getElementById('displayTimezone').value,
-        serverTimezone: document.getElementById('serverTimezone').value,
-        sqlitePath,
-        sqliteBusyTimeoutSeconds,
-        sqlitePragmas,
-        logLevel,
-        logToFile,
-        logRetentionDays,
-        dashboardLayout: pendingDashLayout,
-        theme: getStoredTheme(),
-        ..._hiddenSettings,
-      };
+      const saveBtn = document.getElementById('saveSettingsBtn');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+      try {
+        const body = {
+          workerCount,
+          queueSize,
+          httpClientTimeoutSeconds,
+          httpMaxIdleConns,
+          httpMaxIdleConnsPerHost,
+          httpIdleConnTimeoutSeconds,
+          dockerPingTimeoutSeconds,
+          dockerClientRetryCount,
+          dockerClientRetryDelaySeconds,
+          notificationCooldownSeconds,
+          startupDelaySeconds,
+          notificationRatePerSec,
+          action,
+          externalHostname,
+          bootNotification: document.getElementById('bootNotification').checked,
+          bootNotificationProfiles: [...bootNotifySelectedProfiles],
+          primaryBaseURL: document.getElementById('primaryBaseURL').value.trim(),
+          displayTimezone: document.getElementById('displayTimezone').value,
+          serverTimezone: document.getElementById('serverTimezone').value,
+          sqlitePath,
+          sqliteBusyTimeoutSeconds,
+          sqlitePragmas,
+          logLevel,
+          logToFile,
+          logRetentionDays,
+          dashboardLayout: pendingDashLayout,
+          dashboardRefreshSeconds: Number(document.getElementById('dashboardRefreshSeconds').value ?? 30),
+          theme: getStoredTheme(),
+          ..._hiddenSettings,
+        };
 
-      const res = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      if (!res.ok) {
-        const err = await res.json();
-        showSaveResult('settingsStatus', false, 'Save failed', err.error || String(res.status));
-        return;
+        const res = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (!res.ok) {
+          const err = await res.json();
+          showSaveResult('settingsStatus', false, 'Save failed', err.error || String(res.status));
+          return;
+        }
+        showSaveResult('settingsStatus', true, 'Settings saved', '');
+        // Re-arm poll timer so the new interval takes effect immediately
+        if (typeof scheduleDashboardPoll === 'function') scheduleDashboardPoll();
+        currentDashLayout = pendingDashLayout;
+        localStorage.setItem('dashLayout', currentDashLayout);
+        await loadDashboard();
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Settings';
       }
-      showSaveResult('settingsStatus', true, 'Settings saved', '');
-      currentDashLayout = pendingDashLayout;
-      localStorage.setItem('dashLayout', currentDashLayout);
-      await loadDashboard();
     }
 
     function toggleBootNotify(forceOpen) {
@@ -4075,7 +4563,9 @@
     async function saveBootNotification() {
       const headerStatus = document.getElementById('bootNotifyHeaderStatus');
       try {
-        const current = await (await fetch('/api/settings')).json();
+        const settingsRes = await fetch('/api/settings');
+        if (!settingsRes.ok) { showSaveResult('bootNotifyStatus', false, 'Save failed', 'Could not load current settings'); return; }
+        const current = await settingsRes.json();
         const body = { ...current, bootNotification: document.getElementById('bootNotification').checked, bootNotificationProfiles: [...bootNotifySelectedProfiles] };
         const res = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         if (!res.ok) { const err = await res.json(); showSaveResult('bootNotifyStatus', false, 'Save failed', err.error || String(res.status)); return; }
@@ -4113,7 +4603,9 @@
     async function saveJobQueueSettings() {
       const headerStatus = document.getElementById('jobQueueHeaderStatus');
       try {
-        const current = await (await fetch('/api/settings')).json();
+        const settingsRes = await fetch('/api/settings');
+        if (!settingsRes.ok) { showSaveResult('jobQueueStatus', false, 'Save failed', 'Could not load current settings'); return; }
+        const current = await settingsRes.json();
         const body = {
           ...current,
           workerCount: Number(document.getElementById('workerCount').value || 2),
@@ -4312,16 +4804,33 @@
           clearJobErrors();
           document.getElementById('jobName').value = job.name || '';
           document.getElementById('jobGroup').value = job.group || '';
-          document.getElementById('jobNameFilter').value = job.containerNameFilter || '';
-          document.getElementById('jobLabelFilter').value = job.containerLabelFilter || '';
-          document.getElementById('jobEnvFilter').value = job.containerEnvVarFilter || '';
+          // Restore filter type radio + fields from saved values
+          const savedName  = job.containerNameFilter   || '';
+          const savedLabel = job.containerLabelFilter  || '';
+          const savedEnv   = job.containerEnvVarFilter || '';
+          document.getElementById('jobNameFilter').value  = savedName;
+          document.getElementById('jobEnvFilter').value   = savedEnv;
+          if (savedLabel) {
+            const eqIdx = savedLabel.indexOf('=');
+            document.getElementById('jobLabelKey').value   = eqIdx >= 0 ? savedLabel.slice(0, eqIdx)  : savedLabel;
+            document.getElementById('jobLabelValue').value = eqIdx >= 0 ? savedLabel.slice(eqIdx + 1) : '';
+          } else {
+            document.getElementById('jobLabelKey').value   = '';
+            document.getElementById('jobLabelValue').value = '';
+          }
+          // Select the right radio: prefer name, then label, then env
+          const filterType = savedName ? 'name' : savedLabel ? 'label' : savedEnv ? 'envvar' : 'name';
+          setJobFilterType(filterType);
+          // Show migration notice if the old job had more than one filter set
+          const multiFilter = [savedName, savedLabel, savedEnv].filter(Boolean).length > 1;
+          document.getElementById('jobFilterMigrationNotice').style.display = multiFilter ? '' : 'none';
           document.getElementById('jobEnabled').value = String(!!job.enabled);
           document.getElementById('jobStartExited').value = String(!!job.startExited);
           populateJobDockerHostSelect(job.dockerHostID || '');
           const hasLimit = job.retryCount > 0 || job.maxMonitoringDurationMinutes > 0;
           document.getElementById('jobRetryLimitEnabled').checked = hasLimit;
           if (job.maxMonitoringDurationMinutes > 0) {
-            document.getElementById('jobRetryModeDuration').checked = true;
+            setJobRetryMode('duration');
             const totalMin = job.maxMonitoringDurationMinutes;
             if (totalMin >= 60 && totalMin % 60 === 0) {
               document.getElementById('jobMaxMonDurationValue').value = String(totalMin / 60);
@@ -4332,7 +4841,7 @@
             }
             document.getElementById('jobRetryCount').value = '';
           } else {
-            document.getElementById('jobRetryModeCount').checked = true;
+            setJobRetryMode('count');
             document.getElementById('jobRetryCount').value = job.retryCount > 0 ? String(job.retryCount) : '';
             document.getElementById('jobMaxMonDurationValue').value = '';
           }
@@ -4340,14 +4849,17 @@
           document.getElementById('jobMonitorInterval').value = job.monitorIntervalSeconds > 0 ? String(job.monitorIntervalSeconds) : '';
           document.getElementById('jobActionTimeout').value = job.actionTimeoutSeconds > 0 ? String(job.actionTimeoutSeconds) : '';
           document.getElementById('jobPostWait').value = job.postActionWaitSeconds > 0 ? String(job.postActionWaitSeconds) : '';
+          document.getElementById('jobScriptTimeout').value = job.scriptTimeoutSeconds > 0 ? String(job.scriptTimeoutSeconds) : '';
           document.getElementById('jobStatus').textContent = '';
           renderJobNotifyChips(Array.isArray(job.notifications) ? job.notifications : []);
           if (job.action === 'run-script') {
             document.getElementById('jobScript').value = job.script || '';
             setJobActionTab('script');
+            checkScriptUpgrade(editingJobId, job.script || '');
           } else {
             document.getElementById('jobAction').value = job.action || 'restart';
             document.getElementById('jobScript').value = '';
+            document.getElementById('scriptUpgradeNotice').style.display = 'none';
             setJobActionTab('standard');
           }
           openJobForm('edit');
@@ -4417,6 +4929,21 @@
       sel.value = selectedID || '';
     }
 
+    let currentJobFilterType = 'name';
+
+    function setJobFilterType(type) {
+      currentJobFilterType = type;
+      ['name', 'label', 'envvar'].forEach(t => {
+        const btn  = document.getElementById('jobFilterType' + t.charAt(0).toUpperCase() + t.slice(1));
+        const wrap = document.getElementById('jobFilter' + (t === 'name' ? 'Name' : t === 'label' ? 'Label' : 'Env') + 'Wrap');
+        if (btn)  btn.classList.toggle('active', t === type);
+        if (wrap) wrap.classList.toggle('active', t === type);
+      });
+    }
+
+    // Keep a shim for legacy callers (edit-population code)
+    function updateJobFilterTypeUI() { /* handled by setJobFilterType */ }
+
     function resetJobForm() {
       editingJobId = null;
       document.getElementById('jobName').value = '';
@@ -4424,8 +4951,11 @@
       document.getElementById('jobAction').value = 'restart';
       document.getElementById('jobScript').value = '';
       document.getElementById('jobNameFilter').value = '';
-      document.getElementById('jobLabelFilter').value = '';
+      document.getElementById('jobLabelKey').value = '';
+      document.getElementById('jobLabelValue').value = '';
       document.getElementById('jobEnvFilter').value = '';
+      setJobFilterType('name');
+      document.getElementById('jobFilterMigrationNotice').style.display = 'none';
       document.getElementById('jobEnabled').value = 'true';
       document.getElementById('jobStartExited').value = 'false';
       populateJobDockerHostSelect('');
@@ -4437,6 +4967,8 @@
       document.getElementById('jobMonitorInterval').value = '';
       document.getElementById('jobActionTimeout').value = '';
       document.getElementById('jobPostWait').value = '0';
+      document.getElementById('jobScriptTimeout').value = '';
+      document.getElementById('scriptUpgradeNotice').style.display = 'none';
       setJobActionTab('standard');
       renderJobNotifyChips([]);
       closeJobForm();
@@ -4452,17 +4984,20 @@
       const group = document.getElementById('jobGroup').value.trim();
       const action = isScriptTab ? 'run-script' : document.getElementById('jobAction').value;
       const script = isScriptTab ? document.getElementById('jobScript').value.trim() : '';
-      const containerNameFilter = document.getElementById('jobNameFilter').value.trim();
-      const containerLabelFilter = document.getElementById('jobLabelFilter').value.trim();
-      const containerEnvVarFilter = document.getElementById('jobEnvFilter').value.trim();
+      const filterType = currentJobFilterType;
+      const containerNameFilter   = filterType === 'name'   ? document.getElementById('jobNameFilter').value.trim() : '';
+      const labelKey              = filterType === 'label'  ? document.getElementById('jobLabelKey').value.trim()   : '';
+      const labelValue            = filterType === 'label'  ? document.getElementById('jobLabelValue').value.trim() : '';
+      const containerLabelFilter  = filterType === 'label'  ? (labelKey ? (labelValue ? `${labelKey}=${labelValue}` : labelKey) : '') : '';
+      const containerEnvVarFilter = filterType === 'envvar' ? document.getElementById('jobEnvFilter').value.trim()  : '';
 
       let hasErrors = false;
       if (!name) { setFieldError('jobName', 'Job name is required.'); hasErrors = true; }
       if (!containerNameFilter && !containerLabelFilter && !containerEnvVarFilter) {
-        const filterMessage = 'At least one filter is required.';
-        setFieldError('jobNameFilter', filterMessage);
-        setFieldError('jobLabelFilter', filterMessage);
-        setFieldError('jobEnvFilter', filterMessage);
+        const filterMessage = 'A filter value is required.';
+        if (filterType === 'name')   setFieldError('jobNameFilter', filterMessage);
+        if (filterType === 'label')  setFieldError('jobLabelKey', filterMessage);
+        if (filterType === 'envvar') setFieldError('jobEnvFilter', filterMessage);
         hasErrors = true;
       }
       if (isScriptTab && script) {
@@ -4475,8 +5010,10 @@
       }
 
       const retryLimitEnabled = document.getElementById('jobRetryLimitEnabled').checked;
-      const retryMode = document.querySelector('input[name="jobRetryMode"]:checked')?.value || 'count';
+      const retryMode = currentJobRetryMode;
       const monitorIntervalRaw = document.getElementById('jobMonitorInterval').value;
+      const scriptTimeoutRaw = document.getElementById('jobScriptTimeout').value;
+      const scriptTimeoutSeconds = scriptTimeoutRaw ? (parseInt(scriptTimeoutRaw, 10) || 0) : 0;
       const actionTimeoutRaw = document.getElementById('jobActionTimeout').value;
       const monitorIntervalSeconds = parseInt(monitorIntervalRaw, 10);
       const actionTimeoutSeconds = parseInt(actionTimeoutRaw, 10);
@@ -4508,23 +5045,32 @@
         containerNameFilter, containerLabelFilter, containerEnvVarFilter,
         enabled: toBool(document.getElementById('jobEnabled').value),
         startExited: toBool(document.getElementById('jobStartExited').value),
-        retryCount, maxMonitoringDurationMinutes, monitorIntervalSeconds, actionTimeoutSeconds, postActionWaitSeconds,
+        retryCount, maxMonitoringDurationMinutes, monitorIntervalSeconds, actionTimeoutSeconds, scriptTimeoutSeconds, postActionWaitSeconds,
         dockerHostID: document.getElementById('jobDockerHostID').value || '',
       };
 
-      const method = editingJobId ? 'PUT' : 'POST';
-      const url = editingJobId ? `/api/jobs/${editingJobId}` : '/api/jobs';
-      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      if (!res.ok) {
-        const err = await res.json();
-        statusEl.textContent = `Save failed: ${err.error || res.status}`;
-        return;
-      }
+      const saveBtn = document.getElementById('saveJobBtn');
+      const origLabel = saveBtn.textContent;
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+      try {
+        const method = editingJobId ? 'PUT' : 'POST';
+        const url = editingJobId ? `/api/jobs/${editingJobId}` : '/api/jobs';
+        const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (!res.ok) {
+          const err = await res.json();
+          statusEl.textContent = `Save failed: ${err.error || res.status}`;
+          return;
+        }
 
-      statusEl.textContent = editingJobId ? 'Job updated.' : 'Job added.';
-      resetJobForm();
-      jobsPage = 1;
-      await loadJobs();
+        statusEl.textContent = editingJobId ? 'Job updated.' : 'Job added.';
+        resetJobForm();
+        jobsPage = 1;
+        await loadJobs();
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = origLabel;
+      }
     }
 
     function toggleNotifyTemplates() {
@@ -4560,6 +5106,16 @@
       document.getElementById('notifyTplRetryLimit').value         = tpls.retryLimit;
     }
 
+    function resetNotifyLimitFields() {
+      document.getElementById('notifyBurstLimit').value = '';
+      document.getElementById('notifyBurstWindow').value = '5';
+      document.getElementById('notifyDailyLimit').value = '';
+      document.getElementById('notifyOnLimitSuspend').checked = true;
+      document.getElementById('notifyAutoSuspendOnError').checked = true;
+      const ss = document.getElementById('notifSuspendStatus');
+      if (ss) ss.style.display = 'none';
+    }
+
     function resetNotifyForm() {
       editingNotifyId = null;
       selectedNotifyProvider = 'discord';
@@ -4569,6 +5125,7 @@
       document.getElementById('notifyAddToAllJobs').checked = false;
       document.getElementById('notifyStatus').textContent = '';
       document.getElementById('saveNotifyBtn').textContent = 'Add Agent';
+      resetNotifyLimitFields();
       const testResult = document.getElementById('notifyTestResult');
       if (testResult) testResult.style.display = 'none';
       ['notifyTplBootUp', 'notifyTplUnhealthyDetected', 'notifyTplRetrying', 'notifyTplCooldown',
@@ -4602,10 +5159,56 @@
         const serviceDisplay = svc.length > 42 ? svc.slice(0, 39) + '…' : svc;
         const isDefault = !!profile.is_default;
         const defaultBadge = isDefault ? ' <span class="default-badge">DEFAULT</span>' : '';
-        tr.innerHTML = `<td><strong>${escapeHtml(profile.name)}</strong>${defaultBadge}</td>
+
+        // Status + usage
+        const suspended = profile.suspendedUntil && new Date(profile.suspendedUntil) > new Date();
+        const hasError = !!profile.lastRateLimitError;
+        let statusHtml, usageHtml, bellHtml, rowStyle = '';
+        if (suspended) {
+          const left = msToHuman(new Date(profile.suspendedUntil) - Date.now());
+          statusHtml = `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><span class="pill" style="background:#fff3e0;color:#b05a00;border:1px solid #ffd08a;">🟡 Suspended ${left}</span><button class="btn" style="font-size:11px;padding:3px 8px;" data-notify-resume-id="${escapeHtml(profile.id)}">Resume</button></div>`;
+          rowStyle = 'opacity:.75;';
+        } else if (hasError) {
+          statusHtml = `<span class="pill fail" style="border:1px solid #f5b3b8;">⚠ Quota hit</span>`;
+        } else if (profile.enabled) {
+          statusHtml = `<span class="pill ok">● Active</span>`;
+        } else {
+          statusHtml = `<span class="pill" style="background:#eef2f8;color:#5f7a9a;">○ Disabled</span>`;
+        }
+        const daily = profile.dailyLimit > 0;
+        const burst = profile.burstLimit > 0;
+        if (daily || burst) {
+          const used = profile.dailyUsage || 0, cap = profile.dailyLimit || 0;
+          const pct = cap > 0 ? Math.min(100, Math.round((used / cap) * 100)) : 0;
+          const fillColor = pct >= 100 ? 'var(--danger)' : pct >= 80 ? 'var(--warn)' : 'var(--ok)';
+          const cntColor = pct >= 100 ? 'var(--danger)' : pct >= 80 ? 'var(--warn)' : 'var(--ok)';
+          usageHtml = `<div style="display:flex;align-items:center;gap:6px;">
+            <div style="width:60px;height:5px;border-radius:3px;background:var(--line);overflow:hidden;flex-shrink:0;"><div style="height:100%;border-radius:3px;background:${fillColor};width:${pct}%;"></div></div>
+            <span style="font-size:11px;color:${cntColor};font-weight:700;">${used}/${cap}</span>
+          </div>`;
+        } else {
+          usageHtml = `<span style="font-size:11px;color:var(--muted);font-style:italic;">No limit</span>`;
+        }
+        // Caution icon — only rendered when there is an actual issue (suspended, quota hit, or approaching limit).
+        // Always visible for these states even if the bell alert has been dismissed.
+        const hasIssue = suspended || hasError || (daily && (profile.dailyUsage || 0) >= profile.dailyLimit * 0.8);
+        const cautionColor = (suspended || hasError || (daily && (profile.dailyUsage||0) >= profile.dailyLimit)) ? '#e05568' : '#e5a92a';
+        const cautionTitle = suspended
+          ? `Suspended · resumes ${new Date(profile.suspendedUntil).toLocaleString()}`
+          : (profile.lastRateLimitError || 'Approaching daily limit');
+        const cautionHtml = hasIssue
+          ? `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="${cautionColor}" viewBox="0 0 16 16" style="display:inline-block;vertical-align:middle;margin-right:5px;flex-shrink:0;" title="${escapeHtml(cautionTitle)}"><path d="M7.938 2.016A.13.13 0 0 1 8.002 2a.13.13 0 0 1 .063.016.146.146 0 0 1 .054.057l6.857 11.667c.036.06.035.124.002.183a.163.163 0 0 1-.054.06.116.116 0 0 1-.066.017H1.146a.115.115 0 0 1-.066-.017.163.163 0 0 1-.054-.06.176.176 0 0 1 .002-.183L7.884 2.073a.147.147 0 0 1 .054-.057zm1.044-.45a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767z"/><path d="M7.002 12a1 1 0 1 1 2 0 1 1 0 0 1-2 0M7.1 5.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0z"/></svg>` : '';
+
+        tr.style.cssText = rowStyle;
+        tr.innerHTML = `
+          <td>
+            <div style="display:flex;align-items:center;gap:0;">
+              ${cautionHtml}<strong style="cursor:pointer;" data-notify-rename-id="${escapeHtml(profile.id)}" title="Click to rename">${escapeHtml(profile.name)}</strong>${defaultBadge}
+            </div>
+          </td>
           <td style="white-space:nowrap;">${badgeHtml}${escapeHtml(providerLabel)}</td>
-          <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--muted);" title="${escapeHtml(svc)}">${escapeHtml(serviceDisplay)}</td>
-          <td>${profile.enabled ? '<span class="pill">on</span>' : '<span class="pill fail">off</span>'}</td>
+          <td>${statusHtml}</td>
+          <td>${usageHtml}</td>
           <td><button class="btn" style="font-size:12px;padding:5px 10px;" data-notify-test-id="${escapeHtml(profile.id)}">Test</button></td>
           <td><button class="btn" style="font-size:12px;padding:5px 10px;" data-notify-edit-id="${escapeHtml(profile.id)}">Edit</button></td>
           <td><button class="btn warn" style="font-size:12px;padding:5px 10px;" data-notify-delete-id="${escapeHtml(profile.id)}">Delete</button></td>`;
@@ -4624,6 +5227,22 @@
           renderNotifyDynamicFields(details);
           document.getElementById('notifyEnabled').checked = !!profile.enabled;
           document.getElementById('notifyIsDefault').checked = !!profile.is_default;
+          // Limits
+          document.getElementById('notifyBurstLimit').value = profile.burstLimit > 0 ? profile.burstLimit : '';
+          document.getElementById('notifyBurstWindow').value = profile.burstWindowMinutes > 0 ? String(profile.burstWindowMinutes) : '5';
+          document.getElementById('notifyDailyLimit').value = profile.dailyLimit > 0 ? profile.dailyLimit : '';
+          document.getElementById('notifyOnLimitSuspend').checked = profile.onLimitAction !== 'drop';
+          document.getElementById('notifyOnLimitDrop').checked = profile.onLimitAction === 'drop';
+          document.getElementById('notifyAutoSuspendOnError').checked = profile.autoSuspendOnError !== false;
+          const ss = document.getElementById('notifSuspendStatus');
+          if (ss) {
+            if (profile.suspendedUntil && new Date(profile.suspendedUntil) > new Date()) {
+              ss.style.cssText = 'display:block;background:var(--warn-bg);border:1px solid var(--warn);color:var(--text);margin-top:10px;padding:8px 12px;border-radius:7px;font-size:12px;';
+              ss.textContent = `Suspended · resumes ${new Date(profile.suspendedUntil).toLocaleString()}`;
+            } else {
+              ss.style.display = 'none';
+            }
+          }
           document.getElementById('notifyAddToAllJobs').checked = false;
           document.getElementById('notifyStatus').textContent = '';
           const tpl = profile.templates || {};
@@ -4668,6 +5287,218 @@
           await persistNotificationProfiles('Profile deleted.');
         });
       });
+
+      // Resume button — clears suspension directly from the table row
+      tbody.querySelectorAll('button[data-notify-resume-id]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          await quickResume(btn.getAttribute('data-notify-resume-id'));
+        });
+      });
+
+      // Inline rename — clicking the agent name turns it into an editable input
+      tbody.querySelectorAll('strong[data-notify-rename-id]').forEach((el) => {
+        el.addEventListener('click', () => {
+          const id = el.getAttribute('data-notify-rename-id');
+          const profile = notificationProfiles.find((p) => p.id === id);
+          if (!profile) return;
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.value = profile.name;
+          input.style.cssText = 'font-size:13px;font-weight:700;padding:2px 6px;border:1px solid var(--accent);border-radius:6px;background:var(--input-bg);color:var(--text);min-width:120px;';
+          el.replaceWith(input);
+          input.focus();
+          input.select();
+          const commit = async () => {
+            const newName = input.value.trim();
+            if (newName && newName !== profile.name) {
+              profile.name = newName;
+              await persistNotificationProfiles('Renamed.');
+            } else {
+              renderNotificationProfiles();
+            }
+          };
+          input.addEventListener('blur', commit);
+          input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+            if (e.key === 'Escape') { input.removeEventListener('blur', commit); renderNotificationProfiles(); }
+          });
+        });
+      });
+    }
+
+    // ── Notification bell & suspension helpers ────────────────────────────
+
+    function msToHuman(ms) {
+      if (ms <= 0) return '0m';
+      const h = Math.floor(ms / 3600000), m = Math.floor((ms % 3600000) / 60000);
+      return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    }
+
+    let systemAlerts = []; // fetched independently — shown even with no notification agents
+
+    async function loadSystemAlerts() {
+      try {
+        const res = await fetch('/api/system-alerts');
+        if (res.ok) {
+          const data = await res.json();
+          systemAlerts = data.alerts || [];
+        }
+      } catch { /* non-fatal */ }
+    }
+
+    function updateNotifBell() {
+      const profiles = notificationProfiles || [];
+      const agentAlerts = profiles.filter(p => {
+        if (p.lastRateLimitError) return true;
+        if (p.suspendedUntil && new Date(p.suspendedUntil) > new Date()) return false;
+        if (p.dailyLimit > 0 && (p.dailyUsage || 0) >= p.dailyLimit * 0.8) return true;
+        return false;
+      });
+      // Only failed_recovery and paused_monitoring raise the badge — monitoring_started is informational
+      const criticalSystem = systemAlerts.filter(a => a.type !== 'monitoring_started');
+      const total = agentAlerts.length + criticalSystem.length;
+      const badge = document.getElementById('notifBellBadge');
+      const bellSvg = document.querySelector('#notifBellBtn svg');
+      if (!badge) return;
+      if (total > 0) {
+        badge.textContent = total;
+        badge.style.display = '';
+        if (bellSvg) bellSvg.style.opacity = '1';
+      } else {
+        badge.style.display = 'none';
+        if (bellSvg) bellSvg.style.opacity = '.75';
+      }
+      renderNotifBellList(agentAlerts, criticalSystem);
+    }
+
+    function renderNotifBellList(agentAlerts, criticalSystem) {
+      const list = document.getElementById('notifBellList');
+      if (!list) return;
+      const allEmpty = !agentAlerts.length && !criticalSystem.length && !systemAlerts.length;
+      if (allEmpty) {
+        list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px;">No active alerts</div>';
+        return;
+      }
+
+      let html = '';
+
+      // ── System alerts section ─────────────────────────────────────────────
+      if (systemAlerts.length) {
+        html += `<div style="padding:6px 14px 4px;font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);font-weight:700;background:var(--bg);">System</div>`;
+        html += systemAlerts.map(a => {
+          const typeIcon = a.type === 'paused_monitoring' ? '⛔' : a.type === 'failed_recovery' ? '❌' : '✅';
+          const typeLabel = a.type === 'paused_monitoring'
+            ? `Monitoring paused — ${escapeHtml(a.containerName || '')}`
+            : a.type === 'failed_recovery'
+            ? `Recovery failed — ${escapeHtml(a.containerName || '')}`
+            : 'Monitoring active';
+          const desc = a.message ? escapeHtml(a.message.slice(0, 100)) : '';
+          const ts = a.timestamp ? new Date(a.timestamp).toLocaleString() : '';
+          return `<div style="padding:10px 14px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;gap:10px;">
+            <span style="font-size:16px;flex-shrink:0;margin-top:1px;">${typeIcon}</span>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:13px;font-weight:700;margin-bottom:2px;">${typeLabel}</div>
+              ${desc ? `<div style="font-size:11px;color:var(--muted);word-break:break-word;">${desc}</div>` : ''}
+              <div style="font-size:10px;color:var(--muted);margin-top:3px;">${escapeHtml(ts)}</div>
+            </div>
+          </div>`;
+        }).join('');
+      }
+
+      // ── Notification agent alerts section ─────────────────────────────────
+      if (agentAlerts.length) {
+        html += `<div style="padding:6px 14px 4px;font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);font-weight:700;background:var(--bg);">Notification Agents</div>`;
+        html += agentAlerts.map(p => {
+          const suspended = p.suspendedUntil && new Date(p.suspendedUntil) > new Date();
+          const left = suspended ? msToHuman(new Date(p.suspendedUntil) - Date.now()) : '';
+          const icon = p.lastRateLimitError ? '⚠️' : '📊';
+          const title = p.lastRateLimitError ? `${escapeHtml(p.name)} hit a rate limit` : `${escapeHtml(p.name)} approaching limit`;
+          const desc = p.lastRateLimitError
+            ? escapeHtml(p.lastRateLimitError.slice(0, 120))
+            : `${p.dailyUsage || 0}/${p.dailyLimit} daily notifications used`;
+          const suspendBtns = !suspended ? `
+            <button type="button" onclick="quickSuspend('${p.id}','24h')" style="font-size:11px;background:#e5a92a;color:#2a1500;border:none;border-radius:20px;padding:4px 10px;cursor:pointer;font-weight:700;">Suspend 24h</button>
+            <button type="button" onclick="quickSuspend('${p.id}','midnight')" style="font-size:11px;background:var(--bg);border:1px solid var(--line);border-radius:20px;padding:4px 10px;cursor:pointer;">Until midnight</button>` : `
+            <button type="button" onclick="quickResume('${p.id}')" style="font-size:11px;background:var(--ok);color:#03260e;border:none;border-radius:20px;padding:4px 10px;cursor:pointer;font-weight:700;">Resume</button>
+            <span style="font-size:11px;color:var(--muted);">Suspended · ${left} left</span>`;
+          const dismissBtn = `<button type="button" onclick="dismissNotifAlert('${p.id}')" style="font-size:11px;background:none;border:none;cursor:pointer;color:var(--muted);padding:2px 4px;">✕</button>`;
+          return `<div style="padding:12px 14px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;gap:10px;">
+            <span style="font-size:18px;flex-shrink:0;margin-top:1px;">${icon}</span>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:13px;font-weight:700;margin-bottom:2px;">${title}</div>
+              <div style="font-size:11px;color:var(--muted);margin-bottom:8px;word-break:break-word;">${desc}</div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">${suspendBtns}</div>
+            </div>
+            ${dismissBtn}
+          </div>`;
+        }).join('');
+      }
+
+      list.innerHTML = html;
+    }
+
+    async function quickSuspend(profileId, until) {
+      await fetch(`/api/notifications/${profileId}/suspend`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ until }),
+      });
+      await loadNotifications();
+    }
+
+    async function quickResume(profileId) {
+      await fetch(`/api/notifications/${profileId}/resume`, { method: 'POST' });
+      await loadNotifications();
+    }
+
+    async function dismissNotifAlert(profileId) {
+      await fetch(`/api/notifications/${profileId}/dismiss-error`, { method: 'POST' });
+      await loadNotifications();
+    }
+
+    function dismissAllNotifAlerts() {
+      const alerts = (notificationProfiles || []).filter(p => p.lastRateLimitError);
+      Promise.all(alerts.map(p => fetch(`/api/notifications/${p.id}/dismiss-error`, { method: 'POST' })))
+        .then(() => loadNotifications());
+    }
+
+    function toggleSuspendAmount(unit) {
+      const amountEl = document.getElementById('notifySuspendAmount');
+      if (!amountEl) return;
+      const isCalendar = unit === 'midnight' || unit === 'month-end';
+      amountEl.style.display = isCalendar ? 'none' : '';
+      if (isCalendar) amountEl.value = '';
+    }
+
+    function suspendNotifAgentCustom() {
+      const unit   = document.getElementById('notifySuspendUnit')?.value;
+      const amount = document.getElementById('notifySuspendAmount')?.value;
+      if (!unit) return;
+      if (unit === 'midnight' || unit === 'month-end') {
+        suspendNotifAgent(unit);
+      } else {
+        const n = parseInt(amount, 10);
+        if (!n || n < 1) { return; }
+        suspendNotifAgent(`${n}${unit}`);
+      }
+    }
+
+    async function suspendNotifAgent(until) {
+      if (!editingNotifyId) return;
+      const res = await fetch(`/api/notifications/${editingNotifyId}/suspend`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ until }),
+      });
+      const data = await res.json();
+      const el = document.getElementById('notifSuspendStatus');
+      if (res.ok) {
+        el.style.cssText = 'display:block;background:var(--warn-bg);border:1px solid var(--warn);color:var(--text);';
+        const left = msToHuman(new Date(data.until) - Date.now());
+        el.textContent = `Suspended for ${left} — resumes ${new Date(data.until).toLocaleString()}`;
+      } else {
+        el.style.cssText = 'display:block;background:var(--error-bg);border:1px solid var(--danger);color:var(--danger);';
+        el.textContent = data.error || 'Suspend failed';
+      }
+      await loadNotifications();
     }
 
     async function loadNotifications() {
@@ -4675,6 +5506,7 @@
       const data = await res.json();
       notificationProfiles = data.profiles || [];
       renderNotificationProfiles();
+      updateNotifBell();
       renderJobNotifyChips(Array.from(jobSelectedNotifications));
       renderBootNotifyChips([...bootNotifySelectedProfiles]);
     }
@@ -4743,9 +5575,15 @@
         actionFailed:       document.getElementById('notifyTplActionFailed').value.trim(),
         retryLimit:         document.getElementById('notifyTplRetryLimit').value.trim(),
       };
+      const burstLimit  = parseInt(document.getElementById('notifyBurstLimit').value, 10)  || 0;
+      const burstWindow = parseInt(document.getElementById('notifyBurstWindow').value, 10) || 5;
+      const dailyLimit  = parseInt(document.getElementById('notifyDailyLimit').value, 10)  || 0;
+      const onLimitAction = document.getElementById('notifyOnLimitDrop').checked ? 'drop' : 'auto-suspend';
+      const autoSuspendOnError = document.getElementById('notifyAutoSuspendOnError').checked;
+      const limitFields = { burstLimit, burstWindowMinutes: burstLimit > 0 ? burstWindow : 0, dailyLimit, onLimitAction, autoSuspendOnError };
       const updatedProfile = editingNotifyId
-        ? { ...(notificationProfiles.find((p) => p.id === editingNotifyId) || {}), name, provider, details, service, enabled, is_default: isDefault, templates }
-        : { id: `notification-agent-${Date.now()}`, name, provider, details, service, enabled, is_default: isDefault, templates };
+        ? { ...(notificationProfiles.find((p) => p.id === editingNotifyId) || {}), name, provider, details, service, enabled, is_default: isDefault, templates, ...limitFields }
+        : { id: `notification-agent-${Date.now()}`, name, provider, details, service, enabled, is_default: isDefault, templates, ...limitFields };
       let newProfiles = editingNotifyId
         ? notificationProfiles.map((p) => (p.id !== editingNotifyId ? p : updatedProfile))
         : [...notificationProfiles, updatedProfile];
@@ -5122,7 +5960,7 @@
       });
       document.getElementById('displayTimezone').addEventListener('change', updateTZClocks);
       document.getElementById('serverTimezone').addEventListener('change', updateTZClocks);
-      setInterval(updateTZClocks, 1000);
+      setInterval(updateTZClocks, 1000); // single-page app — interval runs for lifetime of page
 
       // Layout picker — selection only; applied when Save Settings is clicked
       applyLayoutPickerSelection();
@@ -5150,8 +5988,11 @@
       document.getElementById('closeJobFormBtn').addEventListener('click', () => resetJobForm());
       document.getElementById('saveJobBtn').addEventListener('click', saveJob);
       document.getElementById('jobRetryLimitEnabled').addEventListener('change', updateRetryModeUI);
-      document.getElementById('jobRetryModeCount').addEventListener('change', updateRetryModeUI);
-      document.getElementById('jobRetryModeDuration').addEventListener('change', updateRetryModeUI);
+      document.getElementById('jobFilterTypeName').addEventListener('click',  () => setJobFilterType('name'));
+      document.getElementById('jobFilterTypeLabel').addEventListener('click', () => setJobFilterType('label'));
+      document.getElementById('jobFilterTypeEnv').addEventListener('click',   () => setJobFilterType('envvar'));
+      document.getElementById('jobRetryModeCount').addEventListener('click',    () => { setJobRetryMode('count');    updateRetryModeUI(); });
+      document.getElementById('jobRetryModeDuration').addEventListener('click', () => { setJobRetryMode('duration'); updateRetryModeUI(); });
       document.getElementById('jobMaxMonDurationValue').addEventListener('input', updateRetryDurationHint);
       document.getElementById('jobMaxMonDurationUnit').addEventListener('change', updateRetryDurationHint);
       document.getElementById('jobMonitorInterval').addEventListener('input', updateRetryDurationHint);
@@ -5159,6 +6000,21 @@
       document.getElementById('jobTabStandard').addEventListener('click', () => setJobActionTab('standard'));
       document.getElementById('jobTabScript').addEventListener('click', () => setJobActionTab('script'));
       document.getElementById('jobScript').addEventListener('input', updateScriptValidation);
+      document.getElementById('dryRunScriptBtn').addEventListener('click', dryRunScript);
+
+      // Bell toggle
+      document.getElementById('notifBellBtn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const dd = document.getElementById('notifBellDropdown');
+        dd.style.display = dd.style.display === 'none' ? '' : 'none';
+      });
+      document.addEventListener('click', (e) => {
+        if (!document.getElementById('notifBellDropdown')?.contains(e.target) &&
+            !document.getElementById('notifBellBtn')?.contains(e.target)) {
+          const dd = document.getElementById('notifBellDropdown');
+          if (dd) dd.style.display = 'none';
+        }
+      });
       document.getElementById('copyScriptBtn').addEventListener('click', () => {
         const script = document.getElementById('jobScript').value;
         if (!script.trim()) return;
@@ -5238,15 +6094,25 @@
       renderNotifyDynamicFields();
       renderDockerConnTypePicker();
       await checkAuthStatus();
-      await Promise.all([loadSettings(), loadJobs(), loadNotifications()]);
+      await Promise.all([loadSettings(), loadJobs(), loadNotifications(), loadSystemAlerts()]);
       await loadDockerHosts();
       await loadDashboard();
       let dashboardPollTimer = null;
+      function getDashboardPollMs() {
+        const v = Number(document.getElementById('dashboardRefreshSeconds')?.value ?? 30);
+        return (v > 0 ? v : 0) * 1000;
+      }
       function scheduleDashboardPoll() {
+        clearTimeout(dashboardPollTimer);
+        const ms = getDashboardPollMs();
+        if (ms === 0) return; // auto-refresh disabled
         dashboardPollTimer = setTimeout(async () => {
-          if (!document.hidden) await loadDashboard();
+          if (!document.hidden) {
+            await loadDashboard();
+            loadSystemAlerts().then(updateNotifBell); // refresh system alerts in background
+          }
           scheduleDashboardPoll();
-        }, 10000);
+        }, ms);
       }
       scheduleDashboardPoll();
       document.addEventListener('visibilitychange', () => {

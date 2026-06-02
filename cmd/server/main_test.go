@@ -121,7 +121,7 @@ func TestExecuteActionRestartStartStopNone(t *testing.T) {
 	app := &app{cfg: config.Config{ActionTimeoutSeconds: 5}, docker: fake, httpClient: &http.Client{Timeout: 5 * time.Second}, notifier: notify.New("")}
 	container := containertypes.Summary{ID: "abc", Names: []string{"demo"}}
 	for _, action := range []string{"restart", "start", "stop", "none"} {
-		if err := app.executeAction(context.Background(), app.docker, action, "", container, 0); err != nil {
+		if _, err := app.executeAction(context.Background(), app.docker, action, "", container, 0, 0); err != nil {
 			t.Fatalf("executeAction(%s) error = %v", action, err)
 		}
 	}
@@ -147,25 +147,24 @@ func TestExecuteActionRunScript(t *testing.T) {
 		scripts:  []config.ScriptEntry{{Path: scriptPath, Enabled: true}},
 	}
 	container := containertypes.Summary{ID: "abc", Names: []string{"demo"}}
-	if err := app.executeAction(context.Background(), app.docker, "run-script", "", container, 0); err != nil {
+	if _, err := app.executeAction(context.Background(), app.docker, "run-script", "", container, 0, 0); err != nil {
 		t.Fatalf("run-script error = %v", err)
 	}
 }
 
-
 func TestExecuteActionInvalidPathsUnsupportedAction(t *testing.T) {
 	app := &app{cfg: config.Config{ActionTimeoutSeconds: 5}, docker: &fakeDockerClient{}, httpClient: &http.Client{Timeout: 5 * time.Second}, notifier: notify.New("")}
 	container := containertypes.Summary{ID: "abc", Names: []string{"demo"}}
-	if err := app.executeAction(context.Background(), app.docker, "run-script", "", container, 0); err == nil {
+	if _, err := app.executeAction(context.Background(), app.docker, "run-script", "", container, 0, 0); err == nil {
 		t.Fatal("expected run-script error with empty path")
 	}
-	if err := app.executeAction(context.Background(), app.docker, "bogus", "", container, 0); err == nil {
+	if _, err := app.executeAction(context.Background(), app.docker, "bogus", "", container, 0, 0); err == nil {
 		t.Fatal("expected unsupported action error")
 	}
-	if err := app.executeAction(context.Background(), app.docker, "run-script", "#!/bin/sh\nexit 0\n", container, 0); err != nil {
+	if _, err := app.executeAction(context.Background(), app.docker, "run-script", "#!/bin/sh\nexit 0\n", container, 0, 0); err != nil {
 		t.Fatalf("expected inline script to succeed: %v", err)
 	}
-	if err := app.executeAction(context.Background(), app.docker, "run-script", "#!/bin/sh\nexit 1\n", container, 0); err == nil {
+	if _, err := app.executeAction(context.Background(), app.docker, "run-script", "#!/bin/sh\nexit 1\n", container, 0, 0); err == nil {
 		t.Fatal("expected inline script with exit 1 to fail")
 	}
 }
@@ -723,11 +722,11 @@ func TestHandleSettingsReloadsRuntimeAndWorkerPool(t *testing.T) {
 	transport.IdleConnTimeout = time.Duration(loaded.HttpIdleConnTimeoutSeconds) * time.Second
 
 	a := &app{
-		cfg:          loaded,
-		notifier:     notify.New("discord://token@chan"),
+		cfg:           loaded,
+		notifier:      notify.New("discord://token@chan"),
 		notifications: []config.NotificationProfile{{ID: "p1", Name: "test", Service: "discord://token@chan", Enabled: true}},
-		httpClient:   &http.Client{Timeout: time.Duration(loaded.HttpClientTimeoutSeconds) * time.Second, Transport: transport},
-		pool:         worker.NewPool(loaded.WorkerCount, loaded.QueueSize),
+		httpClient:    &http.Client{Timeout: time.Duration(loaded.HttpClientTimeoutSeconds) * time.Second, Transport: transport},
+		pool:          worker.NewPool(loaded.WorkerCount, loaded.QueueSize),
 	}
 	defer a.stopPool()
 	oldPool := a.pool
@@ -764,5 +763,180 @@ func TestHandleSettingsReloadsRuntimeAndWorkerPool(t *testing.T) {
 	}
 	if !n.Enabled || len(n.Services) != 1 || n.Services[0] != "discord://token@chan" {
 		t.Fatalf("notifier not reloaded: %#v", n)
+	}
+}
+
+func TestExecuteActionDockerRestartError(t *testing.T) {
+fake := &fakeDockerClient{restartErrs: []error{errors.New("connection refused")}}
+a := &app{cfg: config.Config{ActionTimeoutSeconds: 5}, docker: fake, httpClient: &http.Client{Timeout: 5 * time.Second}, notifier: notify.New("")}
+container := containertypes.Summary{ID: "abc", Names: []string{"demo"}}
+_, err := a.executeAction(context.Background(), a.docker, "restart", "", container, 0, 0)
+if err == nil {
+t.Fatal("expected error when docker restart fails, got nil")
+}
+if !strings.Contains(err.Error(), "connection refused") {
+t.Fatalf("expected docker error in message, got: %v", err)
+}
+}
+
+func TestExecuteActionDockerStartError(t *testing.T) {
+fake := &fakeDockerClient{startErr: errors.New("no such container")}
+a := &app{cfg: config.Config{ActionTimeoutSeconds: 5}, docker: fake, httpClient: &http.Client{Timeout: 5 * time.Second}, notifier: notify.New("")}
+container := containertypes.Summary{ID: "abc", Names: []string{"demo"}}
+_, err := a.executeAction(context.Background(), a.docker, "start", "", container, 0, 0)
+if err == nil {
+t.Fatal("expected error when docker start fails, got nil")
+}
+}
+
+func TestExecuteActionDockerStopError(t *testing.T) {
+fake := &fakeDockerClient{stopErr: errors.New("timeout stopping container")}
+a := &app{cfg: config.Config{ActionTimeoutSeconds: 5}, docker: fake, httpClient: &http.Client{Timeout: 5 * time.Second}, notifier: notify.New("")}
+container := containertypes.Summary{ID: "abc", Names: []string{"demo"}}
+_, err := a.executeAction(context.Background(), a.docker, "stop", "", container, 0, 0)
+if err == nil {
+t.Fatal("expected error when docker stop fails, got nil")
+}
+}
+
+func TestIncrementActionCycleConcurrent(t *testing.T) {
+a := &app{
+cfg:         config.Config{},
+actionCycle: make(map[string]int),
+}
+var wg sync.WaitGroup
+const goroutines = 50
+for i := 0; i < goroutines; i++ {
+wg.Add(1)
+go func() {
+defer wg.Done()
+a.incrementActionCycle("concurrent-container")
+}()
+}
+wg.Wait()
+a.mu.RLock()
+got := a.actionCycle["concurrent-container"]
+a.mu.RUnlock()
+if got != goroutines {
+t.Fatalf("expected actionCycle=%d after %d concurrent increments, got %d", goroutines, goroutines, got)
+}
+}
+
+func TestCancelDryRunCleanupSafety(t *testing.T) {
+a := &app{}
+// Calling cancel with no timer set must not panic
+a.cancelDryRunCleanup()
+
+// Set a timer that should never fire, then cancel it
+fired := make(chan struct{})
+a.dryRunCleanupMu.Lock()
+a.dryRunCleanupTimer = time.AfterFunc(10*time.Second, func() { close(fired) })
+a.dryRunCleanupMu.Unlock()
+
+a.cancelDryRunCleanup()
+
+select {
+case <-fired:
+t.Fatal("timer fired after cancel")
+case <-time.After(50 * time.Millisecond):
+// expected: timer was stopped
+}
+
+a.mu.Lock()
+if a.dryRunCleanupTimer != nil {
+t.Fatal("expected dryRunCleanupTimer to be nil after cancel")
+}
+a.mu.Unlock()
+}
+
+func TestResolveScriptInterpreterAllowlist(t *testing.T) {
+	// Disallowed shebangs must always fall back to /bin/sh regardless of what
+	// binaries exist on the system, so a crafted shebang cannot invoke arbitrary binaries.
+	disallowed := []string{
+		"#!/usr/bin/python3\nprint('hi')",
+		"#!/usr/bin/env python3\nprint('hi')",
+		"#!/bin/curl\necho hi",
+		"#!/usr/bin/env wget\necho hi",
+		"#!/tmp/malicious\necho hi",
+		"echo hi", // no shebang
+	}
+	for _, script := range disallowed {
+		got := resolveScriptInterpreter(script)
+		if got != "/bin/sh" {
+			lbl := script
+			if len(lbl) > 30 {
+				lbl = lbl[:30]
+			}
+			t.Errorf("disallowed script %q: expected /bin/sh fallback, got %q", lbl, got)
+		}
+	}
+
+	// Allowed shebangs must resolve to a path in the allowlist (never something outside it).
+	allowed := []string{
+		"#!/bin/sh\necho hi",
+		"#!/bin/bash\necho hi",
+		"#!/usr/bin/env bash\necho hi",
+		"#!/usr/bin/env sh\necho hi",
+	}
+	for _, script := range allowed {
+		got := resolveScriptInterpreter(script)
+		if !allowedInterpreters[got] {
+			t.Errorf("allowed script %q: resolved to %q which is not in allowlist", script[:20], got)
+		}
+	}
+}
+
+func newMinimalTestApp(t *testing.T) *app {
+	t.Helper()
+	configDir := t.TempDir()
+	t.Setenv("APP_PATH", configDir)
+	loaded, err := config.Load()
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	return &app{
+		cfg:        loaded,
+		notifier:   notify.New(""),
+		httpClient: &http.Client{Timeout: 5 * time.Second, Transport: transport},
+		pool:       worker.NewPool(loaded.WorkerCount, loaded.QueueSize),
+	}
+}
+
+func TestHandleSettingsPUTRejectsBadJSON(t *testing.T) {
+	a := newMinimalTestApp(t)
+	body := bytes.NewBufferString(`{not valid json`)
+	req := httptest.NewRequest(http.MethodPut, "/api/settings", body)
+	rr := httptest.NewRecorder()
+	a.handleSettingsPUT(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for malformed JSON, got %d", rr.Code)
+	}
+}
+
+func TestHandleSettingsPUTClampsOutOfRangeValues(t *testing.T) {
+	// normalizeSettingsBody clamps invalid values rather than rejecting them.
+	// Verify a save with retryCount=-1 succeeds and the stored value is clamped to >=1.
+	a := newMinimalTestApp(t)
+	body := bytes.NewBufferString(`{"retryCount":-1}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/settings", body)
+	rr := httptest.NewRecorder()
+	a.handleSettingsPUT(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 (clamped), got %d (body: %s)", rr.Code, rr.Body.String())
+	}
+	if a.getConfig().RetryCount < 1 {
+		t.Fatalf("expected RetryCount >= 1 after clamp, got %d", a.getConfig().RetryCount)
+	}
+}
+
+func TestHandleTestNotificationBadJSON(t *testing.T) {
+	a := newMinimalTestApp(t)
+	body := bytes.NewBufferString(`{not valid json`)
+	req := httptest.NewRequest(http.MethodPost, "/api/test-notification", body)
+	rr := httptest.NewRecorder()
+	a.handleTestNotification(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for malformed JSON, got %d", rr.Code)
 	}
 }

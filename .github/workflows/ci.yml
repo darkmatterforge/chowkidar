@@ -1,16 +1,36 @@
 name: CI
 
 on:
-  pull_request:
   push:
-    branches:
-      - main
+  pull_request:
+  # Manual trigger with the option to skip jobs selectively.
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: 'Skip Go unit tests'
+        type: boolean
+        default: false
+      skip_e2e:
+        description: 'Skip Playwright E2E tests'
+        type: boolean
+        default: false
+
+# One run per branch/PR at a time. A newer push cancels the in-flight run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
+  # ── 1. Go tests + Docker build ─────────────────────────────────────────────
+  # Skip tokens (add to commit message):
+  #   [skip tests]  — skip Go unit tests but still build + smoke
+  #   [skip e2e]    — skip E2E job (this job still runs)
+  #   [skip ci]     — GitHub's built-in: skips the entire workflow
   test-build-smoke:
     runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -21,10 +41,153 @@ jobs:
           go-version-file: go.mod
 
       - name: Run unit and integration tests
+        if: |
+          !contains(github.event.head_commit.message, '[skip tests]') &&
+          inputs.skip_tests != true
         run: go test ./...
 
       - name: Build Docker image
         run: docker build -t chowkidar:ci .
 
+      - name: Export image for downstream jobs
+        run: docker save chowkidar:ci | gzip > /tmp/chowkidar.tar.gz
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp/chowkidar.tar.gz
+          retention-days: 1
+
       - name: API smoke check
         run: bash scripts/api_smoke.sh chowkidar:ci
+
+  # ── 2. Playwright E2E tests ────────────────────────────────────────────────
+  # Skipped when commit message contains [skip e2e] or when triggered manually
+  # with skip_e2e: true.  Still requires test-build-smoke to pass so the image
+  # artifact exists.
+  e2e:
+    needs: test-build-smoke
+    if: |
+      !contains(github.event.head_commit.message, '[skip e2e]') &&
+      inputs.skip_e2e != true
+    runs-on: ubuntu-latest
+    env:
+      APP_PORT: 18081
+      BASE_URL: http://localhost:18081
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp
+
+      - name: Load Docker image
+        run: docker load < /tmp/chowkidar.tar.gz
+
+      - name: Start test containers
+        run: |
+          # Always-healthy container
+          docker run -d --name e2e-target \
+            --health-cmd="echo ok" \
+            --health-interval=3s \
+            --health-timeout=2s \
+            --health-retries=1 \
+            alpine:3 sh -c "while true; do sleep 5; done"
+          # Goes unhealthy after 15s, chowkidar restarts it, it recovers
+          docker run -d --name e2e-unhealthy \
+            --health-cmd='[ -f /tmp/ok ]' \
+            --health-interval=3s \
+            --health-timeout=2s \
+            --health-retries=1 \
+            alpine:3 sh -c 'touch /tmp/ok; sleep 15; rm -f /tmp/ok; while true; do sleep 5; done'
+
+      - name: Start app container
+        run: |
+          docker run -d \
+            --name chowkidar-e2e \
+            -p ${{ env.APP_PORT }}:8080 \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            chowkidar:ci
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:${{ env.APP_PORT }}/api/health >/dev/null 2>&1; then
+              echo "App is healthy"
+              break
+            fi
+            sleep 1
+            if [ "$i" -eq 60 ]; then
+              echo "App failed to start"
+              docker logs chowkidar-e2e
+              exit 1
+            fi
+          done
+
+      - name: Bootstrap monitoring job for test containers
+        run: |
+          # No auth yet — app starts open. Create a job covering both containers,
+          # with a short monitor interval so health recovery happens quickly.
+          curl -s -X POST http://localhost:${{ env.APP_PORT }}/api/jobs \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"e2e-monitor","action":"restart","containerNameFilter":"e2e-target,e2e-unhealthy","monitorIntervalSeconds":8,"enabled":true,"startExited":false}'
+          sleep 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: tests/e2e/package.json
+
+      - name: Install dependencies
+        working-directory: tests/e2e
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: tests/e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        working-directory: tests/e2e
+        run: npx playwright test
+        env:
+          BASE_URL: ${{ env.BASE_URL }}
+          E2E_USERNAME: testadmin
+          E2E_PASSWORD: TestPassword1!
+          # Optional notification secrets — tests skip gracefully when not set.
+          # Add in GitHub → Settings → Secrets → Actions.
+          E2E_DISCORD_WEBHOOK_URL: ${{ secrets.E2E_DISCORD_WEBHOOK_URL }}
+          E2E_SLACK_WEBHOOK_URL: ${{ secrets.E2E_SLACK_WEBHOOK_URL }}
+          E2E_NTFY_TOPIC: ${{ secrets.E2E_NTFY_TOPIC }}
+          E2E_TELEGRAM_BOT_TOKEN: ${{ secrets.E2E_TELEGRAM_BOT_TOKEN }}
+          E2E_TELEGRAM_CHAT_ID: ${{ secrets.E2E_TELEGRAM_CHAT_ID }}
+          E2E_PUSHOVER_USER_KEY: ${{ secrets.E2E_PUSHOVER_USER_KEY }}
+          E2E_PUSHOVER_TOKEN: ${{ secrets.E2E_PUSHOVER_TOKEN }}
+          E2E_EMAIL_HOST: ${{ secrets.E2E_EMAIL_HOST }}
+          E2E_EMAIL_PORT: ${{ secrets.E2E_EMAIL_PORT }}
+          E2E_EMAIL_TO: ${{ secrets.E2E_EMAIL_TO }}
+          E2E_EMAIL_USERNAME: ${{ secrets.E2E_EMAIL_USERNAME }}
+          E2E_EMAIL_PASSWORD: ${{ secrets.E2E_EMAIL_PASSWORD }}
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: tests/e2e/playwright-report/
+          retention-days: 14
+
+      - name: Upload test results (traces/screenshots)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: tests/e2e/test-results/
+          retention-days: 7
+
+      - name: Stop containers
+        if: always()
+        run: docker rm -f chowkidar-e2e e2e-target e2e-unhealthy || true

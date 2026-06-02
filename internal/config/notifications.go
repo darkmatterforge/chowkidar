@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"time"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -112,6 +113,20 @@ type NotificationProfile struct {
 	Enabled   bool                  `yaml:"enabled" json:"enabled"`
 	IsDefault bool                  `yaml:"is_default,omitempty" json:"is_default,omitempty"`
 	Templates NotificationTemplates `yaml:"templates,omitempty" json:"templates,omitempty"`
+
+	// Rate limiting & suspension
+	BurstLimit         int        `yaml:"burstLimit,omitempty"         json:"burstLimit,omitempty"`
+	BurstWindowMinutes int        `yaml:"burstWindowMinutes,omitempty" json:"burstWindowMinutes,omitempty"`
+	DailyLimit         int        `yaml:"dailyLimit,omitempty"         json:"dailyLimit,omitempty"`
+	// OnLimitAction: "auto-suspend" (default) | "drop" | "fallback"
+	OnLimitAction      string     `yaml:"onLimitAction,omitempty"      json:"onLimitAction,omitempty"`
+	// AutoSuspendOnError: auto-suspend to midnight when a quota/rate-limit error is detected
+	AutoSuspendOnError  bool       `yaml:"autoSuspendOnError,omitempty"  json:"autoSuspendOnError,omitempty"`
+	// SuspendedUntil: non-nil means the profile is suspended; nil or past time = active
+	SuspendedUntil      *time.Time `yaml:"suspendedUntil,omitempty"      json:"suspendedUntil,omitempty"`
+	// LastRateLimitError + LastRateLimitAt: persisted so the UI can show the error after restart
+	LastRateLimitError  string     `yaml:"lastRateLimitError,omitempty"  json:"lastRateLimitError,omitempty"`
+	LastRateLimitAt     *time.Time `yaml:"lastRateLimitAt,omitempty"     json:"lastRateLimitAt,omitempty"`
 }
 
 const notificationsConfigVersion = 1

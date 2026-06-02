@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-06-02
+
+### Added
+- Parallelized container inspection for dashboard API (faster UI loads)
+- Loading spinners and button disables for Save/Job actions in UI
+- E2E: Playwright tests for all major flows, including template upgrades, dry-run, and notification delivery
+- Unit tests for notification limits and profile suspension logic
+
+### Fixed
+- Security: eliminate user-tainted value from exec.Command to fix CodeQL go/command-injection
+- Backend: lock/unlock safety in finalizeState and handleAuthDisable
+- Frontend: always check fetch .ok before .json() in settings/profile saves
+- E2E: removed unnecessary waitForTimeout in health recovery spec
+- Notification error logging now uses logWarnf
+- Remove unused hostID field and countEnabledJobs function
+
+### Changed
+- Rename "Skip Cooldown & Retry" to "Restart Monitoring"
+- Add jq to Docker images for script support
+- Restrict script shebang interpreter to allowlist
+- Improved frontend performance for dashboard rendering
+
 ## [0.1.1] - 2026-06-01
 
 ### Fixed

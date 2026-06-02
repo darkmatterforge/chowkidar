@@ -27,6 +27,7 @@ type Job struct {
 	MaxMonitoringDurationMinutes int       `yaml:"maxMonitoringDurationMinutes,omitempty" json:"maxMonitoringDurationMinutes,omitempty"`
 	MonitorIntervalSeconds       int       `yaml:"monitorIntervalSeconds,omitempty" json:"monitorIntervalSeconds,omitempty"`
 	ActionTimeoutSeconds         int       `yaml:"actionTimeoutSeconds,omitempty" json:"actionTimeoutSeconds,omitempty"`
+	ScriptTimeoutSeconds         int       `yaml:"scriptTimeoutSeconds,omitempty" json:"scriptTimeoutSeconds,omitempty"`
 	PostActionWaitSeconds        int       `yaml:"postActionWaitSeconds,omitempty" json:"postActionWaitSeconds,omitempty"`
 	DockerHostID                 string    `yaml:"dockerHostID,omitempty" json:"dockerHostID,omitempty"`
 	CreatedAt                    time.Time `yaml:"createdAt" json:"createdAt"`
