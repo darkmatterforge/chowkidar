@@ -8,7 +8,9 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} go build -o /out/chowki
 
 FROM alpine:3.23
 RUN apk add --no-cache ca-certificates dumb-init python3 py3-pip && \
-    pip3 install --no-cache-dir --break-system-packages apprise
+    python3 -m venv /apprise && \
+    /apprise/bin/pip install --quiet apprise && \
+    ln -sf /apprise/bin/apprise /usr/local/bin/apprise
 WORKDIR /app
 COPY --from=builder /out/chowkidar /app/chowkidar
 COPY web /app/web

@@ -406,6 +406,9 @@
     .mini-bar.recovered { background: var(--ok); }
     .mini-bar.fail      { background: #ef6878; }
     .mini-bar.skip      { background: #e8bf61; }
+    /* Dim version used when there is no action history yet — shows current health state */
+    .mini-bar.pulse-up   { background: var(--ok);      opacity: 0.28; }
+    .mini-bar.pulse-down { background: #ef6878;         opacity: 0.28; }
 
     /* ── Layout picker (settings) ── */
     .layout-picker { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
@@ -3047,11 +3050,18 @@
       return 'unknown';
     }
 
-    function sampleBarsForService(name, count = 25) {
+    function sampleBarsForService(name, currentStatus = '', count = 25) {
       const samples = dashboardHistoryEntries.filter((e) => (e.containerName || e.containerId) === name).slice(0, count).reverse();
       const padded = Array(Math.max(0, count - samples.length)).fill(null);
+      // When no events have been recorded yet, tint all bars with the current
+      // health colour at low opacity so healthy containers don't look identical
+      // to unconfigured ones.
+      const noHistory = samples.length === 0;
+      const pulseClass = noHistory
+        ? (currentStatus === 'up' ? 'pulse-up' : currentStatus === 'down' ? 'pulse-down' : '')
+        : '';
       return [...padded, ...samples].map((s) => {
-        if (!s) return '<span class="mini-bar"></span>';
+        if (!s) return `<span class="mini-bar ${pulseClass}"></span>`;
         if (s.status === 'success') return '<span class="mini-bar up"></span>';
         if (s.status === 'recovered' || s.status === 'healthy') return '<span class="mini-bar recovered"></span>';
         if (s.status === 'failed') return '<span class="mini-bar fail"></span>';
@@ -3336,7 +3346,7 @@
           html += `<span class="service-name">${escapeHtml(service.name)}</span>`;
           html += `<span class="service-badge" style="${uptimeBadgeStyle}">${escapeHtml(uptimeBadgeText)}</span>`;
           html += `</div>`;
-          html += `<div class="mini-bars">${sampleBarsForService(service.name)}</div>`;
+          html += `<div class="mini-bars">${sampleBarsForService(service.name, st)}</div>`;
           html += `<div class="hint" style="font-size:10px;">${escapeHtml(checkSummary)}</div>`;
           html += `</div>`;
           html += '</button>';
