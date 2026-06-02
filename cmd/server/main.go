@@ -665,6 +665,7 @@ func setupMux(a *app) *http.ServeMux {
 	mux.HandleFunc("/api/diagnostics", a.authMiddleware(a.handleDiagnostics))
 	mux.HandleFunc("/api/containers", a.authMiddleware(a.handleContainers))
 	mux.HandleFunc("/api/settings", a.authMiddleware(a.handleSettings))
+	mux.HandleFunc("/api/settings/theme", a.authMiddleware(a.handleSettingsTheme))
 	mux.HandleFunc("/api/jobs", a.authMiddleware(a.handleJobs))
 	mux.HandleFunc("/api/jobs/", a.authMiddleware(a.handleJobByID))
 	mux.HandleFunc("/api/notifications", a.authMiddleware(a.handleNotifications))
@@ -1884,6 +1885,39 @@ func (a *app) handleSettings(w http.ResponseWriter, r *http.Request) {
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
+}
+
+func (a *app) handleSettingsTheme(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Theme string `json:"theme"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid JSON"})
+		return
+	}
+	if body.Theme != "auto" && body.Theme != "light" && body.Theme != "dark" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "theme must be auto, light, or dark"})
+		return
+	}
+	cfg := a.getConfig()
+	fileCfg, err := config.LoadFileConfig(cfg.ConfigDir)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	fileCfg.Theme = body.Theme
+	if err := config.SaveFileConfig(cfg.ConfigDir, fileCfg); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	a.mu.Lock()
+	a.cfg.Theme = body.Theme
+	a.mu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func jobMatchesFilters(job config.Job, qStr, actionFilter, enabledFilter, groupFilter string) bool {

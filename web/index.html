@@ -2256,6 +2256,12 @@
       const next = order[(order.indexOf(getStoredTheme()) + 1) % order.length];
       localStorage.setItem('chowkidar-theme', next);
       applyTheme(next);
+      // Persist to config.yaml immediately so the choice survives page reloads.
+      fetch('/api/settings/theme', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ theme: next }),
+      }).catch(() => {});
     }
 
     function toBool(v) { return String(v) === 'true'; }
