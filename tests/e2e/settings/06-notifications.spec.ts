@@ -352,17 +352,26 @@ test.describe('Settings — Notifications tab', () => {
   // notification, then cleans up.
   //
   // Secrets to add in GitHub → Settings → Secrets → Actions:
-  //   E2E_DISCORD_WEBHOOK_URL  — Discord channel webhook URL
-  //   E2E_SLACK_WEBHOOK_URL    — Slack incoming webhook URL
-  //   E2E_NTFY_TOPIC           — ntfy topic (uses ntfy.sh, no account needed)
+  //   E2E_DISCORD_WEBHOOK_URL        Discord channel webhook URL
+  //   E2E_SLACK_WEBHOOK_URL          Slack incoming webhook URL
+  //   E2E_NTFY_TOPIC                 ntfy topic (uses ntfy.sh — no account needed)
+  //   E2E_TELEGRAM_BOT_TOKEN         Bot token from BotFather
+  //   E2E_TELEGRAM_CHAT_ID           Chat / group ID (run /getid or use @userinfobot)
+  //   E2E_PUSHOVER_USER_KEY          Pushover user/group key
+  //   E2E_PUSHOVER_TOKEN             Pushover application API token
+  //   E2E_EMAIL_HOST                 SMTP server hostname  (e.g. smtp.gmail.com)
+  //   E2E_EMAIL_PORT                 SMTP port             (e.g. 587)
+  //   E2E_EMAIL_TO                   Recipient address
+  //   E2E_EMAIL_USERNAME             SMTP auth username    (optional)
+  //   E2E_EMAIL_PASSWORD             SMTP auth password    (optional)
 
   test.describe('Live notification delivery (requires secrets)', () => {
-    async function liveTestProfile(
-      page: Parameters<Parameters<typeof test>[1]>[0]['page'],
-      profileName: string,
-      expectedSuccess = true,
-    ) {
-      const editBtn = page.locator('#notifyTbody tr').filter({ hasText: profileName }).getByRole('button', { name: /edit/i })
+    type Page = Parameters<Parameters<typeof test>[1]>[0]['page']
+
+    async function liveTestProfile(page: Page, profileName: string) {
+      const editBtn = page.locator('#notifyTbody tr')
+        .filter({ hasText: profileName })
+        .getByRole('button', { name: /edit/i })
       await editBtn.click()
       await expect(page.locator('#notifyFormPanel')).toBeVisible()
 
@@ -371,82 +380,102 @@ test.describe('Settings — Notifications tab', () => {
         page.locator('#testNotifyProfilesBtn').click(),
       ])
       expect(res.status()).toBeLessThan(500)
-      await expect(page.locator('#notifyTestResult')).toBeVisible({ timeout: 20_000 })
 
-      if (expectedSuccess) {
-        // Verify the result banner indicates success (not failure)
-        const title = page.locator('#notifyTestResult .test-result-title')
-        await expect(title).not.toContainText(/fail|error/i, { timeout: 5_000 })
+      const banner = page.locator('#notifyTestResult')
+      await expect(banner).toBeVisible({ timeout: 25_000 })
+
+      // ntfy.sh and other free-tier services can return rate-limit / quota
+      // errors. Skip gracefully instead of failing the build.
+      const titleText = await banner.locator('.test-result-title').textContent() ?? ''
+      const detailText = await banner.locator('.test-result-detail').textContent() ?? ''
+      const combined = (titleText + ' ' + detailText).toLowerCase()
+      if (/quota|rate.?limit|too.?many|429|forbidden|throttl/i.test(combined)) {
+        test.skip(true, `Rate-limited by provider — skipping: ${titleText.trim()}`)
+        return
       }
 
+      await expect(banner.locator('.test-result-title')).not.toContainText(/fail|error/i)
       await page.locator('#cancelNotifyEditBtn').click()
     }
 
-    test.describe.serial('Discord (live)', () => {
-      test.skip(!process.env.E2E_DISCORD_WEBHOOK_URL, 'Set E2E_DISCORD_WEBHOOK_URL secret to enable')
+    function liveGroup(
+      name: string,
+      secretKey: string,
+      skipMsg: string,
+      buildProfile: (page: Page) => Promise<void>,
+    ) {
+      test.describe.serial(`${name} (live)`, () => {
+        test.skip(!process.env[secretKey], skipMsg)
 
-      test('create Discord profile with live webhook', async ({ page }) => {
-        await openNotificationsTab(page)
-        await openAddForm(page)
+        test(`create ${name} profile`, async ({ page }) => {
+          await openNotificationsTab(page)
+          await openAddForm(page)
+          await buildProfile(page)
+          await saveProfile(page, `live-${name.toLowerCase()}`)
+        })
+
+        test(`send real ${name} test notification`, async ({ page }) => {
+          await openNotificationsTab(page)
+          await liveTestProfile(page, `live-${name.toLowerCase()}`)
+        })
+
+        test(`clean up ${name} live profile`, async ({ page }) => {
+          await openNotificationsTab(page)
+          await deleteProfile(page, `live-${name.toLowerCase()}`)
+        })
+      })
+    }
+
+    liveGroup('Discord', 'E2E_DISCORD_WEBHOOK_URL',
+      'Set E2E_DISCORD_WEBHOOK_URL secret to enable',
+      async page => {
         await selectProvider(page, 'discord')
         await page.locator('#notifyField_webhookurl').fill(process.env.E2E_DISCORD_WEBHOOK_URL!)
-        await saveProfile(page, 'live-discord')
       })
 
-      test('send real Discord test notification', async ({ page }) => {
-        await openNotificationsTab(page)
-        await liveTestProfile(page, 'live-discord')
-      })
-
-      test('clean up Discord live profile', async ({ page }) => {
-        await openNotificationsTab(page)
-        await deleteProfile(page, 'live-discord')
-      })
-    })
-
-    test.describe.serial('Slack (live)', () => {
-      test.skip(!process.env.E2E_SLACK_WEBHOOK_URL, 'Set E2E_SLACK_WEBHOOK_URL secret to enable')
-
-      test('create Slack profile with live webhook', async ({ page }) => {
-        await openNotificationsTab(page)
-        await openAddForm(page)
+    liveGroup('Slack', 'E2E_SLACK_WEBHOOK_URL',
+      'Set E2E_SLACK_WEBHOOK_URL secret to enable',
+      async page => {
         await selectProvider(page, 'slack')
         await page.locator('#notifyField_webhookurl').fill(process.env.E2E_SLACK_WEBHOOK_URL!)
-        await saveProfile(page, 'live-slack')
       })
 
-      test('send real Slack test notification', async ({ page }) => {
-        await openNotificationsTab(page)
-        await liveTestProfile(page, 'live-slack')
-      })
-
-      test('clean up Slack live profile', async ({ page }) => {
-        await openNotificationsTab(page)
-        await deleteProfile(page, 'live-slack')
-      })
-    })
-
-    test.describe.serial('ntfy (live)', () => {
-      test.skip(!process.env.E2E_NTFY_TOPIC, 'Set E2E_NTFY_TOPIC secret to enable (uses ntfy.sh, no account needed)')
-
-      test('create ntfy profile with live topic', async ({ page }) => {
-        await openNotificationsTab(page)
-        await openAddForm(page)
+    liveGroup('ntfy', 'E2E_NTFY_TOPIC',
+      'Set E2E_NTFY_TOPIC secret to enable (ntfy.sh, no account needed)',
+      async page => {
         await selectProvider(page, 'ntfy')
         await page.locator('#notifyField_host').fill('https://ntfy.sh')
         await page.locator('#notifyField_topic').fill(process.env.E2E_NTFY_TOPIC!)
-        await saveProfile(page, 'live-ntfy')
       })
 
-      test('send real ntfy test notification', async ({ page }) => {
-        await openNotificationsTab(page)
-        await liveTestProfile(page, 'live-ntfy')
+    liveGroup('Telegram', 'E2E_TELEGRAM_BOT_TOKEN',
+      'Set E2E_TELEGRAM_BOT_TOKEN + E2E_TELEGRAM_CHAT_ID secrets to enable',
+      async page => {
+        await selectProvider(page, 'telegram')
+        await page.locator('#notifyField_bottoken').fill(process.env.E2E_TELEGRAM_BOT_TOKEN!)
+        await page.locator('#notifyField_chatid').fill(process.env.E2E_TELEGRAM_CHAT_ID ?? '')
       })
 
-      test('clean up ntfy live profile', async ({ page }) => {
-        await openNotificationsTab(page)
-        await deleteProfile(page, 'live-ntfy')
+    liveGroup('Pushover', 'E2E_PUSHOVER_USER_KEY',
+      'Set E2E_PUSHOVER_USER_KEY + E2E_PUSHOVER_TOKEN secrets to enable',
+      async page => {
+        await selectProvider(page, 'pover')
+        await page.locator('#notifyField_user').fill(process.env.E2E_PUSHOVER_USER_KEY!)
+        await page.locator('#notifyField_token').fill(process.env.E2E_PUSHOVER_TOKEN ?? '')
       })
-    })
+
+    liveGroup('Email', 'E2E_EMAIL_HOST',
+      'Set E2E_EMAIL_HOST + E2E_EMAIL_TO secrets to enable',
+      async page => {
+        await selectProvider(page, 'mailto')
+        await page.locator('#notifyField_host').fill(process.env.E2E_EMAIL_HOST!)
+        if (process.env.E2E_EMAIL_PORT)
+          await page.locator('#notifyField_port').fill(process.env.E2E_EMAIL_PORT)
+        await page.locator('#notifyField_to').fill(process.env.E2E_EMAIL_TO ?? '')
+        if (process.env.E2E_EMAIL_USERNAME)
+          await page.locator('#notifyField_user').fill(process.env.E2E_EMAIL_USERNAME)
+        if (process.env.E2E_EMAIL_PASSWORD)
+          await page.locator('#notifyField_password').fill(process.env.E2E_EMAIL_PASSWORD)
+      })
   })
 })

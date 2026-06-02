@@ -157,11 +157,20 @@ jobs:
           BASE_URL: ${{ env.BASE_URL }}
           E2E_USERNAME: testadmin
           E2E_PASSWORD: TestPassword1!
-          # Optional secrets — tests skip gracefully when not set.
-          # Add these in GitHub → Settings → Secrets → Actions.
+          # Optional notification secrets — tests skip gracefully when not set.
+          # Add in GitHub → Settings → Secrets → Actions.
           E2E_DISCORD_WEBHOOK_URL: ${{ secrets.E2E_DISCORD_WEBHOOK_URL }}
           E2E_SLACK_WEBHOOK_URL: ${{ secrets.E2E_SLACK_WEBHOOK_URL }}
           E2E_NTFY_TOPIC: ${{ secrets.E2E_NTFY_TOPIC }}
+          E2E_TELEGRAM_BOT_TOKEN: ${{ secrets.E2E_TELEGRAM_BOT_TOKEN }}
+          E2E_TELEGRAM_CHAT_ID: ${{ secrets.E2E_TELEGRAM_CHAT_ID }}
+          E2E_PUSHOVER_USER_KEY: ${{ secrets.E2E_PUSHOVER_USER_KEY }}
+          E2E_PUSHOVER_TOKEN: ${{ secrets.E2E_PUSHOVER_TOKEN }}
+          E2E_EMAIL_HOST: ${{ secrets.E2E_EMAIL_HOST }}
+          E2E_EMAIL_PORT: ${{ secrets.E2E_EMAIL_PORT }}
+          E2E_EMAIL_TO: ${{ secrets.E2E_EMAIL_TO }}
+          E2E_EMAIL_USERNAME: ${{ secrets.E2E_EMAIL_USERNAME }}
+          E2E_EMAIL_PASSWORD: ${{ secrets.E2E_EMAIL_PASSWORD }}
 
       - name: Upload test report
         if: always()
