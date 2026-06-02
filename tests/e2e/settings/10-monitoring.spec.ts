@@ -1,10 +1,8 @@
 import { test, expect } from '@playwright/test'
+import { gotoSettings } from '../helpers/nav'
 
 async function openMonitoringTab(page: Parameters<Parameters<typeof test>[1]>[0]['page']) {
-  await page.goto('/')
-  await page.locator('[data-page="settings"]').click()
-  await page.locator('.tab-btn[data-tab="monitoring"]').click()
-  await expect(page.locator('#tab-monitoring')).toBeVisible()
+  await gotoSettings(page, 'monitoring')
 }
 
 test.describe('Settings — Monitoring tab', () => {
@@ -25,9 +23,7 @@ test.describe('Settings — Monitoring tab', () => {
     await page.locator('#saveSettingsBtn').click()
     await expect(page.locator('#settingsStatus')).toBeVisible()
 
-    await page.reload()
-    await page.locator('[data-page="settings"]').click()
-    await page.locator('.tab-btn[data-tab="monitoring"]').click()
+    await gotoSettings(page, 'monitoring')
     await expect(page.locator('#dockerPingTimeoutSeconds')).toHaveValue('10')
 
     // Restore original value

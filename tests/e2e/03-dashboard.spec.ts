@@ -1,12 +1,16 @@
 import { test, expect } from '@playwright/test'
 
-const BASE_URL = process.env.BASE_URL ?? 'http://localhost:8080'
-
 async function goToDashboard(page: Parameters<Parameters<typeof test>[1]>[0]['page']) {
+  // Register the response listener BEFORE navigation to avoid a race where the
+  // /api/containers fetch fires and resolves during page.goto().
+  const containersReady = page.waitForResponse(
+    r => r.url().includes('/api/containers') && r.status() === 200,
+  )
   await page.goto('/')
-  await expect(page.locator('#dashboardPage')).toBeVisible()
-  // Wait for the initial containers fetch to settle
-  await page.waitForResponse(r => r.url().includes('/api/containers') && r.status() === 200)
+  // #loginPage starts display:none; if the session is valid the app never shows
+  // it — but give it 3 s to settle before asserting hidden.
+  await expect(page.locator('#loginPage')).toBeHidden({ timeout: 5_000 })
+  await containersReady
 }
 
 test.describe('Dashboard', () => {

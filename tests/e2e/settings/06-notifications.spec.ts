@@ -1,10 +1,8 @@
 import { test, expect } from '@playwright/test'
+import { gotoSettings } from '../helpers/nav'
 
 async function openNotificationsTab(page: Parameters<Parameters<typeof test>[1]>[0]['page']) {
-  await page.goto('/')
-  await page.locator('[data-page="settings"]').click()
-  await page.locator('.tab-btn[data-tab="notifications"]').click()
-  await expect(page.locator('#tab-notifications')).toBeVisible()
+  await gotoSettings(page, 'notifications')
 }
 
 async function openAddForm(page: Parameters<Parameters<typeof test>[1]>[0]['page']) {
@@ -34,12 +32,12 @@ async function saveProfile(page: Parameters<Parameters<typeof test>[1]>[0]['page
 
 async function deleteProfile(page: Parameters<Parameters<typeof test>[1]>[0]['page'], name: string) {
   const row = page.locator('#notifyTbody tr').filter({ hasText: name })
-  await row.getByRole('button', { name: /delete/i }).click()
+  // App uses PUT /api/notifications (replaces entire list) for both saves and deletes
   const [res] = await Promise.all([
-    page.waitForResponse(r => r.url().includes('/api/notification') && r.request().method() === 'DELETE'),
-    Promise.resolve(),
+    page.waitForResponse(r => r.url().includes('/api/notification') && r.request().method() !== 'GET'),
+    row.getByRole('button', { name: /delete/i }).click(),
   ])
-  if (res) expect(res.status()).toBeLessThan(500)
+  expect(res.status()).toBeLessThan(500)
   await expect(page.locator('#notifyTbody')).not.toContainText(name)
 }
 
@@ -193,7 +191,7 @@ test.describe('Settings — Notifications tab', () => {
       await openNotificationsTab(page)
       await openAddForm(page)
       await selectProvider(page, 'pover')
-      await expect(page.locator('#notifyField_userkey')).toBeVisible()
+      await expect(page.locator('#notifyField_user')).toBeVisible()
       await expect(page.locator('#notifyField_token')).toBeVisible()
     })
 
@@ -201,7 +199,7 @@ test.describe('Settings — Notifications tab', () => {
       await openNotificationsTab(page)
       await openAddForm(page)
       await selectProvider(page, 'pover')
-      await page.locator('#notifyField_userkey').fill('uQiRzpo4DXghDmr9QzzfQu')
+      await page.locator('#notifyField_user').fill('uQiRzpo4DXghDmr9QzzfQu')
       await page.locator('#notifyField_token').fill('azGDORePK8gMaC0QOYAMyEEuzJnyUi')
       await saveProfile(page, 'e2e-pushover')
       await deleteProfile(page, 'e2e-pushover')

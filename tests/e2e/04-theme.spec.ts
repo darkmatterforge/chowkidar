@@ -1,7 +1,29 @@
 import { test, expect } from '@playwright/test'
+import { gotoSettings } from './helpers/nav'
 
-function getTheme(page: ReturnType<typeof test.info> extends never ? never : Parameters<Parameters<typeof test>[1]>[0]['page']) {
+type Page = Parameters<Parameters<typeof test>[1]>[0]['page']
+
+function getTheme(page: Page) {
   return page.evaluate(() => document.documentElement.getAttribute('data-theme'))
+}
+
+async function cycleToTheme(page: Page, target: string | null) {
+  const btn = page.locator('#themeToggleBtn')
+  for (let i = 0; i < 4; i++) {
+    if (await getTheme(page) === target) return
+    await btn.click()
+  }
+}
+
+async function saveTheme(page: Page) {
+  // Theme is only persisted across page reloads when saved to the server.
+  // loadSettings() overwrites localStorage with the server-side theme on every load.
+  await page.locator('[data-page="settings"]').click()
+  const [res] = await Promise.all([
+    page.waitForResponse(r => r.url().includes('/api/settings') && r.request().method() !== 'GET'),
+    page.locator('#saveSettingsBtn').click(),
+  ])
+  expect(res.status()).toBeLessThan(500)
 }
 
 test.describe('Theme', () => {
@@ -14,61 +36,40 @@ test.describe('Theme', () => {
     await expect(page.locator('#themeToggleBtn')).toBeVisible()
   })
 
-  test('cycles light → dark → auto on repeated clicks', async ({ page }) => {
-    const btn = page.locator('#themeToggleBtn')
-
-    // Click until we reach a known starting point (light)
-    // The app persists theme; we normalise by cycling through all three states
-    // and asserting the full rotation.
+  test('cycles auto → light → dark on repeated clicks', async ({ page }) => {
     const states: (string | null)[] = []
     for (let i = 0; i < 3; i++) {
-      await btn.click()
+      await page.locator('#themeToggleBtn').click()
       states.push(await getTheme(page))
     }
-
-    // After 3 clicks the theme must have visited dark, auto, and light
-    // (cycle order: light → dark → auto → light)
+    // Cycle order is auto → light → dark; all 3 states must be visited
     const set = new Set(states.map(s => s ?? 'auto'))
     expect(set.size).toBe(3)
     expect(set).toContain('dark')
   })
 
   test('dark theme applies data-theme="dark" to <html>', async ({ page }) => {
-    const btn = page.locator('#themeToggleBtn')
-
-    // Cycle until we hit dark
-    for (let i = 0; i < 3; i++) {
-      await btn.click()
-      const theme = await getTheme(page)
-      if (theme === 'dark') break
-    }
-
+    await cycleToTheme(page, 'dark')
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
   })
 
   test('light theme applies data-theme="light" to <html>', async ({ page }) => {
-    const btn = page.locator('#themeToggleBtn')
-
-    for (let i = 0; i < 3; i++) {
-      await btn.click()
-      const theme = await getTheme(page)
-      if (theme === 'light') break
-    }
-
+    await cycleToTheme(page, 'light')
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
   })
 
   test('selected theme persists after page reload', async ({ page }) => {
-    const btn = page.locator('#themeToggleBtn')
-
-    // Cycle to dark
-    for (let i = 0; i < 3; i++) {
-      await btn.click()
-      if (await getTheme(page) === 'dark') break
-    }
+    await cycleToTheme(page, 'dark')
+    // Save to server — loadSettings() overwrites localStorage from server settings on
+    // every load, so the toggle alone does not survive a full reload.
+    await saveTheme(page)
 
     await page.reload()
-    await expect(page.locator('#dashboardPage')).toBeVisible()
+    await expect(page.locator('#themeToggleBtn')).toBeVisible()
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+
+    // Restore to auto so server-side theme is clean for subsequent test files
+    await cycleToTheme(page, null)  // null = auto (no data-theme attribute)
+    await saveTheme(page)
   })
 })

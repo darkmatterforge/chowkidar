@@ -1,11 +1,9 @@
 import { test, expect } from '@playwright/test'
 import { TEST_USER, TEST_PASS } from '../playwright.config'
+import { gotoSettings } from '../helpers/nav'
 
 async function openSecurityTab(page: Parameters<Parameters<typeof test>[1]>[0]['page']) {
-  await page.goto('/')
-  await page.locator('[data-page="settings"]').click()
-  await page.locator('.tab-btn[data-tab="security"]').click()
-  await expect(page.locator('#tab-security')).toBeVisible()
+  await gotoSettings(page, 'security')
 }
 
 test.describe('Settings — Security tab', () => {

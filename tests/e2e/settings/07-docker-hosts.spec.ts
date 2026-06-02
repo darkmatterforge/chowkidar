@@ -1,10 +1,8 @@
 import { test, expect } from '@playwright/test'
+import { gotoSettings } from '../helpers/nav'
 
 async function openDockerHostsTab(page: Parameters<Parameters<typeof test>[1]>[0]['page']) {
-  await page.goto('/')
-  await page.locator('[data-page="settings"]').click()
-  await page.locator('.tab-btn[data-tab="dockerHosts"]').click()
-  await expect(page.locator('#tab-dockerHosts')).toBeVisible()
+  await gotoSettings(page, 'dockerHosts')
 }
 
 test.describe('Settings — Docker Hosts tab', () => {
@@ -21,7 +19,9 @@ test.describe('Settings — Docker Hosts tab', () => {
     await page.locator('#openAddDockerHostBtn').click()
     await page.locator('#cancelDockerHostBtn').click()
     await expect(page.locator('#dockerHostFormPanel')).toBeHidden()
-    await expect(page.locator('#dockerHostsTbody')).toContainText('No docker hosts configured')
+    // The Local Docker host is always present when the socket is mounted;
+    // just confirm the form closed without adding a named test entry
+    await expect(page.locator('#dockerHostsTbody')).not.toContainText('test-socket-host')
   })
 
   test('close button (×) dismisses the form', async ({ page }) => {
@@ -70,12 +70,14 @@ test.describe('Settings — Docker Hosts tab', () => {
   test('test connection button triggers a connection check', async ({ page }) => {
     await openDockerHostsTab(page)
 
-    // Click Test on the row we just created (or open edit form first)
-    const testBtn = page.locator('#dockerHostsTbody').getByRole('button', { name: /test/i }).first()
+    // The table-row "Test" button posts its result to #dockerHostsStatus (global banner).
+    // The form-panel "Test Connection" button posts to #dockerHostTestResult.
+    // Click the first "Test" button in the table (Local Docker or any added host).
+    const testBtn = page.locator('#dockerHostsTbody button[data-host-test-id]').first()
     await testBtn.click()
 
-    // A result banner should appear (success or failure — both are valid outcomes)
-    await expect(page.locator('#dockerHostTestResult, #dockerHostsStatus')).toBeVisible({ timeout: 15_000 })
+    // Result banner should appear — success or failure both count
+    await expect(page.locator('#dockerHostsStatus')).toBeVisible({ timeout: 15_000 })
   })
 
   test('delete a docker host — removed from table', async ({ page }) => {

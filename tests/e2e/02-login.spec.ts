@@ -75,10 +75,16 @@ test.describe.serial('Login / Session', () => {
     await goToLogin(page)
     await page.locator('#loginUsername').fill(TEST_USER)
     await page.locator('#loginPassword').fill(TEST_PASS)
-    // Ensure "Remember me" is checked so the cookie persists
     await page.locator('#loginRemember').check()
-    await page.locator('#loginBtn').click()
-    await expect(page.locator('#dashboardPage')).toBeVisible()
+
+    // Wait for the login API response first, then confirm the overlay dismisses.
+    // (#dashboardPage is always display:block so it can't be used as a login gate)
+    const [res] = await Promise.all([
+      page.waitForResponse(r => r.url().includes('/api/auth/login')),
+      page.locator('#loginBtn').click(),
+    ])
+    expect(res.status()).toBe(200)
+    await expect(page.locator('#loginPage')).toBeHidden()
     await context.storageState({ path: AUTH_STATE })
   })
 })

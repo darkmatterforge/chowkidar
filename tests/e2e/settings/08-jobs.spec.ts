@@ -1,10 +1,8 @@
 import { test, expect } from '@playwright/test'
+import { gotoSettings } from '../helpers/nav'
 
 async function openJobsTab(page: Parameters<Parameters<typeof test>[1]>[0]['page']) {
-  await page.goto('/')
-  await page.locator('[data-page="settings"]').click()
-  await page.locator('.tab-btn[data-tab="jobs"]').click()
-  await expect(page.locator('#tab-jobs')).toBeVisible()
+  await gotoSettings(page, 'jobs')
 }
 
 async function openAddForm(page: Parameters<Parameters<typeof test>[1]>[0]['page']) {
@@ -59,9 +57,7 @@ test.describe('Settings — Jobs tab', () => {
     expect(res.status()).toBeLessThan(500)
     await expect(page.locator('#jobQueueStatus')).toBeVisible()
 
-    await page.reload()
-    await page.locator('[data-page="settings"]').click()
-    await page.locator('.tab-btn[data-tab="jobs"]').click()
+    await gotoSettings(page, 'jobs')
     await page.locator('#jobQueueHeader').click()
     await expect(page.locator('#notificationCooldownSeconds')).toHaveValue('120')
 
