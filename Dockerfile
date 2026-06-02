@@ -7,7 +7,7 @@ ARG TARGETARCH
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} go build -o /out/chowkidar ./cmd/server
 
 FROM alpine:3.23
-RUN apk add --no-cache ca-certificates dumb-init bash curl docker-cli python3 py3-pip && \
+RUN apk add --no-cache ca-certificates dumb-init bash curl jq docker-cli python3 py3-pip && \
     python3 -m venv /apprise && \
     /apprise/bin/pip install --quiet apprise && \
     ln -sf /apprise/bin/apprise /usr/local/bin/apprise
