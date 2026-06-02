@@ -63,8 +63,9 @@ func (s *Store) Append(entry Entry) error {
 type ListOptions struct {
 	Limit         int
 	Offset        int
-	Service       string // filter by containerName or containerId (empty = all)
-	ExcludeStatus string // exclude entries with this status (e.g. "healthy")
+	Service       string   // filter by containerName or containerId (empty = all)
+	ExcludeStatus string   // exclude entries with this status (e.g. "healthy")
+	OnlyStatuses  []string // if non-empty, only include entries with one of these statuses
 }
 
 func (s *Store) List(limit int) ([]Entry, error) {
@@ -110,6 +111,18 @@ func (s *Store) ListPage(opts ListOptions) ([]Entry, int, error) {
 		}
 		if opts.ExcludeStatus != "" && e.Status == opts.ExcludeStatus {
 			continue
+		}
+		if len(opts.OnlyStatuses) > 0 {
+			match := false
+			for _, s := range opts.OnlyStatuses {
+				if e.Status == s {
+					match = true
+					break
+				}
+			}
+			if !match {
+				continue
+			}
 		}
 		all = append(all, e)
 	}

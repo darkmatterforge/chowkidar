@@ -1,17 +1,17 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { gotoSettings } from '../helpers/nav'
 
-async function openNotificationsTab(page: Parameters<Parameters<typeof test>[1]>[0]['page']) {
+async function openNotificationsTab(page: Page) {
   await gotoSettings(page, 'notifications')
 }
 
-async function openAddForm(page: Parameters<Parameters<typeof test>[1]>[0]['page']) {
+async function openAddForm(page: Page) {
   await page.locator('#openAddNotifyBtn').click()
   await expect(page.locator('#notifyFormPanel')).toBeVisible()
 }
 
 async function selectProvider(
-  page: Parameters<Parameters<typeof test>[1]>[0]['page'],
+  page: Page,
   providerKey: string,
 ) {
   await page.locator(`button[data-provider="${providerKey}"]`).click()
@@ -23,7 +23,7 @@ async function selectProvider(
   await expect(firstField).toBeEnabled()
 }
 
-async function saveProfile(page: Parameters<Parameters<typeof test>[1]>[0]['page'], name: string) {
+async function saveProfile(page: Page, name: string) {
   await page.locator('#notifyName').fill(name)
   await page.locator('#notifyEnabled').check()
   // Register the waitForResponse BEFORE clicking so we never miss a fast response
@@ -38,7 +38,7 @@ async function saveProfile(page: Parameters<Parameters<typeof test>[1]>[0]['page
   await expect(page.locator('#notifyTbody')).toContainText(name)
 }
 
-async function deleteProfile(page: Parameters<Parameters<typeof test>[1]>[0]['page'], name: string) {
+async function deleteProfile(page: Page, name: string) {
   const row = page.locator('#notifyTbody tr').filter({ hasText: name })
   // App uses PUT /api/notifications (replaces entire list) for both saves and deletes
   const [res] = await Promise.all([
@@ -345,6 +345,154 @@ test.describe('Settings — Notifications tab', () => {
     })
   })
 
+  // ── Notification limits & suspension UI ───────────────────────────────────
+
+  test.describe.serial('Notification limits and suspension', () => {
+    const PROFILE = 'e2e-limits-test'
+
+    test('Notification Limits section is visible in the add form', async ({ page }) => {
+      await openNotificationsTab(page)
+      await openAddForm(page)
+      await expect(page.locator('#notifyBurstLimit')).toBeVisible()
+      await expect(page.locator('#notifyDailyLimit')).toBeVisible()
+      await expect(page.locator('#notifyBurstWindow')).toBeVisible()
+      await expect(page.locator('#notifyOnLimitSuspend')).toBeVisible()
+      await expect(page.locator('#notifyAutoSuspendOnError')).toBeVisible()
+      await page.locator('#closeNotifyFormBtn').click()
+    })
+
+    test('burst and daily limit fields save and load correctly', async ({ page }) => {
+      await openNotificationsTab(page)
+      await openAddForm(page)
+      await selectProvider(page, 'webhook')
+      await page.locator('#notifyField_url').fill('https://example.com/hook')
+      await page.locator('#notifyBurstLimit').fill('5')
+      await page.locator('#notifyBurstWindow').selectOption('10')
+      await page.locator('#notifyDailyLimit').fill('50')
+      await saveProfile(page, PROFILE)
+
+      // Edit and verify round-trip
+      const editBtn = page.locator('#notifyTbody tr').filter({ hasText: PROFILE }).getByRole('button', { name: /edit/i })
+      await editBtn.click()
+      await expect(page.locator('#notifyBurstLimit')).toHaveValue('5')
+      await expect(page.locator('#notifyBurstWindow')).toHaveValue('10')
+      await expect(page.locator('#notifyDailyLimit')).toHaveValue('50')
+      await page.locator('#cancelNotifyEditBtn').click()
+    })
+
+    test('table shows daily usage bar when limit is set', async ({ page }) => {
+      await openNotificationsTab(page)
+      const row = page.locator('#notifyTbody tr').filter({ hasText: PROFILE })
+      // With a limit set, the usage column should show a progress bar (not "No limit")
+      await expect(row).not.toContainText('No limit')
+    })
+
+    test('"No limit" shown in daily usage when no limits configured', async ({ page }) => {
+      // Create a profile without any limits — should show "No limit" in the table
+      await openNotificationsTab(page)
+      await openAddForm(page)
+      await selectProvider(page, 'webhook')
+      await page.locator('#notifyField_url').fill('https://example.com/nolimit')
+      // Leave burst and daily limit blank
+      await saveProfile(page, 'e2e-no-limit-test')
+      const row = page.locator('#notifyTbody tr').filter({ hasText: 'e2e-no-limit-test' })
+      await expect(row).toContainText('No limit')
+      await deleteProfile(page, 'e2e-no-limit-test')
+    })
+
+    test('suspend dropdown + button suspends the profile', async ({ page }) => {
+      await openNotificationsTab(page)
+      const editBtn = page.locator('#notifyTbody tr').filter({ hasText: PROFILE }).getByRole('button', { name: /edit/i })
+      await editBtn.click()
+      await expect(page.locator('#notifySuspendUnit')).toBeVisible()
+
+      // Select 1 hour and suspend
+      await page.locator('#notifySuspendUnit').selectOption('h')
+      await page.locator('#notifySuspendAmount').fill('1')
+      const [res] = await Promise.all([
+        page.waitForResponse(r => r.url().includes('/api/notifications/') && r.url().includes('/suspend')),
+        page.getByRole('button', { name: 'Suspend' }).click(),
+      ])
+      expect(res.status()).toBeLessThan(500)
+      await expect(page.locator('#notifSuspendStatus')).toBeVisible()
+      await page.locator('#cancelNotifyEditBtn').click()
+    })
+
+    test('suspended profile shows status pill and Resume button in table', async ({ page }) => {
+      await openNotificationsTab(page)
+      const row = page.locator('#notifyTbody tr').filter({ hasText: PROFILE })
+      await expect(row).toContainText('Suspended')
+      await expect(row.getByRole('button', { name: 'Resume' })).toBeVisible()
+    })
+
+    test('caution icon appears in name column when suspended', async ({ page }) => {
+      await openNotificationsTab(page)
+      const row = page.locator('#notifyTbody tr').filter({ hasText: PROFILE })
+      // Caution SVG is inside the first <td>
+      await expect(row.locator('td:first-child svg')).toBeVisible()
+    })
+
+    test('Resume button clears suspension', async ({ page }) => {
+      await openNotificationsTab(page)
+      const row = page.locator('#notifyTbody tr').filter({ hasText: PROFILE })
+      const resumeBtn = row.getByRole('button', { name: 'Resume' })
+      const [res] = await Promise.all([
+        page.waitForResponse(r => r.url().includes('/api/notifications/') && r.url().includes('/resume')),
+        resumeBtn.click(),
+      ])
+      expect(res.status()).toBeLessThan(500)
+      // After resume the status should be Active again, no Suspended pill
+      await expect(row).not.toContainText('Suspended')
+      await expect(row).toContainText('Active')
+    })
+
+    test('no caution icon after suspension cleared', async ({ page }) => {
+      await openNotificationsTab(page)
+      const row = page.locator('#notifyTbody tr').filter({ hasText: PROFILE })
+      // SVG should be absent (no issues)
+      await expect(row.locator('td:first-child svg')).toBeHidden()
+    })
+
+    test('inline rename works from table', async ({ page }) => {
+      await openNotificationsTab(page)
+      // Click the strong name element — JS replaces it with an <input>
+      await page.locator('strong[data-notify-rename-id]').filter({ hasText: PROFILE }).click()
+      // After click the strong is gone; wait for any text input inside the tbody to appear
+      const input = page.locator('#notifyTbody input[type=text]').first()
+      await expect(input).toBeVisible({ timeout: 5_000 })
+      await expect(input).toHaveValue(PROFILE)
+      await input.fill('e2e-limits-renamed')
+      await input.press('Enter')
+      await expect(page.locator('#notifyTbody')).toContainText('e2e-limits-renamed')
+
+      // Rename back
+      await page.locator('strong[data-notify-rename-id]').filter({ hasText: 'e2e-limits-renamed' }).click()
+      const input2 = page.locator('#notifyTbody input[type=text]').first()
+      await expect(input2).toBeVisible({ timeout: 5_000 })
+      await input2.fill(PROFILE)
+      await input2.press('Enter')
+      await expect(page.locator('#notifyTbody')).toContainText(PROFILE)
+    })
+
+    test('suspension duration dropdown hides amount input for calendar options', async ({ page }) => {
+      await openNotificationsTab(page)
+      const editBtn = page.locator('#notifyTbody tr').filter({ hasText: PROFILE }).getByRole('button', { name: /edit/i })
+      await editBtn.click()
+      // Calendar option should hide the amount input
+      await page.locator('#notifySuspendUnit').selectOption('midnight')
+      await expect(page.locator('#notifySuspendAmount')).toBeHidden()
+      // Duration option should show it
+      await page.locator('#notifySuspendUnit').selectOption('h')
+      await expect(page.locator('#notifySuspendAmount')).toBeVisible()
+      await page.locator('#cancelNotifyEditBtn').click()
+    })
+
+    test('clean up limits test profile', async ({ page }) => {
+      await openNotificationsTab(page)
+      await deleteProfile(page, PROFILE)
+    })
+  })
+
   // ── Live credential tests ──────────────────────────────────────────────────
   // These tests only run when the corresponding env vars are set (GitHub
   // secrets passed into the CI job). They skip gracefully otherwise so they
@@ -366,7 +514,7 @@ test.describe('Settings — Notifications tab', () => {
   //   E2E_EMAIL_PASSWORD             SMTP auth password    (optional)
 
   test.describe('Live notification delivery (requires secrets)', () => {
-    type Page = Parameters<Parameters<typeof test>[1]>[0]['page']
+    type Page = Page
 
     async function liveTestProfile(page: Page, profileName: string) {
       const editBtn = page.locator('#notifyTbody tr')

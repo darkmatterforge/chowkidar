@@ -67,6 +67,8 @@ type app struct {
 	httpClient           *http.Client
 	jobs                 []config.Job
 	notifications        []config.NotificationProfile
+	notifUsage           map[string]*notifProfileUsage // profile ID → in-memory usage (reset on restart)
+	notifUsageMu         sync.Mutex
 	dockerHosts          []config.DockerHostProfile
 	scripts              []config.ScriptEntry
 	history              *history.Store
@@ -588,6 +590,7 @@ func main() {
 		activeJobs:           make(map[string]bool),
 		lastJobScan:          make(map[string]time.Time),
 		lastJobNotifications: make(map[string][]string),
+		notifUsage:           make(map[string]*notifProfileUsage),
 		lastJobRuleName:      make(map[string]string),
 		knownNames:           make(map[string]string),
 		authCfg:              authCfg,
@@ -687,6 +690,8 @@ func setupMux(a *app) *http.ServeMux {
 	mux.HandleFunc("/api/jobs", a.authMiddleware(a.handleJobs))
 	mux.HandleFunc("/api/jobs/", a.authMiddleware(a.handleJobByID))
 	mux.HandleFunc("/api/notifications", a.authMiddleware(a.handleNotifications))
+	mux.HandleFunc("/api/notifications/", a.authMiddleware(a.handleNotificationByID))
+	mux.HandleFunc("/api/system-alerts", a.authMiddleware(a.handleSystemAlerts))
 	mux.HandleFunc("/api/docker-hosts", a.authMiddleware(a.handleDockerHosts))
 	mux.HandleFunc("/api/docker-hosts/status", a.authMiddleware(a.handleDockerHostsStatus))
 	mux.HandleFunc("/api/scripts", a.authMiddleware(a.handleScripts))
@@ -851,6 +856,16 @@ func (a *app) retryDocker(ctx context.Context, fn func() error) error {
 		}
 	}
 	return fmt.Errorf("docker operation failed after %d attempts", cfg.DockerClientRetryCount)
+}
+
+// notifProfileUsage tracks in-memory send counts for rate limiting.
+// Counts reset on server restart — this is acceptable since SuspendedUntil
+// (the hard enforcement) is persisted to notifications.yaml.
+type notifProfileUsage struct {
+	dayKey     string // "YYYY-MM-DD" — reset when day changes
+	dayCount   int
+	burstKey   string // truncated time bucket
+	burstCount int
 }
 
 type recoveredContainer struct {
@@ -2046,7 +2061,35 @@ func (a *app) handleJobs(w http.ResponseWriter, r *http.Request) {
 func (a *app) handleNotifications(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, map[string]any{"profiles": a.getNotificationProfiles()})
+		profiles := a.getNotificationProfiles()
+		// Enrich each profile with live usage counters so the UI can show
+		// the progress bar without the server needing a separate endpoint.
+		type enriched struct {
+			config.NotificationProfile
+			DailyUsage int `json:"dailyUsage"`
+			BurstUsage int `json:"burstUsage"`
+		}
+		out := make([]enriched, len(profiles))
+		a.notifUsageMu.Lock()
+		for i, p := range profiles {
+			e := enriched{NotificationProfile: p}
+			if u, ok := a.notifUsage[p.ID]; ok {
+				today := time.Now().UTC().Format("2006-01-02")
+				if u.dayKey == today {
+					e.DailyUsage = u.dayCount
+				}
+				if p.BurstWindowMinutes > 0 {
+					bw := time.Duration(p.BurstWindowMinutes) * time.Minute
+					bk := time.Now().UTC().Truncate(bw).Format(time.RFC3339)
+					if u.burstKey == bk {
+						e.BurstUsage = u.burstCount
+					}
+				}
+			}
+			out[i] = e
+		}
+		a.notifUsageMu.Unlock()
+		writeJSON(w, http.StatusOK, map[string]any{"profiles": out})
 	case http.MethodPut:
 		var body struct {
 			Profiles []config.NotificationProfile `json:"profiles"`
@@ -2074,6 +2117,83 @@ func (a *app) handleNotifications(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleNotificationByID handles per-profile actions:
+//
+//	POST /api/notifications/{id}/suspend  body: {"until":"RFC3339 or 'midnight'|'month-end'"}
+//	POST /api/notifications/{id}/resume
+//	POST /api/notifications/{id}/dismiss-error
+func (a *app) handleNotificationByID(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	// parse  /api/notifications/{id}/{action}
+	parts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/api/notifications/"), "/", 2)
+	if len(parts) != 2 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid path"})
+		return
+	}
+	profileID, action := parts[0], parts[1]
+
+	switch action {
+	case "suspend":
+		var body struct {
+			Until string `json:"until"` // RFC3339 OR "midnight" | "1h" | "24h" | "month-end"
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		var until time.Time
+		tz := a.getConfig().DisplayTimezone
+		switch body.Until {
+		case "", "midnight":
+			until = nextMidnight(tz)
+		case "month-end":
+			until = endOfMonth(tz)
+		default:
+			// Generic duration patterns: Nm = minutes, Nh = hours, Nd = days, Nw = weeks
+			// e.g. "6h", "2d", "3w", "45m"
+			d, parseErr := parseSuspendDuration(body.Until)
+			if parseErr == nil {
+				until = time.Now().Add(d)
+			} else {
+				// Fall back to RFC3339 literal timestamp
+				parsed, err := time.Parse(time.RFC3339, body.Until)
+				if err != nil {
+					writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid until value — use Nm/Nh/Nd/Nw, 'midnight', 'month-end', or RFC3339"})
+					return
+				}
+				until = parsed
+			}
+		}
+		a.suspendProfile(profileID, until, "")
+		writeJSON(w, http.StatusOK, map[string]any{"suspended": true, "until": until})
+
+	case "resume":
+		a.resumeProfile(profileID)
+		writeJSON(w, http.StatusOK, map[string]any{"resumed": true})
+
+	case "dismiss-error":
+		// Clear the persisted rate-limit error without changing suspension state
+		a.mu.Lock()
+		profiles := make([]config.NotificationProfile, len(a.notifications))
+		copy(profiles, a.notifications)
+		for i, p := range profiles {
+			if p.ID == profileID {
+				profiles[i].LastRateLimitError = ""
+				profiles[i].LastRateLimitAt = nil
+				break
+			}
+		}
+		a.notifications = profiles
+		configDir := a.cfg.ConfigDir
+		a.mu.Unlock()
+		_ = config.SaveNotificationProfiles(configDir, profiles)
+		writeJSON(w, http.StatusOK, map[string]any{"dismissed": true})
+
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "unknown action: " + action})
+	}
+}
+
 func builtInDockerHostProfile(socketPath string) config.DockerHostProfile {
 	return config.DockerHostProfile{
 		ID:       "local",
@@ -2083,6 +2203,78 @@ func builtInDockerHostProfile(socketPath string) config.DockerHostProfile {
 		Enabled:  true,
 		BuiltIn:  true,
 	}
+}
+
+// handleSystemAlerts returns recent critical system events — failed recoveries,
+// paused monitoring, and monitoring-started — independently of notification
+// agents. These always show in the bell regardless of whether any agent is
+// configured or enabled.
+func (a *app) handleSystemAlerts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	type SystemAlert struct {
+		ID            string    `json:"id"`
+		Type          string    `json:"type"`
+		ContainerName string    `json:"containerName,omitempty"`
+		Message       string    `json:"message"`
+		Timestamp     time.Time `json:"timestamp"`
+		Action        string    `json:"action,omitempty"`
+	}
+
+	var alerts []SystemAlert
+
+	// Monitoring-started event — always present when the monitor has run at least once
+	a.mu.RLock()
+	lastScan := a.lastScan
+	a.mu.RUnlock()
+	if !lastScan.IsZero() {
+		alerts = append(alerts, SystemAlert{
+			ID:        "monitoring-started",
+			Type:      "monitoring_started",
+			Message:   "Monitoring is active",
+			Timestamp: lastScan,
+		})
+	}
+
+	// Pull recent failed recoveries + paused monitoring from history
+	if a.history != nil {
+		entries, _, err := a.history.ListPage(history.ListOptions{
+			Limit:        50,
+			OnlyStatuses: []string{"failed", "exhausted"},
+		})
+		if err == nil {
+			seen := make(map[string]bool) // deduplicate by container name
+			for _, e := range entries {
+				key := e.ContainerName + ":" + e.Status
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				alertType := "failed_recovery"
+				msg := "Recovery action failed"
+				if e.Status == "exhausted" {
+					alertType = "paused_monitoring"
+					msg = "Monitoring paused — max retries reached"
+				}
+				if e.Error != "" {
+					msg = e.Error
+				}
+				alerts = append(alerts, SystemAlert{
+					ID:            e.ContainerID + "-" + e.Status,
+					Type:          alertType,
+					ContainerName: e.ContainerName,
+					Message:       msg,
+					Timestamp:     e.Timestamp,
+					Action:        e.Action,
+				})
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"alerts": alerts})
 }
 
 func (a *app) handleDockerHostsGET(w http.ResponseWriter) {
@@ -3133,6 +3325,148 @@ func buildNotifierServicesFromProfiles(profiles []config.NotificationProfile) st
 	return strings.Join(services, ",")
 }
 
+// ── Notification rate limiting & suspension helpers ───────────────────────
+
+func isRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, kw := range []string{"quota", "rate limit", "too many", "429", "limit reached", "throttl", "42908", "daily message", "exceeded"} {
+		if strings.Contains(msg, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+// nextMidnight returns midnight in the given IANA timezone, falling back to UTC.
+// parseSuspendDuration parses strings like "6h", "30m", "3d", "2w" into a time.Duration.
+func parseSuspendDuration(s string) (time.Duration, error) {
+	if len(s) < 2 {
+		return 0, fmt.Errorf("too short")
+	}
+	unit := s[len(s)-1]
+	n, err := strconv.Atoi(s[:len(s)-1])
+	if err != nil || n < 1 {
+		return 0, fmt.Errorf("invalid number")
+	}
+	switch unit {
+	case 'm':
+		return time.Duration(n) * time.Minute, nil
+	case 'h':
+		return time.Duration(n) * time.Hour, nil
+	case 'd':
+		return time.Duration(n) * 24 * time.Hour, nil
+	case 'w':
+		return time.Duration(n) * 7 * 24 * time.Hour, nil
+	default:
+		return 0, fmt.Errorf("unknown unit %q — use m/h/d/w", unit)
+	}
+}
+
+func nextMidnight(ianaZone string) time.Time {
+	loc, err := time.LoadLocation(ianaZone)
+	if err != nil || ianaZone == "" {
+		loc = time.UTC
+	}
+	n := time.Now().In(loc)
+	return time.Date(n.Year(), n.Month(), n.Day()+1, 0, 0, 0, 0, loc)
+}
+
+// nextMidnightUTC kept as a convenience alias used in spots without cfg access.
+func nextMidnightUTC() time.Time { return nextMidnight("") }
+
+func endOfMonthUTC() time.Time {
+	n := time.Now().UTC()
+	first := time.Date(n.Year(), n.Month()+1, 1, 0, 0, 0, 0, time.UTC)
+	return first
+}
+
+func endOfMonth(ianaZone string) time.Time {
+	loc, err := time.LoadLocation(ianaZone)
+	if err != nil || ianaZone == "" {
+		loc = time.UTC
+	}
+	n := time.Now().In(loc)
+	first := time.Date(n.Year(), n.Month()+1, 1, 0, 0, 0, 0, loc)
+	return first
+}
+
+func (a *app) isProfileSuspended(p config.NotificationProfile) bool {
+	return p.SuspendedUntil != nil && p.SuspendedUntil.After(time.Now().UTC())
+}
+
+// getOrCreateUsage returns the usage bucket for a profile, resetting stale counters.
+func (a *app) getOrCreateUsage(profileID string, p config.NotificationProfile) *notifProfileUsage {
+	a.notifUsageMu.Lock()
+	defer a.notifUsageMu.Unlock()
+	u, ok := a.notifUsage[profileID]
+	if !ok {
+		u = &notifProfileUsage{}
+		a.notifUsage[profileID] = u
+	}
+	today := time.Now().UTC().Format("2006-01-02")
+	if u.dayKey != today {
+		u.dayKey = today
+		u.dayCount = 0
+	}
+	if p.BurstWindowMinutes > 0 {
+		bw := time.Duration(p.BurstWindowMinutes) * time.Minute
+		bucketKey := time.Now().UTC().Truncate(bw).Format(time.RFC3339)
+		if u.burstKey != bucketKey {
+			u.burstKey = bucketKey
+			u.burstCount = 0
+		}
+	}
+	return u
+}
+
+// suspendProfile writes SuspendedUntil + optional error to the profile and persists.
+func (a *app) suspendProfile(profileID string, until time.Time, reason string) {
+	a.mu.Lock()
+	profiles := make([]config.NotificationProfile, len(a.notifications))
+	copy(profiles, a.notifications)
+	for i, p := range profiles {
+		if p.ID != profileID {
+			continue
+		}
+		t := until
+		profiles[i].SuspendedUntil = &t
+		if reason != "" {
+			profiles[i].LastRateLimitError = reason
+			now := time.Now().UTC()
+			profiles[i].LastRateLimitAt = &now
+		}
+		break
+	}
+	a.notifications = profiles
+	configDir := a.cfg.ConfigDir
+	a.mu.Unlock()
+	if err := config.SaveNotificationProfiles(configDir, profiles); err != nil {
+		logWarnf("notif: failed to persist suspension for profile=%s: %v", profileID, err)
+	}
+}
+
+// resumeProfile clears the suspension and persists.
+func (a *app) resumeProfile(profileID string) {
+	a.mu.Lock()
+	profiles := make([]config.NotificationProfile, len(a.notifications))
+	copy(profiles, a.notifications)
+	for i, p := range profiles {
+		if p.ID == profileID {
+			profiles[i].SuspendedUntil = nil
+			break
+		}
+	}
+	a.notifications = profiles
+	configDir := a.cfg.ConfigDir
+	a.mu.Unlock()
+	if err := config.SaveNotificationProfiles(configDir, profiles); err != nil {
+		logWarnf("notif: failed to persist resume for profile=%s: %v", profileID, err)
+	}
+}
+
 func (a *app) sendJobNotifications(event string, data notifData, profileIDs []string) error {
 	if len(profileIDs) == 0 {
 		return nil
@@ -3163,6 +3497,41 @@ func (a *app) sendJobNotifications(event string, data notifData, profileIDs []st
 		if !ok || !p.Enabled || strings.TrimSpace(p.Service) == "" {
 			continue
 		}
+
+		// ── Suspension check ──────────────────────────────────────────────
+		if a.isProfileSuspended(p) {
+			logInfof("notif: skip suspended profile=%s until=%s", p.Name, p.SuspendedUntil.Format(time.RFC3339))
+			continue
+		}
+
+		// ── Rate limit checks (in-memory counters) ────────────────────────
+		if p.DailyLimit > 0 || p.BurstLimit > 0 {
+			u := a.getOrCreateUsage(id, p)
+			a.notifUsageMu.Lock()
+			hitBurst := p.BurstLimit > 0 && u.burstCount >= p.BurstLimit
+			hitDaily := p.DailyLimit > 0 && u.dayCount >= p.DailyLimit
+			a.notifUsageMu.Unlock()
+			if hitBurst || hitDaily {
+				reason := "daily limit reached"
+				if hitBurst {
+					reason = "burst limit reached"
+				}
+				logWarnf("notif: limit hit profile=%s reason=%s", p.Name, reason)
+				action := p.OnLimitAction
+				if action == "" {
+					action = "auto-suspend"
+				}
+				switch action {
+				case "auto-suspend":
+					a.suspendProfile(id, nextMidnight(a.getConfig().DisplayTimezone), reason)
+				case "drop":
+					// silently drop
+				}
+				lastErr = fmt.Errorf("notification limit hit: %s", reason)
+				continue
+			}
+		}
+
 		titleTmpl := p.AppliedTitleTemplate(event)
 		var title string
 		if titleTmpl != "" {
@@ -3178,6 +3547,26 @@ func (a *app) sendJobNotifications(event string, data notifData, profileIDs []st
 		if err := n.Send(title, body); err != nil {
 			logWarnf("job notification failed profile=%s err=%v", p.Name, err)
 			lastErr = err
+
+			// ── Auto-suspend on quota / rate-limit error ───────────────
+			if isRateLimitError(err) {
+				shouldAutoSuspend := p.AutoSuspendOnError || p.OnLimitAction == "auto-suspend" || p.OnLimitAction == ""
+				if shouldAutoSuspend && !a.isProfileSuspended(p) {
+					tz := a.getConfig().DisplayTimezone
+					until := nextMidnight(tz)
+					logInfof("notif: auto-suspending profile=%s until=%s tz=%s reason=rate-limit", p.Name, until.Format(time.RFC3339), tz)
+					a.suspendProfile(id, until, err.Error())
+				}
+			}
+		} else {
+			// Increment usage counters on successful send
+			if p.DailyLimit > 0 || p.BurstLimit > 0 {
+				u := a.getOrCreateUsage(id, p)
+				a.notifUsageMu.Lock()
+				u.dayCount++
+				u.burstCount++
+				a.notifUsageMu.Unlock()
+			}
 		}
 	}
 	return lastErr

@@ -1107,6 +1107,22 @@
         <button id="themeToggleBtn" class="nav-btn" title="Toggle theme" style="font-size:16px;padding:8px 12px;" type="button">⊙</button>
         <button class="nav-btn active" data-page="dashboard">Dashboard</button>
         <button class="nav-btn" data-page="settings">Settings</button>
+        <!-- Notification bell -->
+        <div style="position:relative;display:inline-flex;align-items:center;">
+          <button id="notifBellBtn" class="nav-btn" title="Notification alerts" style="padding:8px 12px;position:relative;display:inline-flex;align-items:center;justify-content:center;" type="button">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16" style="display:block;opacity:.75;">
+              <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2M8 1.918l-.797.161A4 4 0 0 0 4 6c0 .628-.134 2.197-.459 3.742-.16.767-.376 1.566-.663 2.258h10.244c-.287-.692-.502-1.49-.663-2.258C12.134 8.197 12 6.628 12 6a4 4 0 0 0-3.203-3.92zM14.22 12c.223.447.481.801.78 1H1c.299-.199.557-.553.78-1C2.68 10.2 3 6.88 3 6c0-2.42 1.72-4.44 4.005-4.901a1 1 0 1 1 1.99 0A5 5 0 0 1 13 6c0 .88.32 4.2 1.22 6"/>
+            </svg>
+            <span id="notifBellBadge" style="display:none;position:absolute;top:5px;right:5px;background:#e5a92a;color:#2a1500;font-size:9px;font-weight:800;padding:1px 4px;border-radius:10px;line-height:1.2;pointer-events:none;min-width:14px;text-align:center;"></span>
+          </button>
+          <div id="notifBellDropdown" style="display:none;position:absolute;top:calc(100% + 8px);right:0;width:360px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 32px rgba(18,38,63,.18);z-index:9000;overflow:hidden;">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--bg);">
+              <span style="font-size:13px;font-weight:700;color:var(--text);">Notification Alerts</span>
+              <button type="button" onclick="dismissAllNotifAlerts()" style="font-size:12px;color:var(--accent);background:none;border:none;cursor:pointer;font-weight:600;">Mark all read</button>
+            </div>
+            <div id="notifBellList" style="max-height:360px;overflow-y:auto;"></div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1477,6 +1493,73 @@
                   </div>
                 </div>
 
+                <!-- Rate limiting & suspension -->
+                <div style="margin-top:14px;padding:14px 16px;background:var(--bg);border:1px solid var(--line);border-radius:10px;">
+                  <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);font-weight:700;margin-bottom:12px;">Notification Limits <span style="text-transform:none;letter-spacing:0;font-weight:400;">(optional — leave blank for no limit)</span></div>
+
+                  <div class="form-grid" style="margin-bottom:12px;">
+                    <div class="field">
+                      <label>Burst limit</label>
+                      <div style="display:flex;align-items:center;gap:8px;">
+                        <input type="number" id="notifyBurstLimit" min="1" placeholder="e.g. 3" style="max-width:90px;" />
+                        <span style="font-size:13px;color:var(--muted);">per</span>
+                        <select id="notifyBurstWindow">
+                          <option value="5">5 minutes</option>
+                          <option value="10">10 minutes</option>
+                          <option value="30">30 minutes</option>
+                          <option value="60">1 hour</option>
+                        </select>
+                      </div>
+                      <div class="hint" style="margin-top:4px;">Stops rapid-fire floods</div>
+                    </div>
+                    <div class="field">
+                      <label>Daily cap</label>
+                      <div style="display:flex;align-items:center;gap:8px;">
+                        <input type="number" id="notifyDailyLimit" min="1" placeholder="e.g. 20" style="max-width:90px;" />
+                        <span style="font-size:13px;color:var(--muted);">per day</span>
+                      </div>
+                      <div class="hint" style="margin-top:4px;">Matches provider free-tier caps</div>
+                    </div>
+                  </div>
+
+                  <div class="field" style="margin-bottom:12px;">
+                    <label>When limit is reached</label>
+                    <div style="display:flex;flex-direction:column;gap:7px;margin-top:6px;">
+                      <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;font-weight:normal;text-transform:none;letter-spacing:0;">
+                        <input type="radio" name="notifyOnLimit" id="notifyOnLimitSuspend" value="auto-suspend" checked style="accent-color:var(--accent);width:14px;height:14px;" />
+                        <span><strong>Auto-suspend until period resets</strong> — show alert in bell</span>
+                      </label>
+                      <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;font-weight:normal;text-transform:none;letter-spacing:0;">
+                        <input type="radio" name="notifyOnLimit" id="notifyOnLimitDrop" value="drop" style="accent-color:var(--accent);width:14px;height:14px;" />
+                        <span><strong>Drop silently</strong> — skip sending, no dashboard warning</span>
+                      </label>
+                    </div>
+                    <label style="display:flex;align-items:center;gap:7px;margin-top:10px;font-size:13px;cursor:pointer;font-weight:normal;text-transform:none;letter-spacing:0;">
+                      <input type="checkbox" id="notifyAutoSuspendOnError" style="accent-color:var(--accent);width:14px;height:14px;" />
+                      <span>Auto-suspend to midnight if a quota / rate-limit error is detected</span>
+                    </label>
+                  </div>
+
+                  <div class="field" style="margin-bottom:0;">
+                    <label>Suspend now</label>
+                    <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;">
+                      <input type="number" id="notifySuspendAmount" min="1" placeholder="e.g. 6" style="max-width:80px;" />
+                      <select id="notifySuspendUnit" onchange="toggleSuspendAmount(this.value)">
+                        <option value="h" selected>hours</option>
+                        <option value="m">minutes</option>
+                        <option value="d">days</option>
+                        <option value="w">weeks</option>
+                        <option value="midnight">— Until midnight (server tz)</option>
+                        <option value="month-end">— Until month end</option>
+                      </select>
+                      <button type="button" class="btn" onclick="suspendNotifAgentCustom()">Suspend</button>
+                    </div>
+                    <div class="hint" style="margin-top:4px;">Agent auto-resumes when the period ends</div>
+                  </div>
+
+                  <div id="notifSuspendStatus" style="display:none;margin-top:10px;padding:8px 12px;border-radius:7px;font-size:12px;"></div>
+                </div>
+
                 <!-- Message Templates collapsible -->
                 <div style="margin-top:14px;background:var(--bg);border:1px solid var(--line);border-radius:8px;overflow:hidden;">
                   <div id="notifyTemplatesHeader" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;cursor:pointer;user-select:none;gap:8px;" onclick="toggleNotifyTemplates()">
@@ -1650,8 +1733,8 @@
               <div><div class="test-result-title"></div><div class="test-result-detail"></div></div>
             </div>
             <table>
-              <thead><tr><th>Name</th><th>Provider</th><th>Service</th><th>Enabled</th><th>Test</th><th>Edit</th><th>Delete</th></tr></thead>
-              <tbody id="notifyTbody"><tr><td colspan="7">No notification profiles</td></tr></tbody>
+              <thead><tr><th>Name</th><th>Provider</th><th>Status</th><th>Daily usage</th><th>Test</th><th>Edit</th><th>Delete</th></tr></thead>
+              <tbody id="notifyTbody"><tr><td colspan="7">No notification agents configured</td></tr></tbody>
             </table>
 
 
@@ -5023,6 +5106,16 @@ echo "Restart complete"`,
       document.getElementById('notifyTplRetryLimit').value         = tpls.retryLimit;
     }
 
+    function resetNotifyLimitFields() {
+      document.getElementById('notifyBurstLimit').value = '';
+      document.getElementById('notifyBurstWindow').value = '5';
+      document.getElementById('notifyDailyLimit').value = '';
+      document.getElementById('notifyOnLimitSuspend').checked = true;
+      document.getElementById('notifyAutoSuspendOnError').checked = true;
+      const ss = document.getElementById('notifSuspendStatus');
+      if (ss) ss.style.display = 'none';
+    }
+
     function resetNotifyForm() {
       editingNotifyId = null;
       selectedNotifyProvider = 'discord';
@@ -5032,6 +5125,7 @@ echo "Restart complete"`,
       document.getElementById('notifyAddToAllJobs').checked = false;
       document.getElementById('notifyStatus').textContent = '';
       document.getElementById('saveNotifyBtn').textContent = 'Add Agent';
+      resetNotifyLimitFields();
       const testResult = document.getElementById('notifyTestResult');
       if (testResult) testResult.style.display = 'none';
       ['notifyTplBootUp', 'notifyTplUnhealthyDetected', 'notifyTplRetrying', 'notifyTplCooldown',
@@ -5065,10 +5159,56 @@ echo "Restart complete"`,
         const serviceDisplay = svc.length > 42 ? svc.slice(0, 39) + '…' : svc;
         const isDefault = !!profile.is_default;
         const defaultBadge = isDefault ? ' <span class="default-badge">DEFAULT</span>' : '';
-        tr.innerHTML = `<td><strong>${escapeHtml(profile.name)}</strong>${defaultBadge}</td>
+
+        // Status + usage
+        const suspended = profile.suspendedUntil && new Date(profile.suspendedUntil) > new Date();
+        const hasError = !!profile.lastRateLimitError;
+        let statusHtml, usageHtml, bellHtml, rowStyle = '';
+        if (suspended) {
+          const left = msToHuman(new Date(profile.suspendedUntil) - Date.now());
+          statusHtml = `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><span class="pill" style="background:#fff3e0;color:#b05a00;border:1px solid #ffd08a;">🟡 Suspended ${left}</span><button class="btn" style="font-size:11px;padding:3px 8px;" data-notify-resume-id="${escapeHtml(profile.id)}">Resume</button></div>`;
+          rowStyle = 'opacity:.75;';
+        } else if (hasError) {
+          statusHtml = `<span class="pill fail" style="border:1px solid #f5b3b8;">⚠ Quota hit</span>`;
+        } else if (profile.enabled) {
+          statusHtml = `<span class="pill ok">● Active</span>`;
+        } else {
+          statusHtml = `<span class="pill" style="background:#eef2f8;color:#5f7a9a;">○ Disabled</span>`;
+        }
+        const daily = profile.dailyLimit > 0;
+        const burst = profile.burstLimit > 0;
+        if (daily || burst) {
+          const used = profile.dailyUsage || 0, cap = profile.dailyLimit || 0;
+          const pct = cap > 0 ? Math.min(100, Math.round((used / cap) * 100)) : 0;
+          const fillColor = pct >= 100 ? 'var(--danger)' : pct >= 80 ? 'var(--warn)' : 'var(--ok)';
+          const cntColor = pct >= 100 ? 'var(--danger)' : pct >= 80 ? 'var(--warn)' : 'var(--ok)';
+          usageHtml = `<div style="display:flex;align-items:center;gap:6px;">
+            <div style="width:60px;height:5px;border-radius:3px;background:var(--line);overflow:hidden;flex-shrink:0;"><div style="height:100%;border-radius:3px;background:${fillColor};width:${pct}%;"></div></div>
+            <span style="font-size:11px;color:${cntColor};font-weight:700;">${used}/${cap}</span>
+          </div>`;
+        } else {
+          usageHtml = `<span style="font-size:11px;color:var(--muted);font-style:italic;">No limit</span>`;
+        }
+        // Caution icon — only rendered when there is an actual issue (suspended, quota hit, or approaching limit).
+        // Always visible for these states even if the bell alert has been dismissed.
+        const hasIssue = suspended || hasError || (daily && (profile.dailyUsage || 0) >= profile.dailyLimit * 0.8);
+        const cautionColor = (suspended || hasError || (daily && (profile.dailyUsage||0) >= profile.dailyLimit)) ? '#e05568' : '#e5a92a';
+        const cautionTitle = suspended
+          ? `Suspended · resumes ${new Date(profile.suspendedUntil).toLocaleString()}`
+          : (profile.lastRateLimitError || 'Approaching daily limit');
+        const cautionHtml = hasIssue
+          ? `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="${cautionColor}" viewBox="0 0 16 16" style="display:inline-block;vertical-align:middle;margin-right:5px;flex-shrink:0;" title="${escapeHtml(cautionTitle)}"><path d="M7.938 2.016A.13.13 0 0 1 8.002 2a.13.13 0 0 1 .063.016.146.146 0 0 1 .054.057l6.857 11.667c.036.06.035.124.002.183a.163.163 0 0 1-.054.06.116.116 0 0 1-.066.017H1.146a.115.115 0 0 1-.066-.017.163.163 0 0 1-.054-.06.176.176 0 0 1 .002-.183L7.884 2.073a.147.147 0 0 1 .054-.057zm1.044-.45a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767z"/><path d="M7.002 12a1 1 0 1 1 2 0 1 1 0 0 1-2 0M7.1 5.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0z"/></svg>` : '';
+
+        tr.style.cssText = rowStyle;
+        tr.innerHTML = `
+          <td>
+            <div style="display:flex;align-items:center;gap:0;">
+              ${cautionHtml}<strong style="cursor:pointer;" data-notify-rename-id="${escapeHtml(profile.id)}" title="Click to rename">${escapeHtml(profile.name)}</strong>${defaultBadge}
+            </div>
+          </td>
           <td style="white-space:nowrap;">${badgeHtml}${escapeHtml(providerLabel)}</td>
-          <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--muted);" title="${escapeHtml(svc)}">${escapeHtml(serviceDisplay)}</td>
-          <td>${profile.enabled ? '<span class="pill">on</span>' : '<span class="pill fail">off</span>'}</td>
+          <td>${statusHtml}</td>
+          <td>${usageHtml}</td>
           <td><button class="btn" style="font-size:12px;padding:5px 10px;" data-notify-test-id="${escapeHtml(profile.id)}">Test</button></td>
           <td><button class="btn" style="font-size:12px;padding:5px 10px;" data-notify-edit-id="${escapeHtml(profile.id)}">Edit</button></td>
           <td><button class="btn warn" style="font-size:12px;padding:5px 10px;" data-notify-delete-id="${escapeHtml(profile.id)}">Delete</button></td>`;
@@ -5087,6 +5227,22 @@ echo "Restart complete"`,
           renderNotifyDynamicFields(details);
           document.getElementById('notifyEnabled').checked = !!profile.enabled;
           document.getElementById('notifyIsDefault').checked = !!profile.is_default;
+          // Limits
+          document.getElementById('notifyBurstLimit').value = profile.burstLimit > 0 ? profile.burstLimit : '';
+          document.getElementById('notifyBurstWindow').value = profile.burstWindowMinutes > 0 ? String(profile.burstWindowMinutes) : '5';
+          document.getElementById('notifyDailyLimit').value = profile.dailyLimit > 0 ? profile.dailyLimit : '';
+          document.getElementById('notifyOnLimitSuspend').checked = profile.onLimitAction !== 'drop';
+          document.getElementById('notifyOnLimitDrop').checked = profile.onLimitAction === 'drop';
+          document.getElementById('notifyAutoSuspendOnError').checked = profile.autoSuspendOnError !== false;
+          const ss = document.getElementById('notifSuspendStatus');
+          if (ss) {
+            if (profile.suspendedUntil && new Date(profile.suspendedUntil) > new Date()) {
+              ss.style.cssText = 'display:block;background:var(--warn-bg);border:1px solid var(--warn);color:var(--text);margin-top:10px;padding:8px 12px;border-radius:7px;font-size:12px;';
+              ss.textContent = `Suspended · resumes ${new Date(profile.suspendedUntil).toLocaleString()}`;
+            } else {
+              ss.style.display = 'none';
+            }
+          }
           document.getElementById('notifyAddToAllJobs').checked = false;
           document.getElementById('notifyStatus').textContent = '';
           const tpl = profile.templates || {};
@@ -5131,6 +5287,218 @@ echo "Restart complete"`,
           await persistNotificationProfiles('Profile deleted.');
         });
       });
+
+      // Resume button — clears suspension directly from the table row
+      tbody.querySelectorAll('button[data-notify-resume-id]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          await quickResume(btn.getAttribute('data-notify-resume-id'));
+        });
+      });
+
+      // Inline rename — clicking the agent name turns it into an editable input
+      tbody.querySelectorAll('strong[data-notify-rename-id]').forEach((el) => {
+        el.addEventListener('click', () => {
+          const id = el.getAttribute('data-notify-rename-id');
+          const profile = notificationProfiles.find((p) => p.id === id);
+          if (!profile) return;
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.value = profile.name;
+          input.style.cssText = 'font-size:13px;font-weight:700;padding:2px 6px;border:1px solid var(--accent);border-radius:6px;background:var(--input-bg);color:var(--text);min-width:120px;';
+          el.replaceWith(input);
+          input.focus();
+          input.select();
+          const commit = async () => {
+            const newName = input.value.trim();
+            if (newName && newName !== profile.name) {
+              profile.name = newName;
+              await persistNotificationProfiles('Renamed.');
+            } else {
+              renderNotificationProfiles();
+            }
+          };
+          input.addEventListener('blur', commit);
+          input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+            if (e.key === 'Escape') { input.removeEventListener('blur', commit); renderNotificationProfiles(); }
+          });
+        });
+      });
+    }
+
+    // ── Notification bell & suspension helpers ────────────────────────────
+
+    function msToHuman(ms) {
+      if (ms <= 0) return '0m';
+      const h = Math.floor(ms / 3600000), m = Math.floor((ms % 3600000) / 60000);
+      return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    }
+
+    let systemAlerts = []; // fetched independently — shown even with no notification agents
+
+    async function loadSystemAlerts() {
+      try {
+        const res = await fetch('/api/system-alerts');
+        if (res.ok) {
+          const data = await res.json();
+          systemAlerts = data.alerts || [];
+        }
+      } catch { /* non-fatal */ }
+    }
+
+    function updateNotifBell() {
+      const profiles = notificationProfiles || [];
+      const agentAlerts = profiles.filter(p => {
+        if (p.lastRateLimitError) return true;
+        if (p.suspendedUntil && new Date(p.suspendedUntil) > new Date()) return false;
+        if (p.dailyLimit > 0 && (p.dailyUsage || 0) >= p.dailyLimit * 0.8) return true;
+        return false;
+      });
+      // Only failed_recovery and paused_monitoring raise the badge — monitoring_started is informational
+      const criticalSystem = systemAlerts.filter(a => a.type !== 'monitoring_started');
+      const total = agentAlerts.length + criticalSystem.length;
+      const badge = document.getElementById('notifBellBadge');
+      const bellSvg = document.querySelector('#notifBellBtn svg');
+      if (!badge) return;
+      if (total > 0) {
+        badge.textContent = total;
+        badge.style.display = '';
+        if (bellSvg) bellSvg.style.opacity = '1';
+      } else {
+        badge.style.display = 'none';
+        if (bellSvg) bellSvg.style.opacity = '.75';
+      }
+      renderNotifBellList(agentAlerts, criticalSystem);
+    }
+
+    function renderNotifBellList(agentAlerts, criticalSystem) {
+      const list = document.getElementById('notifBellList');
+      if (!list) return;
+      const allEmpty = !agentAlerts.length && !criticalSystem.length && !systemAlerts.length;
+      if (allEmpty) {
+        list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px;">No active alerts</div>';
+        return;
+      }
+
+      let html = '';
+
+      // ── System alerts section ─────────────────────────────────────────────
+      if (systemAlerts.length) {
+        html += `<div style="padding:6px 14px 4px;font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);font-weight:700;background:var(--bg);">System</div>`;
+        html += systemAlerts.map(a => {
+          const typeIcon = a.type === 'paused_monitoring' ? '⛔' : a.type === 'failed_recovery' ? '❌' : '✅';
+          const typeLabel = a.type === 'paused_monitoring'
+            ? `Monitoring paused — ${escapeHtml(a.containerName || '')}`
+            : a.type === 'failed_recovery'
+            ? `Recovery failed — ${escapeHtml(a.containerName || '')}`
+            : 'Monitoring active';
+          const desc = a.message ? escapeHtml(a.message.slice(0, 100)) : '';
+          const ts = a.timestamp ? new Date(a.timestamp).toLocaleString() : '';
+          return `<div style="padding:10px 14px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;gap:10px;">
+            <span style="font-size:16px;flex-shrink:0;margin-top:1px;">${typeIcon}</span>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:13px;font-weight:700;margin-bottom:2px;">${typeLabel}</div>
+              ${desc ? `<div style="font-size:11px;color:var(--muted);word-break:break-word;">${desc}</div>` : ''}
+              <div style="font-size:10px;color:var(--muted);margin-top:3px;">${escapeHtml(ts)}</div>
+            </div>
+          </div>`;
+        }).join('');
+      }
+
+      // ── Notification agent alerts section ─────────────────────────────────
+      if (agentAlerts.length) {
+        html += `<div style="padding:6px 14px 4px;font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);font-weight:700;background:var(--bg);">Notification Agents</div>`;
+        html += agentAlerts.map(p => {
+          const suspended = p.suspendedUntil && new Date(p.suspendedUntil) > new Date();
+          const left = suspended ? msToHuman(new Date(p.suspendedUntil) - Date.now()) : '';
+          const icon = p.lastRateLimitError ? '⚠️' : '📊';
+          const title = p.lastRateLimitError ? `${escapeHtml(p.name)} hit a rate limit` : `${escapeHtml(p.name)} approaching limit`;
+          const desc = p.lastRateLimitError
+            ? escapeHtml(p.lastRateLimitError.slice(0, 120))
+            : `${p.dailyUsage || 0}/${p.dailyLimit} daily notifications used`;
+          const suspendBtns = !suspended ? `
+            <button type="button" onclick="quickSuspend('${p.id}','24h')" style="font-size:11px;background:#e5a92a;color:#2a1500;border:none;border-radius:20px;padding:4px 10px;cursor:pointer;font-weight:700;">Suspend 24h</button>
+            <button type="button" onclick="quickSuspend('${p.id}','midnight')" style="font-size:11px;background:var(--bg);border:1px solid var(--line);border-radius:20px;padding:4px 10px;cursor:pointer;">Until midnight</button>` : `
+            <button type="button" onclick="quickResume('${p.id}')" style="font-size:11px;background:var(--ok);color:#03260e;border:none;border-radius:20px;padding:4px 10px;cursor:pointer;font-weight:700;">Resume</button>
+            <span style="font-size:11px;color:var(--muted);">Suspended · ${left} left</span>`;
+          const dismissBtn = `<button type="button" onclick="dismissNotifAlert('${p.id}')" style="font-size:11px;background:none;border:none;cursor:pointer;color:var(--muted);padding:2px 4px;">✕</button>`;
+          return `<div style="padding:12px 14px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;gap:10px;">
+            <span style="font-size:18px;flex-shrink:0;margin-top:1px;">${icon}</span>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:13px;font-weight:700;margin-bottom:2px;">${title}</div>
+              <div style="font-size:11px;color:var(--muted);margin-bottom:8px;word-break:break-word;">${desc}</div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">${suspendBtns}</div>
+            </div>
+            ${dismissBtn}
+          </div>`;
+        }).join('');
+      }
+
+      list.innerHTML = html;
+    }
+
+    async function quickSuspend(profileId, until) {
+      await fetch(`/api/notifications/${profileId}/suspend`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ until }),
+      });
+      await loadNotifications();
+    }
+
+    async function quickResume(profileId) {
+      await fetch(`/api/notifications/${profileId}/resume`, { method: 'POST' });
+      await loadNotifications();
+    }
+
+    async function dismissNotifAlert(profileId) {
+      await fetch(`/api/notifications/${profileId}/dismiss-error`, { method: 'POST' });
+      await loadNotifications();
+    }
+
+    function dismissAllNotifAlerts() {
+      const alerts = (notificationProfiles || []).filter(p => p.lastRateLimitError);
+      Promise.all(alerts.map(p => fetch(`/api/notifications/${p.id}/dismiss-error`, { method: 'POST' })))
+        .then(() => loadNotifications());
+    }
+
+    function toggleSuspendAmount(unit) {
+      const amountEl = document.getElementById('notifySuspendAmount');
+      if (!amountEl) return;
+      const isCalendar = unit === 'midnight' || unit === 'month-end';
+      amountEl.style.display = isCalendar ? 'none' : '';
+      if (isCalendar) amountEl.value = '';
+    }
+
+    function suspendNotifAgentCustom() {
+      const unit   = document.getElementById('notifySuspendUnit')?.value;
+      const amount = document.getElementById('notifySuspendAmount')?.value;
+      if (!unit) return;
+      if (unit === 'midnight' || unit === 'month-end') {
+        suspendNotifAgent(unit);
+      } else {
+        const n = parseInt(amount, 10);
+        if (!n || n < 1) { return; }
+        suspendNotifAgent(`${n}${unit}`);
+      }
+    }
+
+    async function suspendNotifAgent(until) {
+      if (!editingNotifyId) return;
+      const res = await fetch(`/api/notifications/${editingNotifyId}/suspend`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ until }),
+      });
+      const data = await res.json();
+      const el = document.getElementById('notifSuspendStatus');
+      if (res.ok) {
+        el.style.cssText = 'display:block;background:var(--warn-bg);border:1px solid var(--warn);color:var(--text);';
+        const left = msToHuman(new Date(data.until) - Date.now());
+        el.textContent = `Suspended for ${left} — resumes ${new Date(data.until).toLocaleString()}`;
+      } else {
+        el.style.cssText = 'display:block;background:var(--error-bg);border:1px solid var(--danger);color:var(--danger);';
+        el.textContent = data.error || 'Suspend failed';
+      }
+      await loadNotifications();
     }
 
     async function loadNotifications() {
@@ -5138,6 +5506,7 @@ echo "Restart complete"`,
       const data = await res.json();
       notificationProfiles = data.profiles || [];
       renderNotificationProfiles();
+      updateNotifBell();
       renderJobNotifyChips(Array.from(jobSelectedNotifications));
       renderBootNotifyChips([...bootNotifySelectedProfiles]);
     }
@@ -5206,9 +5575,15 @@ echo "Restart complete"`,
         actionFailed:       document.getElementById('notifyTplActionFailed').value.trim(),
         retryLimit:         document.getElementById('notifyTplRetryLimit').value.trim(),
       };
+      const burstLimit  = parseInt(document.getElementById('notifyBurstLimit').value, 10)  || 0;
+      const burstWindow = parseInt(document.getElementById('notifyBurstWindow').value, 10) || 5;
+      const dailyLimit  = parseInt(document.getElementById('notifyDailyLimit').value, 10)  || 0;
+      const onLimitAction = document.getElementById('notifyOnLimitDrop').checked ? 'drop' : 'auto-suspend';
+      const autoSuspendOnError = document.getElementById('notifyAutoSuspendOnError').checked;
+      const limitFields = { burstLimit, burstWindowMinutes: burstLimit > 0 ? burstWindow : 0, dailyLimit, onLimitAction, autoSuspendOnError };
       const updatedProfile = editingNotifyId
-        ? { ...(notificationProfiles.find((p) => p.id === editingNotifyId) || {}), name, provider, details, service, enabled, is_default: isDefault, templates }
-        : { id: `notification-agent-${Date.now()}`, name, provider, details, service, enabled, is_default: isDefault, templates };
+        ? { ...(notificationProfiles.find((p) => p.id === editingNotifyId) || {}), name, provider, details, service, enabled, is_default: isDefault, templates, ...limitFields }
+        : { id: `notification-agent-${Date.now()}`, name, provider, details, service, enabled, is_default: isDefault, templates, ...limitFields };
       let newProfiles = editingNotifyId
         ? notificationProfiles.map((p) => (p.id !== editingNotifyId ? p : updatedProfile))
         : [...notificationProfiles, updatedProfile];
@@ -5626,6 +6001,20 @@ echo "Restart complete"`,
       document.getElementById('jobTabScript').addEventListener('click', () => setJobActionTab('script'));
       document.getElementById('jobScript').addEventListener('input', updateScriptValidation);
       document.getElementById('dryRunScriptBtn').addEventListener('click', dryRunScript);
+
+      // Bell toggle
+      document.getElementById('notifBellBtn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const dd = document.getElementById('notifBellDropdown');
+        dd.style.display = dd.style.display === 'none' ? '' : 'none';
+      });
+      document.addEventListener('click', (e) => {
+        if (!document.getElementById('notifBellDropdown')?.contains(e.target) &&
+            !document.getElementById('notifBellBtn')?.contains(e.target)) {
+          const dd = document.getElementById('notifBellDropdown');
+          if (dd) dd.style.display = 'none';
+        }
+      });
       document.getElementById('copyScriptBtn').addEventListener('click', () => {
         const script = document.getElementById('jobScript').value;
         if (!script.trim()) return;
@@ -5705,7 +6094,7 @@ echo "Restart complete"`,
       renderNotifyDynamicFields();
       renderDockerConnTypePicker();
       await checkAuthStatus();
-      await Promise.all([loadSettings(), loadJobs(), loadNotifications()]);
+      await Promise.all([loadSettings(), loadJobs(), loadNotifications(), loadSystemAlerts()]);
       await loadDockerHosts();
       await loadDashboard();
       let dashboardPollTimer = null;
@@ -5718,7 +6107,10 @@ echo "Restart complete"`,
         const ms = getDashboardPollMs();
         if (ms === 0) return; // auto-refresh disabled
         dashboardPollTimer = setTimeout(async () => {
-          if (!document.hidden) await loadDashboard();
+          if (!document.hidden) {
+            await loadDashboard();
+            loadSystemAlerts().then(updateNotifBell); // refresh system alerts in background
+          }
           scheduleDashboardPoll();
         }, ms);
       }
