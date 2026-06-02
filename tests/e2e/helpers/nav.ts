@@ -8,7 +8,11 @@ import { Page, expect } from '@playwright/test'
  */
 export async function gotoApp(page: Page) {
   await page.goto('/')
-  await expect(page.locator('#loginPage')).toBeHidden({ timeout: 5_000 })
+  // Wait for the nav-bar theme button — it only appears after the app has
+  // fully initialised AND auth is confirmed. Checking #loginPage hidden is
+  // unreliable because the element starts display:none and the auth JS may not
+  // have run yet when the assertion fires.
+  await expect(page.locator('#themeToggleBtn')).toBeVisible({ timeout: 10_000 })
 }
 
 export async function gotoSettings(page: Page, tab?: string) {

@@ -15,15 +15,23 @@ async function selectProvider(
   providerKey: string,
 ) {
   await page.locator(`button[data-provider="${providerKey}"]`).click()
-  // Wait for dynamic fields to render
-  await expect(page.locator('#notifyDynamicFields input, #notifyDynamicFields textarea, #notifyDynamicFields select').first()).toBeVisible()
+  // Wait for the first dynamic field to be both rendered AND stable before
+  // returning — callers fill fields immediately after, so flakiness here
+  // causes the fill to target a stale or not-yet-rendered element.
+  const firstField = page.locator('#notifyDynamicFields input, #notifyDynamicFields textarea, #notifyDynamicFields select').first()
+  await expect(firstField).toBeVisible({ timeout: 8_000 })
+  await expect(firstField).toBeEnabled()
 }
 
 async function saveProfile(page: Parameters<Parameters<typeof test>[1]>[0]['page'], name: string) {
   await page.locator('#notifyName').fill(name)
   await page.locator('#notifyEnabled').check()
+  // Register the waitForResponse BEFORE clicking so we never miss a fast response
   const [res] = await Promise.all([
-    page.waitForResponse(r => r.url().includes('/api/notification') && r.request().method() !== 'GET'),
+    page.waitForResponse(
+      r => r.url().includes('/api/notification') && r.request().method() !== 'GET',
+      { timeout: 15_000 },
+    ),
     page.locator('#saveNotifyBtn').click(),
   ])
   expect(res.status()).toBeLessThan(500)

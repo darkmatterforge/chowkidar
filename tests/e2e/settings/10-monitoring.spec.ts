@@ -39,4 +39,30 @@ test.describe('Settings — Monitoring tab', () => {
     const current = await input.inputValue()
     expect(current.length).toBeGreaterThan(0)
   })
+
+  test('saving from General tab preserves hidden settings (retryCount not reset to 0)', async ({ page }) => {
+    // Previously _hiddenSettings only had 3 fields; retryCount, retryDelaySeconds,
+    // and actionTimeoutSeconds were silently zeroed on every Save.
+    // This test reads the current values, saves from General, then re-reads to
+    // confirm they survived the round-trip.
+    const BASE_URL = process.env.BASE_URL ?? 'http://localhost:8080'
+
+    const before = await page.request.get(`${BASE_URL}/api/settings`)
+    const beforeJson = await before.json()
+    const retryBefore = beforeJson.retryCount ?? 3
+
+    // Save settings from the General tab (no changes — just click Save)
+    await gotoSettings(page)
+    const [res] = await Promise.all([
+      page.waitForResponse(r => r.url().includes('/api/settings') && r.request().method() !== 'GET'),
+      page.locator('#saveSettingsBtn').click(),
+    ])
+    expect(res.status()).toBeLessThan(500)
+
+    // Re-read settings and verify retryCount wasn't reset
+    const after = await page.request.get(`${BASE_URL}/api/settings`)
+    const afterJson = await after.json()
+    expect(afterJson.retryCount).toBe(retryBefore)
+    expect(afterJson.retryCount).toBeGreaterThan(0)
+  })
 })

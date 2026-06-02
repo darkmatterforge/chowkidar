@@ -38,13 +38,17 @@ async function waitForStatus(
 test.describe('Health recovery', () => {
   test.setTimeout(150_000)
 
-  test('e2e-unhealthy container appears as monitored and starts healthy', async ({ page }) => {
+  test('e2e-unhealthy container appears as monitored', async ({ page }) => {
     await gotoApp(page)
 
-    // Container should appear in the monitored list (job covers it)
+    // Container should appear in the monitored list.
+    // By the time these tests run (after Groups 1–10), several minutes may have
+    // elapsed since the container started. The health file is removed at 15s, so
+    // the container may already be unhealthy or recovering. Just assert it's visible.
     const btn = page.locator('#serviceGroups button').filter({ hasText: CONTAINER })
     await expect(btn).toBeVisible({ timeout: 30_000 })
-    await expect(btn).toHaveClass(/status-up/)
+    // Container must be in some known state (up or down), not missing
+    await expect(btn).toHaveClass(/status-up|status-down/)
   })
 
   test('chowkidar detects the container going unhealthy', async ({ page }) => {

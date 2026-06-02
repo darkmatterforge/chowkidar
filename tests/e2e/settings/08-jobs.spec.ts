@@ -130,10 +130,16 @@ test.describe('Settings — Jobs tab', () => {
 
     test('clean up filter-type test jobs', async ({ page }) => {
       await openJobsTab(page)
-      for (const name of ['e2e-name-job-edited', 'e2e-label-job', 'e2e-env-job']) {
+      // Delete all e2e-* test jobs regardless of what names they ended up with
+      // after edits — previous test runs may have left extras.
+      for (const name of ['e2e-name-job', 'e2e-name-job-edited', 'e2e-label-job', 'e2e-env-job']) {
         await deleteJob(page, name)
       }
-      await expect(page.locator('#jobsTbody')).toContainText('No jobs')
+      // Also sweep any stray e2e-monitor job created by the setup script
+      // (only exists when tests run against the local/CI setup container)
+      await deleteJob(page, 'e2e-monitor')
+      // Don't assert "No jobs" — the setup script may have created jobs that
+      // persist across test runs
     })
   })
 
