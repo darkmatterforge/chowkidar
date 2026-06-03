@@ -2,7 +2,7 @@
  * E2E tests for bell notifications, save feedback banners, and UI behaviour.
  */
 
-import { test, expect, Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import { gotoApp, gotoSettings } from './helpers/nav.js'
 
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:8080'
