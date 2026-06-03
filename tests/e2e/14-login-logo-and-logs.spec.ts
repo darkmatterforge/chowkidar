@@ -2,7 +2,7 @@
  * Login logo, app version, and settings sidebar version display.
  */
 
-import { test, expect, Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import { gotoApp, gotoSettings, gotoLogin } from './helpers/nav.js'
 import * as fs from 'fs'
 import * as path from 'path'
