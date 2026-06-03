@@ -51,8 +51,8 @@ test.describe('Notification bell — Mark all read button', () => {
     await gotoApp(page)
     await clearDismissedAlerts(page)
 
-    // Open the bell and wait for the alerts poll to settle.
-    await page.locator('#notifBellBtn').click()
+    // Open the bell and wait for visibility.
+    await openBell(page)
     await page.waitForTimeout(500) // let the immediate refresh settle
 
     const list = page.locator('#notifBellList')
@@ -88,7 +88,7 @@ test.describe('Notification bell — Mark all read button', () => {
     await expect(page.locator('#themeToggleBtn')).toBeVisible()
 
     // Open the bell after the 5s poll fires or the immediate refresh on open.
-    await page.locator('#notifBellBtn').click()
+    await openBell(page)
     await page.waitForTimeout(800)
 
     await expect(page.locator('#markAllReadBtn')).toBeVisible()
