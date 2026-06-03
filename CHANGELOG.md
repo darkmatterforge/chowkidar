@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-04
+
 ### Added
 - **Nav-bar logout button** — door-exit icon shown in the top nav when authentication is enabled, positioned after the notification bell; dismisses session and returns to the login page; disappears immediately when auth is disabled
 - **Settings sidebar version display** — bottom of the settings tabs shows the running version (e.g. `v0.3.0`) and an amber "vX.Y.Z available" hint when a newer release exists
@@ -95,3 +97,6 @@ All notable changes to this project will be documented in this file.
 
 [0.1.1]: https://github.com/darkmatterforge/chowkidar/releases/tag/v0.1.1
 [0.1.0]: https://github.com/darkmatterforge/chowkidar/releases/tag/v0.1.0
+
+[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/darkmatterforge/chowkidar/compare/v1.0.0...v1.1.0
