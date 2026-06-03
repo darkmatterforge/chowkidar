@@ -3,7 +3,7 @@
  */
 
 import { test, expect } from '@playwright/test'
-import { gotoApp, gotoSettings, gotoLogin } from './helpers/nav.js'
+import { gotoApp, gotoSettings } from './helpers/nav.js'
 import * as fs from 'fs'
 import * as path from 'path'
 
