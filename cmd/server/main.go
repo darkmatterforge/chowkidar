@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -84,6 +85,13 @@ type app struct {
 	sessionMu            sync.Mutex
 	dryRunCleanupMu      sync.Mutex
 	dryRunCleanupTimer   *time.Timer
+	latestVersion        string               // non-empty when a newer release is found
+	latestVersionChecked time.Time            // when the check last ran
+	latestVersionRelDate string               // release date of latest version
+	bootTime             time.Time            // set once at startup; used to key the monitoring-started alert
+	clientTimezone       string               // last browser-reported IANA zone; reused when DisplayTimezone is unset
+	dismissedAlerts      map[string]time.Time // alert ID → time dismissed; persisted to dismissed-alerts.json
+	dismissedMu          sync.Mutex
 }
 
 type dockerClient interface {
@@ -119,6 +127,12 @@ type actionJob struct {
 	scriptTimeoutSeconds  int
 	postActionWaitSeconds int
 }
+
+// appVersion is set at build time via -ldflags "-X main.appVersion=x.y.z".
+// Falls back to "dev" when built without the flag (local development).
+var appVersion = "dev"
+
+const githubReleasesURL = "https://api.github.com/repos/darkmatterforge/chowkidar/releases/latest"
 
 type logLevel int
 
@@ -211,7 +225,7 @@ func (w *rotatingLogWriter) Write(p []byte) (n int, err error) {
 			w.file = nil
 		}
 		path := filepath.Join(w.dir, "app-"+today+".log")
-		if f, ferr := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); ferr == nil {
+		if f, ferr := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); ferr == nil {
 			w.file = f
 			w.currentDate = today
 		}
@@ -521,10 +535,10 @@ func main() {
 	}
 	logInfof("boot: config loaded port=%s configDir=%s action=%s workerCount=%d queueSize=%d", cfg.Port, cfg.ConfigDir, cfg.Action, cfg.WorkerCount, cfg.QueueSize)
 
-	if err := os.MkdirAll(filepath.Join(cfg.ConfigDir, "data"), 0o750); err != nil {
+	if err := os.MkdirAll(filepath.Join(cfg.ConfigDir, "data"), 0o755); err != nil {
 		log.Fatalf("failed to create config data dir: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(cfg.ConfigDir, "logs"), 0o750); err != nil {
+	if err := os.MkdirAll(filepath.Join(cfg.ConfigDir, "logs"), 0o755); err != nil {
 		log.Fatalf("failed to create config logs dir: %v", err)
 	}
 	logsDir := filepath.Join(cfg.ConfigDir, "logs")
@@ -551,7 +565,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to initialize history store: %v", err)
 	}
-	logInfof("boot: history store initialized path=%s", filepath.Join(cfg.ConfigDir, "data", "action-history.jsonl"))
+	logInfof("boot: history store initialized path=%s", historyStore.Path())
 
 	authCfg, err := config.LoadAuthConfig(cfg.ConfigDir)
 	if err != nil {
@@ -595,8 +609,16 @@ func main() {
 		knownNames:           make(map[string]string),
 		authCfg:              authCfg,
 		sessions:             make(map[string]sessionEntry),
+		bootTime:             time.Now().UTC(),
+		dismissedAlerts:      make(map[string]time.Time),
 	}
 	defer a.stopPool()
+	if da, err := loadDismissedAlerts(cfg.ConfigDir); err != nil {
+		logWarnf("boot: could not load dismissed alerts: %v", err)
+	} else {
+		a.dismissedAlerts = da
+		logInfof("boot: dismissed alerts loaded count=%d", len(da))
+	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.MaxIdleConns = cfg.HttpMaxIdleConns
 	transport.MaxIdleConnsPerHost = cfg.HttpMaxIdleConnsPerHost
@@ -630,6 +652,10 @@ func main() {
 	logInfof("boot: extra docker hosts initialized count=%d", len(a.getExtraClients()))
 	go a.monitorLoop(stopMonitor)
 	logInfof("boot: monitor loop started")
+	go a.checkForUpdates(stopMonitor)
+	logInfof("boot: update checker started version=%s", appVersion)
+	go a.pruneHistoryLoop(stopMonitor)
+	logInfof("boot: history pruner started retentionDays=%d", cfg.LogRetentionDays)
 
 	mux := setupMux(a)
 	srv := &http.Server{
@@ -681,21 +707,23 @@ func setupMux(a *app) *http.ServeMux {
 	mux.HandleFunc("/api/auth/logout", a.handleAuthLogout)
 	mux.HandleFunc("/api/auth/change-password", a.authMiddleware(a.handleAuthChangePassword))
 	mux.HandleFunc("/api/auth/disable", a.authMiddleware(a.handleAuthDisable))
-	mux.HandleFunc("/api/health", a.authMiddleware(a.handleHealth))
+	mux.HandleFunc("/api/health", a.handleHealth) // no auth — needed for Docker HEALTHCHECK
 	mux.HandleFunc("/api/diagnostics", a.authMiddleware(a.handleDiagnostics))
 	mux.HandleFunc("/api/containers", a.authMiddleware(a.handleContainers))
 	mux.HandleFunc("/api/settings", a.authMiddleware(a.handleSettings))
 	mux.HandleFunc("/api/settings/theme", a.authMiddleware(a.handleSettingsTheme))
 	mux.HandleFunc("/api/scripts/dry-run", a.authMiddleware(a.handleScriptDryRun))
+	mux.HandleFunc("/api/scripts/dry-run/cleanup", a.authMiddleware(a.handleScriptDryRunCleanup))
 	mux.HandleFunc("/api/jobs", a.authMiddleware(a.handleJobs))
 	mux.HandleFunc("/api/jobs/", a.authMiddleware(a.handleJobByID))
 	mux.HandleFunc("/api/notifications", a.authMiddleware(a.handleNotifications))
 	mux.HandleFunc("/api/notifications/", a.authMiddleware(a.handleNotificationByID))
 	mux.HandleFunc("/api/system-alerts", a.authMiddleware(a.handleSystemAlerts))
+	mux.HandleFunc("/api/system-alerts/dismiss", a.authMiddleware(a.handleSystemAlertsDismiss))
 	mux.HandleFunc("/api/docker-hosts", a.authMiddleware(a.handleDockerHosts))
 	mux.HandleFunc("/api/docker-hosts/status", a.authMiddleware(a.handleDockerHostsStatus))
 	mux.HandleFunc("/api/scripts", a.authMiddleware(a.handleScripts))
-	mux.HandleFunc("/api/history", a.authMiddleware(a.handleHistory))
+	mux.HandleFunc("/api/history", a.authMiddleware(a.handleHistoryEndpoint))
 	mux.HandleFunc("/api/test-notification", a.authMiddleware(a.handleTestNotification))
 	mux.HandleFunc("/api/test-docker-host", a.authMiddleware(a.handleTestDockerHost))
 	mux.HandleFunc("/api/action", a.authMiddleware(a.handleManualAction))
@@ -1490,6 +1518,10 @@ func (a *app) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		"monitoringStartsAt":    a.monitorStartsAt,
 		"lastScanValid":         !a.lastScan.IsZero(),
 		"encryptionKeyMismatch": crypto.HasDecryptionFailures(),
+		"version":               appVersion,
+		"latestVersion":         a.latestVersion,
+		"latestVersionRelDate":  a.latestVersionRelDate,
+		"bootTime":              a.bootTime,
 	}
 	a.mu.RUnlock()
 	writeJSON(w, http.StatusOK, resp)
@@ -1528,8 +1560,8 @@ func (a *app) enrichContainerServiceMap(ctx context.Context, jobs []config.Job, 
 	}
 
 	type inspectResult struct {
-		c       containertypes.Summary
-		envKeys []string
+		c        containertypes.Summary
+		envKeys  []string
 		envPairs []string
 	}
 	results := make([]inspectResult, len(listed))
@@ -1869,6 +1901,7 @@ func syncConfigFromBody(cfg *config.Config, body config.FileConfig) {
 	cfg.LogToFile = body.LogToFile
 	cfg.LogRetentionDays = body.LogRetentionDays
 	cfg.DashboardLayout = body.DashboardLayout
+	cfg.DashboardRefreshSeconds = body.DashboardRefreshSeconds
 	cfg.Theme = body.Theme
 }
 
@@ -2139,10 +2172,15 @@ func (a *app) handleNotificationByID(w http.ResponseWriter, r *http.Request) {
 	case "suspend":
 		var body struct {
 			Until string `json:"until"` // RFC3339 OR "midnight" | "1h" | "24h" | "month-end"
+			TZ    string `json:"tz"`    // browser-detected IANA zone (fallback when DisplayTimezone unset)
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		var until time.Time
-		tz := a.getConfig().DisplayTimezone
+		// Store the browser timezone for future auto-suspends, then resolve.
+		a.recordClientTimezone(body.TZ)
+		tz := a.resolveTimezone()
+		logDebugf("notif: suspend until=%s tz=%s (settings=%s client=%s stored=%s)",
+			body.Until, tz, a.getConfig().DisplayTimezone, body.TZ, a.clientTimezone)
 		switch body.Until {
 		case "", "midnight":
 			until = nextMidnight(tz)
@@ -2226,16 +2264,19 @@ func (a *app) handleSystemAlerts(w http.ResponseWriter, r *http.Request) {
 
 	var alerts []SystemAlert
 
-	// Monitoring-started event — always present when the monitor has run at least once
+	// Monitoring-started event — present once the monitor has run at least once.
+	// Use bootTime as the timestamp so it is always earlier than any recovery
+	// event (you can't have a recovery failure before monitoring started).
 	a.mu.RLock()
 	lastScan := a.lastScan
+	boot := a.bootTime
 	a.mu.RUnlock()
 	if !lastScan.IsZero() {
 		alerts = append(alerts, SystemAlert{
-			ID:        "monitoring-started",
+			ID:        "monitoring-started-" + boot.Format("20060102T150405"),
 			Type:      "monitoring_started",
 			Message:   "Monitoring is active",
-			Timestamp: lastScan,
+			Timestamp: boot, // boot time, not last-scan — always oldest event
 		})
 	}
 
@@ -2263,7 +2304,7 @@ func (a *app) handleSystemAlerts(w http.ResponseWriter, r *http.Request) {
 					msg = e.Error
 				}
 				alerts = append(alerts, SystemAlert{
-					ID:            e.ContainerID + "-" + e.Status,
+					ID:            fmt.Sprintf("%s-%s-%d", e.ContainerID, e.Status, e.Timestamp.Unix()),
 					Type:          alertType,
 					ContainerName: e.ContainerName,
 					Message:       msg,
@@ -2274,7 +2315,203 @@ func (a *app) handleSystemAlerts(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"alerts": alerts})
+	// Append update-available alert when a newer version has been found.
+	a.mu.RLock()
+	lv := a.latestVersion
+	lvd := a.latestVersionRelDate
+	a.mu.RUnlock()
+	if lv != "" && lv != appVersion {
+		alerts = append(alerts, SystemAlert{
+			ID:   "update-available-" + lv,
+			Type: "update_available",
+			Message: fmt.Sprintf("Chowkidar %s is available (current: %s)%s", lv, appVersion, func() string {
+				if lvd != "" {
+					return " — released " + lvd
+				}
+				return ""
+			}()),
+			Timestamp: time.Now(),
+		})
+	}
+
+	// Filter out dismissed alerts before returning.
+	a.dismissedMu.Lock()
+	dismissed := a.dismissedAlerts
+	a.dismissedMu.Unlock()
+	visible := alerts[:0]
+	for _, al := range alerts {
+		if _, ok := dismissed[al.ID]; !ok {
+			visible = append(visible, al)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"alerts": visible})
+}
+
+// handleSystemAlertsDismiss handles POST /api/system-alerts/dismiss.
+// Body: {"ids":["id1","id2"]} — marks alerts as dismissed server-side.
+func (a *app) handleSystemAlertsDismiss(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.IDs) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "ids array required"})
+		return
+	}
+	now := time.Now().UTC()
+	a.dismissedMu.Lock()
+	if a.dismissedAlerts == nil {
+		a.dismissedAlerts = make(map[string]time.Time)
+	}
+	for _, id := range body.IDs {
+		a.dismissedAlerts[id] = now
+	}
+	snapshot := make(map[string]time.Time, len(a.dismissedAlerts))
+	maps.Copy(snapshot, a.dismissedAlerts)
+	a.dismissedMu.Unlock()
+	if err := saveDismissedAlerts(a.cfg.ConfigDir, snapshot); err != nil {
+		logWarnf("dismissed alerts: save failed: %v", err)
+	}
+	logInfof("api: dismissed alerts count=%d", len(body.IDs))
+	writeJSON(w, http.StatusOK, map[string]any{"dismissed": len(body.IDs)})
+}
+
+// saveDismissedAlerts persists dismissed alert IDs to disk.
+// Entries older than 30 days are pruned to prevent unbounded growth.
+func saveDismissedAlerts(configDir string, m map[string]time.Time) error {
+	cutoff := time.Now().Add(-30 * 24 * time.Hour)
+	pruned := make(map[string]string, len(m))
+	for id, t := range m {
+		if t.After(cutoff) {
+			pruned[id] = t.Format(time.RFC3339)
+		}
+	}
+	data, err := json.MarshalIndent(pruned, "", "  ")
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(configDir, "data", "dismissed-alerts.json")
+	return os.WriteFile(path, data, 0o644)
+}
+
+// loadDismissedAlerts reads the dismissed alerts file from disk.
+func loadDismissedAlerts(configDir string) (map[string]time.Time, error) {
+	path := filepath.Join(configDir, "data", "dismissed-alerts.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return make(map[string]time.Time), nil
+		}
+		return nil, err
+	}
+	var raw map[string]string
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	m := make(map[string]time.Time, len(raw))
+	for id, ts := range raw {
+		if t, err := time.Parse(time.RFC3339, ts); err == nil {
+			m[id] = t
+		}
+	}
+	return m, nil
+}
+
+// checkForUpdates polls the GitHub releases API for a newer version and stores
+// the result in a.latestVersion.  It runs in its own goroutine and checks once
+// on startup and then once every 24 hours (daily).
+func (a *app) checkForUpdates(stop <-chan struct{}) {
+	doCheck := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, githubReleasesURL, nil)
+		if err != nil {
+			return
+		}
+		req.Header.Set("User-Agent", "chowkidar/"+appVersion)
+		resp, err := a.httpClient.Do(req)
+		if err != nil {
+			logDebugf("update-check: request failed: %v", err)
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusOK {
+			logDebugf("update-check: unexpected status %d", resp.StatusCode)
+			return
+		}
+		var payload struct {
+			TagName     string `json:"tag_name"`
+			PublishedAt string `json:"published_at"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+			return
+		}
+		latest := strings.TrimPrefix(strings.TrimSpace(payload.TagName), "v")
+		if latest == "" {
+			return
+		}
+		relDate := ""
+		if payload.PublishedAt != "" {
+			if t, err := time.Parse(time.RFC3339, payload.PublishedAt); err == nil {
+				relDate = t.Format("2006-01-02")
+			}
+		}
+		a.mu.Lock()
+		a.latestVersion = latest
+		a.latestVersionRelDate = relDate
+		a.latestVersionChecked = time.Now()
+		a.mu.Unlock()
+		if latest != appVersion {
+			logInfof("update-check: new version available latest=%s current=%s", latest, appVersion)
+		} else {
+			logDebugf("update-check: up to date version=%s", appVersion)
+		}
+	}
+
+	doCheck()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-time.After(24 * time.Hour):
+			doCheck()
+		}
+	}
+}
+
+// pruneHistoryLoop removes action-history entries older than LogRetentionDays
+// once at startup and then once every 24 hours.  It honours the same retention
+// window used for log files so operators only need to configure one value.
+func (a *app) pruneHistoryLoop(stop <-chan struct{}) {
+	doPrune := func() {
+		days := a.getConfig().LogRetentionDays
+		if days <= 0 || a.history == nil {
+			return
+		}
+		removed, err := a.history.Prune(days)
+		if err != nil {
+			logWarnf("history-prune: error retentionDays=%d err=%v", days, err)
+			return
+		}
+		if removed > 0 {
+			logInfof("history-prune: removed=%d retentionDays=%d", removed, days)
+		} else {
+			logDebugf("history-prune: nothing to remove retentionDays=%d", days)
+		}
+	}
+
+	doPrune()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-time.After(24 * time.Hour):
+			doPrune()
+		}
+	}
 }
 
 func (a *app) handleDockerHostsGET(w http.ResponseWriter) {
@@ -2321,7 +2558,15 @@ func (a *app) handleDockerHostsPUT(w http.ResponseWriter, r *http.Request) {
 			if p.Type == "socket" {
 				cfg := a.getConfig()
 				cfg.DockerSocketPath = strings.TrimSpace(p.Endpoint)
-				if err := config.SaveFileConfig(cfg.ConfigDir, config.ToFileConfig(cfg)); err != nil {
+				// Load the current FileConfig so fields not present in Config
+				// (e.g. dashboardRefreshSeconds) are preserved on save.
+				fileCfg, ferr := config.LoadFileConfig(cfg.ConfigDir)
+				if ferr != nil {
+					writeJSON(w, http.StatusInternalServerError, map[string]any{"error": ferr.Error()})
+					return
+				}
+				fileCfg.DockerSocketPath = cfg.DockerSocketPath
+				if err := config.SaveFileConfig(cfg.ConfigDir, fileCfg); err != nil {
 					writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 					return
 				}
@@ -2568,6 +2813,33 @@ func (a *app) handleScriptDryRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// handleScriptDryRunCleanup handles DELETE /api/scripts/dry-run.
+// It immediately removes the chowkidar-dry-run container rather than waiting
+// for the automatic 90-second idle timer.  Used by tests to clean up promptly.
+func (a *app) handleScriptDryRunCleanup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	// Cancel any pending timer so it doesn't interfere.
+	a.cancelDryRunCleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "docker", "rm", "-f", "chowkidar-dry-run").CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if strings.Contains(msg, "No such container") {
+			writeJSON(w, http.StatusOK, map[string]any{"removed": false, "reason": "not found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": msg})
+		return
+	}
+	logInfof("dry-run cleanup: removed chowkidar-dry-run container via API")
+	writeJSON(w, http.StatusOK, map[string]any{"removed": true})
+}
+
 func (a *app) handleJobByID(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/api/jobs/")
 	id = strings.TrimSpace(id)
@@ -2613,6 +2885,46 @@ func (a *app) handleJobByID(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (a *app) handleHistoryEndpoint(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		a.handleHistory(w, r)
+	case http.MethodPost:
+		// Accepts a JSON array of history entries for bulk insertion.
+		// Used by the Playwright global setup to seed test data before the suite runs.
+		if a.history == nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "history store not available"})
+			return
+		}
+		var entries []history.Entry
+		if err := json.NewDecoder(r.Body).Decode(&entries); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid JSON: " + err.Error()})
+			return
+		}
+		for i := range entries {
+			if err := a.history.Append(entries[i]); err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+				return
+			}
+		}
+		logInfof("api: history seeded count=%d", len(entries))
+		writeJSON(w, http.StatusCreated, map[string]any{"seeded": len(entries)})
+	case http.MethodDelete:
+		if a.history == nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "history store not available"})
+			return
+		}
+		if err := a.history.Clear(); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
+		}
+		logInfof("api: history cleared")
+		writeJSON(w, http.StatusOK, map[string]any{"cleared": true})
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
 func (a *app) handleHistory(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -2621,9 +2933,17 @@ func (a *app) handleHistory(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query()
 
+	isBars := q.Get("bars") == "true"
+
+	// Bars requests (sparklines) allow a higher limit so per-service history
+	// is not crowded out by other services' events when many containers exist.
+	maxLimit := 500
+	if isBars {
+		maxLimit = 2000
+	}
 	limit := 25
 	if raw := strings.TrimSpace(q.Get("limit")); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 && parsed <= 500 {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 && parsed <= maxLimit {
 			limit = parsed
 		}
 	}
@@ -2643,7 +2963,7 @@ func (a *app) handleHistory(w http.ResponseWriter, r *http.Request) {
 	// events so bars turn green for containers with no action history.
 	// The activity feed always excludes healthy to keep it readable.
 	excludeStatus := "healthy"
-	if q.Get("bars") == "true" {
+	if isBars {
 		excludeStatus = ""
 	}
 	entries, total, err := a.history.ListPage(history.ListOptions{
@@ -2811,6 +3131,40 @@ func (a *app) getConfig() config.Config {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.cfg
+}
+
+// resolveTimezone returns the best available IANA timezone for suspension
+// calculations, using this priority order:
+//  1. Settings DisplayTimezone (explicit admin/user choice)
+//  2. clientTimezone (last timezone seen from a browser request)
+//  3. Empty string → nextMidnight falls back to UTC
+func (a *app) resolveTimezone() string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.cfg.DisplayTimezone != "" {
+		return a.cfg.DisplayTimezone
+	}
+	return a.clientTimezone
+}
+
+// recordClientTimezone saves the browser-reported timezone so auto-suspend
+// can use it when DisplayTimezone is not explicitly configured.
+func (a *app) recordClientTimezone(tz string) {
+	tz = strings.TrimSpace(tz)
+	if tz == "" {
+		return
+	}
+	// Validate it's a real IANA zone before storing.
+	if _, err := time.LoadLocation(tz); err != nil {
+		logDebugf("notif: ignoring invalid client timezone=%q: %v", tz, err)
+		return
+	}
+	a.mu.Lock()
+	if a.clientTimezone != tz {
+		logDebugf("notif: client timezone updated=%q", tz)
+		a.clientTimezone = tz
+	}
+	a.mu.Unlock()
 }
 
 func (a *app) getJobs() []config.Job {
@@ -3096,10 +3450,10 @@ func (a *app) handleResetCooldown(w http.ResponseWriter, r *http.Request) {
 // Only these paths may be used as the exec.Command executable; anything else falls
 // back to /bin/sh so a crafted shebang cannot invoke arbitrary binaries.
 var allowedInterpreters = map[string]bool{
-	"/bin/sh":        true,
-	"/bin/bash":      true,
-	"/usr/bin/sh":    true,
-	"/usr/bin/bash":  true,
+	"/bin/sh":             true,
+	"/bin/bash":           true,
+	"/usr/bin/sh":         true,
+	"/usr/bin/bash":       true,
 	"/usr/local/bin/bash": true,
 	"/usr/local/bin/sh":   true,
 }
@@ -3327,6 +3681,53 @@ func buildNotifierServicesFromProfiles(profiles []config.NotificationProfile) st
 
 // ── Notification rate limiting & suspension helpers ───────────────────────
 
+// cleanNotifError strips the verbose Apprise Python log wrapper from an error
+// message so what's stored (and shown in the bell) is readable.
+//
+// Raw Apprise error format:
+//
+//	apprise send failed: exit status 1 (2026-06-02 12:43:43,738 - WARNING - Failed to send ntfy ...)
+//
+// We want:                  Failed to send ntfy ...
+func cleanNotifError(raw string) string {
+	s := raw
+	// Strip leading "apprise send failed: exit status N (" prefix
+	if idx := strings.Index(s, " ("); idx >= 0 {
+		s = s[idx+2:]
+	}
+	// Remove trailing ")" from the combined-output wrapper
+	s = strings.TrimSuffix(strings.TrimSpace(s), ")")
+
+	// The Apprise output is a Python log: "YYYY-MM-DD HH:MM:SS,mmm - LEVEL - Message"
+	// Strip the "YYYY-MM-DD HH:MM:SS,mmm - LEVEL - " prefix.
+	// We keep everything after the third " - ".
+	parts := strings.SplitN(s, " - ", 3)
+	if len(parts) == 3 {
+		s = strings.TrimSpace(parts[2])
+	}
+
+	// Strip verbose help/upgrade phrases and URLs that appear after the meaningful error.
+	// e.g. ntfy: "quota reached; increase your limits with a paid plan, see https://ntfy.sh/app"
+	verbosePhrases := []string{
+		"; increase your", "; upgrade your", "; consider upgrading",
+		"; see https", "; visit https", " see https", ", see https",
+		" https://", " http://",
+	}
+	lower := strings.ToLower(s)
+	for _, sep := range verbosePhrases {
+		if idx := strings.Index(lower, sep); idx >= 0 {
+			s = strings.TrimRight(s[:idx], " ;,")
+			lower = strings.ToLower(s)
+		}
+	}
+
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return strings.TrimSpace(raw)
+	}
+	return s
+}
+
 func isRateLimitError(err error) bool {
 	if err == nil {
 		return false
@@ -3372,15 +3773,6 @@ func nextMidnight(ianaZone string) time.Time {
 	}
 	n := time.Now().In(loc)
 	return time.Date(n.Year(), n.Month(), n.Day()+1, 0, 0, 0, 0, loc)
-}
-
-// nextMidnightUTC kept as a convenience alias used in spots without cfg access.
-func nextMidnightUTC() time.Time { return nextMidnight("") }
-
-func endOfMonthUTC() time.Time {
-	n := time.Now().UTC()
-	first := time.Date(n.Year(), n.Month()+1, 1, 0, 0, 0, 0, time.UTC)
-	return first
 }
 
 func endOfMonth(ianaZone string) time.Time {
@@ -3523,7 +3915,7 @@ func (a *app) sendJobNotifications(event string, data notifData, profileIDs []st
 				}
 				switch action {
 				case "auto-suspend":
-					a.suspendProfile(id, nextMidnight(a.getConfig().DisplayTimezone), reason)
+					a.suspendProfile(id, nextMidnight(a.resolveTimezone()), reason)
 				case "drop":
 					// silently drop
 				}
@@ -3552,10 +3944,10 @@ func (a *app) sendJobNotifications(event string, data notifData, profileIDs []st
 			if isRateLimitError(err) {
 				shouldAutoSuspend := p.AutoSuspendOnError || p.OnLimitAction == "auto-suspend" || p.OnLimitAction == ""
 				if shouldAutoSuspend && !a.isProfileSuspended(p) {
-					tz := a.getConfig().DisplayTimezone
+					tz := a.resolveTimezone()
 					until := nextMidnight(tz)
 					logInfof("notif: auto-suspending profile=%s until=%s tz=%s reason=rate-limit", p.Name, until.Format(time.RFC3339), tz)
-					a.suspendProfile(id, until, err.Error())
+					a.suspendProfile(id, until, cleanNotifError(err.Error()))
 				}
 			}
 		} else {
@@ -3787,6 +4179,8 @@ func (a *app) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
+	// Seed the client timezone from the tz query param sent on every page load.
+	a.recordClientTimezone(r.URL.Query().Get("tz"))
 	// setup_required = auth is enabled but no password has been set yet (first boot)
 	setupRequired := a.authCfg == nil || (a.authCfg.Enabled && a.authCfg.PasswordHash == "")
 	enabled := a.authCfg != nil && a.authCfg.Enabled

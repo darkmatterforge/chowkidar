@@ -1,10 +1,9 @@
-import { test, expect, BrowserContext } from '@playwright/test'
-import { AUTH_STATE, TEST_USER, TEST_PASS } from './playwright.config'
+import { test, expect } from '@playwright/test'
+import { AUTH_STATE, TEST_USER, TEST_PASS } from './playwright.config.js'
+import { gotoLogin } from './helpers/nav'
 
-async function goToLogin(page: ReturnType<BrowserContext['newPage'] extends (...args: unknown[]) => infer R ? () => R : never>) {
-  await page.goto('/')
-  await expect(page.locator('#loginPanel')).toBeVisible()
-}
+// alias for readability within this file
+const goToLogin = gotoLogin
 
 test.describe.serial('Login / Session', () => {
   test('login with valid credentials lands on dashboard', async ({ page }) => {

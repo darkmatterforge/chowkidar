@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { TEST_USER, TEST_PASS } from './playwright.config'
+import { TEST_USER, TEST_PASS } from './playwright.config.js'
 
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:8080'
 

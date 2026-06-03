@@ -11,6 +11,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Job is a monitoring rule: it describes which containers to watch and what
+// action to take when they are unhealthy or exited.
 type Job struct {
 	ID                           string    `yaml:"id" json:"id"`
 	Name                         string    `yaml:"name" json:"name"`
@@ -36,11 +38,13 @@ type Job struct {
 
 const jobsConfigVersion = 1
 
+// JobsFile is the on-disk structure of jobs.yaml.
 type JobsFile struct {
 	Version int   `yaml:"version"`
 	Jobs    []Job `yaml:"jobs"`
 }
 
+// LoadJobs reads jobs.yaml and returns the job slice.
 func LoadJobs(configDir string) ([]Job, error) {
 	filePath := filepath.Join(configDir, "jobs.yaml")
 	raw, err := os.ReadFile(filePath)
@@ -92,6 +96,7 @@ func LoadJobs(configDir string) ([]Job, error) {
 	return jobs, nil
 }
 
+// SaveJobs normalises and writes jobs to jobs.yaml.
 func SaveJobs(configDir string, jobs []Job) error {
 	normalized := make([]Job, 0, len(jobs))
 	for _, j := range jobs {
@@ -146,6 +151,8 @@ func migrateJobs(fileVersion int, jobs []Job) (migrated bool, result []Job) {
 	return migrated, jobs
 }
 
+// UpsertJob inserts in if its ID is absent from existing, otherwise updates it.
+// Returns the updated slice, the saved job, and any validation error.
 func UpsertJob(existing []Job, in Job) ([]Job, Job, error) {
 	normalized, err := normalizeJob(in)
 	if err != nil {
@@ -174,6 +181,8 @@ func UpsertJob(existing []Job, in Job) ([]Job, Job, error) {
 	return existing, normalized, nil
 }
 
+// DeleteJob removes the job with the given ID and returns the updated slice
+// and whether a job was actually found and removed.
 func DeleteJob(existing []Job, id string) ([]Job, bool) {
 	id = strings.TrimSpace(id)
 	if id == "" {

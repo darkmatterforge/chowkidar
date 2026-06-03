@@ -1,5 +1,5 @@
-import { test, expect } from '@playwright/test'
-import { gotoApp } from './helpers/nav'
+import { test, expect, type Page } from '@playwright/test'
+import { gotoApp } from './helpers/nav.js'
 
 // These tests require the e2e-unhealthy container started by the test
 // setup script (run-e2e-local.sh / ci.yml). The container:
@@ -13,7 +13,7 @@ const CONTAINER = 'e2e-unhealthy'
 const POLL_INTERVAL_MS = 5_000
 
 async function waitForStatus(
-  page: Parameters<Parameters<typeof test>[1]>[0]['page'],
+  page: Page,
   statusClass: string,
   timeoutMs: number,
 ) {
@@ -91,4 +91,5 @@ test.describe('Health recovery', () => {
 
     await expect(feed).toContainText(CONTAINER)
   })
+
 })

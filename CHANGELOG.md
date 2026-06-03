@@ -2,6 +2,43 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Nav-bar logout button** — door-exit icon shown in the top nav when authentication is enabled, positioned after the notification bell; dismisses session and returns to the login page; disappears immediately when auth is disabled
+- **Settings sidebar version display** — bottom of the settings tabs shows the running version (e.g. `v0.3.0`) and an amber "vX.Y.Z available" hint when a newer release exists
+- **Build-time version injection** — `APP_VERSION` build-arg baked into the binary via `-ldflags`; Docker images now carry the release tag version; falls back to `dev` for local builds. The `docker-publish` workflow passes the tag automatically so `git tag == /api/health version == CHANGELOG version`
+- **Notification bell improvements** — system alerts (failed recovery, paused monitoring, update available) now persist across page refreshes via localStorage; individual ✕ dismiss buttons on each alert; "Mark all read" only visible when there is something to clear
+- **App version + update check** — `/api/health` now returns `version` and `bootTime` fields; background goroutine checks GitHub releases every 12 h and surfaces a bell alert when a newer version is available
+- **Delete history** — `DELETE /api/history` endpoint and matching **Clear All History** button in Settings → General with a confirmation dialog
+- **Status grid improvements** — larger tiles (130 px min), hover lift, stronger border colours, job/action badge, consistent dark-mode gradients
+- **`formatTimestamp()` helper** — all UI timestamps now use the Display Timezone from Settings, producing clean `YYYY-MM-DD HH:MM:SS` output instead of browser-locale strings
+
+### Fixed
+- **Theme toggle / bell navigating to dashboard** — `bindEvents` was attaching `switchPage` to every `.nav-btn`, including buttons without a `data-page`; scoped to `.nav-btn[data-page]` and added null guard in `switchPage`
+- **`monitoring_started` alert timestamp** — was using `lastScan` (updated every scan cycle) which made it appear newer than recovery failures; now uses `bootTime` so it is always chronologically first
+- **`DashboardRefreshSeconds` zeroed on Docker Hosts save** — `handleDockerHostsPUT` previously called `ToFileConfig(cfg)` which omitted `DashboardRefreshSeconds` (not in `Config` struct); now loads and patches the existing `FileConfig`
+- **Notification bell race condition** — `loadSystemAlerts()` now calls `updateNotifBell()` immediately on completion so alerts appear on page load without waiting for the 5-second background poll
+- **Job save feedback hidden inside collapsed form** — `#jobSaveStatus` moved outside `#jobFormPanel` so it persists after the form closes (matches the Notifications tab pattern)
+- **Login logo background mismatch** — removed solid `<rect fill="...">` from both stacked SVG logos; they are now transparent and blend with any panel colour
+- **Apprise error message cleanup** — `cleanNotifError()` strips the Python log prefix (`2026-06-02 12:43:43,738 - WARNING - ...`) before storing `LastRateLimitError`; the bell now shows the meaningful message only
+- **Job filter bar dark mode** — replaced hardcoded `background:#fff` with `background:var(--input-bg)` on search/filter inputs
+- **Dev log double-timestamp** — set `[log] time = false` in `.air.toml`; dev logs now match production format
+- **Service card names hard to read in dark mode** — added `color:var(--text); font-weight:800` and switched card background to `var(--panel)` with theme-aware border and hover colours
+- **`/api/health` unauthenticated** — Docker `HEALTHCHECK` could fail when auth was enabled; health endpoint no longer requires a session cookie
+- **Bars history limit silent fallback** — `limit=1000` was silently reduced to 25 because `1000 > 500` failed the cap check; bars requests now allow up to 2000
+
+### Changed
+- `action-history.jsonl` renamed to `action-history.json`
+- `logs/` and `data/` directories created with `0o755` (was `0o750`) so host users on NAS/Unraid can read log files
+- Log files created with `0o644` (was `0o600`) for the same reason
+- Bell system alerts sorted: critical events first, `monitoring_started` always last
+- Independent 5-second alert poll replaces dashboard-interval piggyback; bell opens with an immediate refresh
+
+### Tests
+- 17 new Go backend tests covering health endpoint, `cleanNotifError`, system alerts, history clear/bars limit cap, settings persistence, notification suspension, timezone helpers
+- 4 new Playwright e2e suites (12–15): bell persistence/timing/ordering, save feedback banners, login logo transparency, nav logout button (10+ scenarios)
+
 ## [0.2.0] - 2026-06-02
 
 ### Added
