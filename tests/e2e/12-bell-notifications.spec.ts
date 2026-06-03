@@ -135,7 +135,6 @@ test.describe('Notification bell — persistence across page refresh', () => {
     await page.waitForTimeout(600)
 
     // Dismissed alerts must NOT reappear.
-    const list = await page.locator('#notifBellList').innerText()
     // The dismissed alerts should not show individual items for what we dismissed.
     // The panel may show "No active alerts" or only undismissed items.
     for (const alert of alerts) {
