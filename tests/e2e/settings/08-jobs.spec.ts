@@ -1,16 +1,16 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { gotoSettings } from '../helpers/nav'
 
-async function openJobsTab(page: Parameters<Parameters<typeof test>[1]>[0]['page']) {
+async function openJobsTab(page: Page) {
   await gotoSettings(page, 'jobs')
 }
 
-async function openAddForm(page: Parameters<Parameters<typeof test>[1]>[0]['page']) {
+async function openAddForm(page: Page) {
   await page.locator('#openAddJobBtn').click()
   await expect(page.locator('#jobFormPanel')).toBeVisible()
 }
 
-async function saveJob(page: Parameters<Parameters<typeof test>[1]>[0]['page'], name: string) {
+async function saveJob(page: Page, name: string) {
   await page.locator('#jobName').fill(name)
   const [res] = await Promise.all([
     page.waitForResponse(r => r.url().includes('/api/job') && r.request().method() !== 'GET'),
@@ -20,7 +20,7 @@ async function saveJob(page: Parameters<Parameters<typeof test>[1]>[0]['page'], 
   await expect(page.locator('#jobsTbody')).toContainText(name)
 }
 
-async function deleteJob(page: Parameters<Parameters<typeof test>[1]>[0]['page'], name: string) {
+async function deleteJob(page: Page, name: string) {
   const row = page.locator('#jobsTbody tr').filter({ hasText: name })
   if (await row.count() === 0) return
   const [res] = await Promise.all([

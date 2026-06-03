@@ -1,8 +1,8 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { TEST_USER, TEST_PASS } from '../playwright.config'
 import { gotoSettings } from '../helpers/nav'
 
-async function openSecurityTab(page: Parameters<Parameters<typeof test>[1]>[0]['page']) {
+async function openSecurityTab(page: Page) {
   await gotoSettings(page, 'security')
 }
 

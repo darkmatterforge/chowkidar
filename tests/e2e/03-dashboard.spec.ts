@@ -1,6 +1,6 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 
-async function goToDashboard(page: Parameters<Parameters<typeof test>[1]>[0]['page']) {
+async function goToDashboard(page: Page) {
   // Register listeners BEFORE navigation so we never miss the responses.
   // Don't filter by status=200 — a 401/500 still means the request fired and
   // we should fail fast rather than hanging for 30 s.
@@ -204,12 +204,7 @@ test.describe('Dashboard', () => {
 
   test('activity feed items-per-page select changes page size', async ({ page }) => {
     await goToDashboard(page)
-    const pagination = page.locator('#historyPagination')
-    const hasContent = await pagination.evaluate(el => el.children.length > 0)
-    if (!hasContent) {
-      test.skip(true, 'No activity-feed history entries yet — pagination not rendered')
-      return
-    }
+    // Bootstrap seeds 30 history entries — enough to render pagination (page size 25).
     const sel = page.locator('#historyPageSizeSelect')
     const [res] = await Promise.all([
       page.waitForResponse(r => r.url().includes('/api/history') && !r.url().includes('bars=')),

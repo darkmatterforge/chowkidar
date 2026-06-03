@@ -106,3 +106,164 @@ func TestStoreListPagePaginationAndFilter(t *testing.T) {
 		t.Errorf("expected 0 entries beyond total, got %d", len(empty))
 	}
 }
+
+func TestStoreClearRemovesAllEntries(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewStore(dir)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+
+	for i := 0; i < 5; i++ {
+		if err := store.Append(Entry{
+			Timestamp:     time.Now().UTC(),
+			ContainerID:   "c1",
+			ContainerName: "svc",
+			Action:        "restart",
+			Status:        "success",
+		}); err != nil {
+			t.Fatalf("Append() error = %v", err)
+		}
+	}
+
+	entries, _, _ := store.ListPage(ListOptions{Limit: 10})
+	if len(entries) != 5 {
+		t.Fatalf("expected 5 entries before clear, got %d", len(entries))
+	}
+
+	if err := store.Clear(); err != nil {
+		t.Fatalf("Clear() error = %v", err)
+	}
+
+	entries, total, err := store.ListPage(ListOptions{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListPage after Clear() error = %v", err)
+	}
+	if len(entries) != 0 || total != 0 {
+		t.Errorf("after Clear(): got %d entries total=%d, want 0", len(entries), total)
+	}
+}
+
+func TestStoreClearIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewStore(dir)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	// Clear on empty store should not error.
+	if err := store.Clear(); err != nil {
+		t.Fatalf("Clear() on empty store error = %v", err)
+	}
+	// Clear again is also safe.
+	if err := store.Clear(); err != nil {
+		t.Fatalf("second Clear() error = %v", err)
+	}
+}
+
+func TestStorePathReturnsConfiguredPath(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewStore(dir)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	p := store.Path()
+	if p == "" {
+		t.Error("Path() returned empty string")
+	}
+	if !contains(p, "action-history.json") {
+		t.Errorf("Path() = %q, want path containing action-history.json", p)
+	}
+}
+
+func TestStorePruneRemovesOldEntries(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewStore(dir)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+
+	now := time.Now().UTC()
+	// Three entries: two old (>30d), one recent.
+	oldEntries := []time.Time{
+		now.AddDate(0, 0, -40),
+		now.AddDate(0, 0, -35),
+	}
+	recent := now.AddDate(0, 0, -5)
+
+	for _, ts := range append(oldEntries, recent) {
+		if err := store.Append(Entry{
+			Timestamp:     ts,
+			ContainerID:   "c1",
+			ContainerName: "svc",
+			Action:        "restart",
+			Status:        "success",
+		}); err != nil {
+			t.Fatalf("Append() error = %v", err)
+		}
+	}
+
+	removed, err := store.Prune(30)
+	if err != nil {
+		t.Fatalf("Prune() error = %v", err)
+	}
+	if removed != 2 {
+		t.Errorf("Prune() removed = %d, want 2", removed)
+	}
+
+	// Only the recent entry should remain.
+	entries, total, err := store.ListPage(ListOptions{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListPage after Prune() error = %v", err)
+	}
+	if total != 1 || len(entries) != 1 {
+		t.Errorf("after Prune: total=%d entries=%d, want both 1", total, len(entries))
+	}
+	if !entries[0].Timestamp.Equal(recent) {
+		t.Errorf("remaining entry timestamp = %v, want %v", entries[0].Timestamp, recent)
+	}
+}
+
+func TestStorePruneZeroRetentionIsNoOp(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewStore(dir)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	_ = store.Append(Entry{Timestamp: time.Now().UTC().AddDate(0, 0, -100), ContainerID: "c", Status: "success"})
+
+	removed, err := store.Prune(0)
+	if err != nil {
+		t.Fatalf("Prune(0) error = %v", err)
+	}
+	if removed != 0 {
+		t.Errorf("Prune(0) removed = %d, want 0 (no-op)", removed)
+	}
+}
+
+func TestStorePruneEmptyFileIsNoOp(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewStore(dir)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	removed, err := store.Prune(30)
+	if err != nil {
+		t.Fatalf("Prune() on empty store error = %v", err)
+	}
+	if removed != 0 {
+		t.Errorf("Prune() on empty store removed = %d, want 0", removed)
+	}
+}
+
+func contains(s, sub string) bool {
+	return len(s) >= len(sub) && (s == sub || len(s) > 0 && containsStr(s, sub))
+}
+
+func containsStr(s, sub string) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}

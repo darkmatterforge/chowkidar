@@ -3,7 +3,10 @@
 # Bumps the version, updates CHANGELOG.md, commits, tags, and pushes.
 set -euo pipefail
 
+# Normalize bump argument to lowercase and default to 'patch'
 BUMP="${1:-patch}"
+# POSIX-compatible lowercase conversion (avoid bash-only ${var,,})
+BUMP="$(printf '%s' "$BUMP" | tr '[:upper:]' '[:lower:]')"
 CHANGELOG="CHANGELOG.md"
 
 # ── Validate working tree ────────────────────────────────────────────────────
@@ -26,10 +29,22 @@ fi
 IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
 
 case "$BUMP" in
-  major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
-  minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
-  patch) PATCH=$((PATCH + 1)) ;;
-  *) echo "Usage: $0 [patch|minor|major]" >&2; exit 1 ;;
+  major|maj|majot)
+    MAJOR=$((MAJOR + 1))
+    MINOR=0
+    PATCH=0
+    ;;
+  minor|min|minot)
+    MINOR=$((MINOR + 1))
+    PATCH=0
+    ;;
+  patch|p)
+    PATCH=$((PATCH + 1))
+    ;;
+  *)
+    echo "Usage: $0 [patch|minor|major] (aliases: p, min, maj; accepts common misspellings)" >&2
+    exit 1
+    ;;
 esac
 
 NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"

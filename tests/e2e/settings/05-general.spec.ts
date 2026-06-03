@@ -1,7 +1,7 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { gotoSettings } from '../helpers/nav'
 
-async function openGeneralTab(page: Parameters<Parameters<typeof test>[1]>[0]['page']) {
+async function openGeneralTab(page: Page) {
   await gotoSettings(page)
   await expect(page.locator('#tab-general')).toBeVisible()
 }

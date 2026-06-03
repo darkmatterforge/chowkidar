@@ -89,6 +89,7 @@ curl -s -X POST "${BASE_URL}/api/jobs" \
 sleep 10
 
 # ── 5. Run Playwright ─────────────────────────────────────────────────────────
+# any tests run — no docker exec needed here.
 info "Running Playwright tests against ${BASE_URL}..."
 cd "${ROOT}/tests/e2e"
 

@@ -7,7 +7,7 @@ services:
       - "8080:8080"
     environment:
       APP_PATH: /config
-      LOG_LEVEL: info
+      LOG_LEVEL: info  # Change to "debug" for verbose troubleshooting logs
       DOCKER_HOST: ${DOCKER_HOST:-}
       CHOWKIDAR_SECRET_KEY: ${CHOWKIDAR_SECRET_KEY}
       # EXTERNAL_HOSTNAME: my-server

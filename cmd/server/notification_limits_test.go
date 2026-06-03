@@ -256,7 +256,7 @@ func TestSendJobNotifications_AutoSuspendsOnRateLimitError(t *testing.T) {
 	// Note: actual apprise not available, so we can't exercise the full path here.
 	// This unit test verifies the helper logic is wired correctly by calling
 	// suspendProfile directly and confirming the state.
-	a.suspendProfile("n2", nextMidnightUTC(), "quota exceeded")
+	a.suspendProfile("n2", nextMidnight(a.getConfig().DisplayTimezone), "quota exceeded")
 
 	a.mu.RLock()
 	updated := a.notifications[0]
@@ -360,7 +360,7 @@ func TestAutoSuspend_RateLimitErrorActivatesSuspension(t *testing.T) {
 	a := newNotifApp(t, []config.NotificationProfile{p})
 
 	// Directly exercise the suspend path as triggered by a rate-limit error
-	a.suspendProfile("v1", nextMidnightUTC(), "daily message quota reached")
+	a.suspendProfile("v1", nextMidnight(a.getConfig().DisplayTimezone), "daily message quota reached")
 
 	a.mu.RLock()
 	updated := a.notifications[0]
@@ -392,7 +392,11 @@ func TestAutoSuspend_SuspendUntilMidnight(t *testing.T) {
 	p := config.NotificationProfile{ID: "v3", Name: "ntfy"}
 	a := newNotifApp(t, []config.NotificationProfile{p})
 
-	midnight := nextMidnightUTC()
+	// Use the same function the production code uses, passing the app's
+	// DisplayTimezone — this catches any regression where UTC is hardcoded
+	// instead of using the user's configured timezone.
+	tz := a.getConfig().DisplayTimezone
+	midnight := nextMidnight(tz)
 	a.suspendProfile("v3", midnight, "quota hit")
 
 	a.mu.RLock()
@@ -401,6 +405,7 @@ func TestAutoSuspend_SuspendUntilMidnight(t *testing.T) {
 
 	if until == nil {
 		t.Fatal("SuspendedUntil must be set")
+		return // unreachable but satisfies staticcheck SA5011
 	}
 	// Must be at or after the computed midnight
 	if until.Before(midnight.Add(-time.Second)) {

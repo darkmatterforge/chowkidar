@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoSettings } from '../helpers/nav'
+import { gotoSettings } from '../helpers/nav.js'
 
 async function openNotificationsTab(page: Page) {
   await gotoSettings(page, 'notifications')
@@ -514,7 +514,6 @@ test.describe('Settings — Notifications tab', () => {
   //   E2E_EMAIL_PASSWORD             SMTP auth password    (optional)
 
   test.describe('Live notification delivery (requires secrets)', () => {
-    type Page = Page
 
     async function liveTestProfile(page: Page, profileName: string) {
       const editBtn = page.locator('#notifyTbody tr')

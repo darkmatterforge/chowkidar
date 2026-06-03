@@ -11,6 +11,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Config is the resolved runtime configuration, combining values from
+// config.yaml and environment-variable overrides. Created by Load().
 type Config struct {
 	Port                          string
 	ConfigDir                     string
@@ -51,17 +53,20 @@ type Config struct {
 	LogToFile                     bool
 	LogRetentionDays              int
 	DashboardLayout               string
+	DashboardRefreshSeconds       int
 	Theme                         string
 }
 
+// FileConfig is the schema for config.yaml and is also the JSON shape
+// returned/accepted by the /api/settings endpoint.
 type FileConfig struct {
-	Port                          string   `yaml:"port"                          json:"port"`
+	Port                          string   `yaml:"port,omitempty"                json:"port"`
 	RetryCount                    int      `yaml:"retryCount"                    json:"retryCount"`
 	RetryDelaySeconds             int      `yaml:"retryDelaySeconds"             json:"retryDelaySeconds"`
 	Action                        string   `yaml:"action"                        json:"action"`
-	ContainerNameFilter           string   `yaml:"containerNameFilter"           json:"containerNameFilter"`
-	ContainerLabelFilter          string   `yaml:"containerLabelFilter"          json:"containerLabelFilter"`
-	ContainerEnvVarFilter         string   `yaml:"containerEnvVarFilter"         json:"containerEnvVarFilter"`
+	ContainerNameFilter           string   `yaml:"containerNameFilter,omitempty" json:"containerNameFilter"`
+	ContainerLabelFilter          string   `yaml:"containerLabelFilter,omitempty" json:"containerLabelFilter"`
+	ContainerEnvVarFilter         string   `yaml:"containerEnvVarFilter,omitempty" json:"containerEnvVarFilter"`
 	WorkerCount                   int      `yaml:"workerCount"                   json:"workerCount"`
 	QueueSize                     int      `yaml:"queueSize"                     json:"queueSize"`
 	HttpClientTimeoutSeconds      int      `yaml:"httpClientTimeoutSeconds"      json:"httpClientTimeoutSeconds"`
@@ -96,6 +101,8 @@ type FileConfig struct {
 	Theme                         string   `yaml:"theme"                         json:"theme"`
 }
 
+// Load reads config.yaml from the directory pointed to by APP_PATH (default "/config")
+// and overlays environment-variable overrides, returning the resolved Config.
 func Load() (Config, error) {
 	configDir := getEnv("APP_PATH", "/config")
 	fileCfg, err := LoadFileConfig(configDir)
@@ -138,6 +145,7 @@ func Load() (Config, error) {
 		LogToFile:                     envOrBool("LOG_TO_FILE", fileCfg.LogToFile),
 		LogRetentionDays:              envOrInt("LOG_RETENTION_DAYS", fileCfg.LogRetentionDays),
 		DashboardLayout:               fileCfg.DashboardLayout,
+		DashboardRefreshSeconds:       fileCfg.DashboardRefreshSeconds,
 		Theme:                         fileCfg.Theme,
 	}
 
@@ -204,6 +212,8 @@ func applyConfigDefaults(cfg *Config) {
 	}
 }
 
+// LoadFileConfig reads config.yaml from configDir, merging over built-in defaults.
+// Returns defaults when the file does not exist yet.
 func LoadFileConfig(configDir string) (FileConfig, error) {
 	defaults := defaultFileConfig()
 	filePath := filepath.Join(configDir, "config.yaml")
@@ -222,6 +232,7 @@ func LoadFileConfig(configDir string) (FileConfig, error) {
 	return merged, nil
 }
 
+// SaveFileConfig marshals fileCfg to YAML and writes it to configDir/config.yaml.
 func SaveFileConfig(configDir string, fileCfg FileConfig) error {
 	if err := os.MkdirAll(configDir, 0o750); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
@@ -237,6 +248,10 @@ func SaveFileConfig(configDir string, fileCfg FileConfig) error {
 	return nil
 }
 
+// ToFileConfig converts the runtime Config back to a persistable FileConfig.
+// Fields that exist only in FileConfig (e.g. DashboardRefreshSeconds) must be
+// handled separately — prefer LoadFileConfig + patch over this function when
+// saving from a handler to avoid silently zeroing those fields.
 func ToFileConfig(cfg Config) FileConfig {
 	return FileConfig{
 		Port:                          cfg.Port,
@@ -276,6 +291,7 @@ func ToFileConfig(cfg Config) FileConfig {
 		LogToFile:                     cfg.LogToFile,
 		LogRetentionDays:              cfg.LogRetentionDays,
 		DashboardLayout:               cfg.DashboardLayout,
+		DashboardRefreshSeconds:       cfg.DashboardRefreshSeconds,
 		Theme:                         cfg.Theme,
 	}
 }

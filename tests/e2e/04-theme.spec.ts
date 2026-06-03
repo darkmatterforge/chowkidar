@@ -1,6 +1,5 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 
-type Page = Parameters<Parameters<typeof test>[1]>[0]['page']
 
 function getTheme(page: Page) {
   return page.evaluate(() => document.documentElement.getAttribute('data-theme'))
