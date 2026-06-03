@@ -3,7 +3,7 @@ tmp_dir = "tmp"
 
 [build]
   bin = "tmp/chowkidar"
-  cmd = "go build -o tmp/chowkidar ./cmd/server"
+  cmd = "go build -ldflags \"-X main.appVersion=dev\" -o tmp/chowkidar ./cmd/server"
   include_ext = ["go"]
   exclude_dir = ["web", "config", "tmp", "docs", "scripts", "unraid"]
   delay = 800
@@ -11,7 +11,7 @@ tmp_dir = "tmp"
   rerun = false
 
 [log]
-  time = true
+  time = false
 
 [color]
   main = "magenta"
