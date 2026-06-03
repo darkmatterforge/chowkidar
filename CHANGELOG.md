@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.3.0] - 2026-06-04
 
 ### Added
 - **Nav-bar logout button** — door-exit icon shown in the top nav when authentication is enabled, positioned after the notification bell; dismisses session and returns to the login page; disappears immediately when auth is disabled
@@ -93,5 +93,7 @@ All notable changes to this project will be documented in this file.
 - Unraid Community Applications template
 - AGPL-3.0 license
 
+[0.3.0]: https://github.com/darkmatterforge/chowkidar/releases/tag/v0.3.0
+[0.2.0]: https://github.com/darkmatterforge/chowkidar/releases/tag/v0.2.0
 [0.1.1]: https://github.com/darkmatterforge/chowkidar/releases/tag/v0.1.1
 [0.1.0]: https://github.com/darkmatterforge/chowkidar/releases/tag/v0.1.0
