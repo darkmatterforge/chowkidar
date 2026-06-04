@@ -1,11 +1,9 @@
 # --- Dev Build Stage ---
 FROM cgr.dev/chainguard/wolfi-base:latest
 
-# Upgrade all packages first so every build gets the latest security fixes
-RUN apk upgrade --no-cache
-
-# Install Go + dev dependencies via wolfi apk — mirrors production package set
-RUN apk add --no-cache ca-certificates git go python3 py3-pip bash curl jq docker-cli nodejs npm && \
+# Upgrade existing packages and install dev dependencies in one layer
+RUN apk upgrade --no-cache && \
+    apk add --no-cache ca-certificates git go python3 py3-pip bash curl jq docker-cli nodejs npm && \
     python3 -m venv /apprise && \
     /apprise/bin/pip install --quiet apprise && \
     mkdir -p /usr/local/bin && \
