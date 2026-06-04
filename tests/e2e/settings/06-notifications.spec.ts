@@ -26,19 +26,15 @@ async function selectProvider(
 async function saveProfile(page: Page, name: string) {
   await page.locator('#notifyName').fill(name)
   await page.locator('#notifyEnabled').check()
-  // Verify all visible text/url provider fields are non-empty before saving.
-  // If a prior fill silently failed (field not yet interactive), validation
-  // would reject the form without making an HTTP request and waitForResponse
-  // would hang for 15s.
-  const providerFields = page.locator(
+  // Verify the first (required) provider field has a value before saving.
+  // If fill() silently no-opped while the field was still rendering, validation
+  // rejects the form without making an HTTP request and waitForResponse hangs.
+  // Only check the first field — optional fields are legitimately empty.
+  const firstProviderField = page.locator(
     '#notifyDynamicFields input[type="text"], #notifyDynamicFields input[type="url"], #notifyDynamicFields input:not([type])',
-  )
-  const count = await providerFields.count()
-  for (let i = 0; i < count; i++) {
-    const field = providerFields.nth(i)
-    if (await field.isVisible()) {
-      await expect(field).not.toHaveValue('', { timeout: 3_000 })
-    }
+  ).first()
+  if (await firstProviderField.count() > 0 && await firstProviderField.isVisible()) {
+    await expect(firstProviderField).not.toHaveValue('', { timeout: 3_000 })
   }
   // Register the waitForResponse BEFORE clicking so we never miss a fast response
   const [res] = await Promise.all([
