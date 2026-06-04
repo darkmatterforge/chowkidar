@@ -304,7 +304,9 @@ func applyLogConfig(logsDir string, cfg config.Config) {
 
 func resolveJobSettings(j actionJob, cfg config.Config) (retryCount, actionTimeout int) {
 	if j.jobID == "" {
-		return cfg.RetryCount, cfg.ActionTimeoutSeconds
+		// No matching job (start-exited or manual action) — single attempt only.
+		// Retries for these cases should be handled by defining a job rule.
+		return 1, cfg.ActionTimeoutSeconds
 	}
 	// retryCount == 0 means unlimited; keep it as-is.
 	at := j.actionTimeoutSeconds

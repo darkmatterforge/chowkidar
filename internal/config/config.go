@@ -210,12 +210,6 @@ func applyConfigDefaults(cfg *Config) {
 	if cfg.NotificationRatePerSec < 1 {
 		cfg.NotificationRatePerSec = 5
 	}
-	if cfg.RetryCount < 1 {
-		cfg.RetryCount = 3
-	}
-	if cfg.RetryDelay < 1 {
-		cfg.RetryDelay = 10 * time.Second
-	}
 }
 
 // LoadFileConfig reads config.yaml from configDir, merging over built-in defaults.
