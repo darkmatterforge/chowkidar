@@ -449,7 +449,10 @@ docker restart "$1" && echo "Restarted successfully"`)
       await openJobsTab(page)
       await openAddForm(page)
       await page.locator('#jobTabScript').click()
+      await expect(page.locator('#jobTabScriptContent')).toBeVisible()
+      await expect(page.locator('#jobScript')).toBeVisible()
       await page.locator('#jobScript').fill('#!/bin/sh\necho hi')
+      await expect(page.locator('#jobScript')).toHaveValue(/echo hi/)
       await page.locator('#jobScriptTimeout').fill('180')
       await page.locator('#jobNameFilter').fill('timeout-test-container')
       await saveJob(page, 'e2e-script-timeout-job')
@@ -497,9 +500,11 @@ docker restart "$1" && echo "Restarted successfully"`)
       await openJobsTab(page)
       await openAddForm(page)
       await page.locator('#jobTabScript').click()
+      await expect(page.locator('#jobTabScriptContent')).toBeVisible()
       await page.locator('#jobScript').fill(`#!/bin/sh
 # chowkidar-template: restart@1
 docker restart "$1"`)
+      await expect(page.locator('#jobScript')).toHaveValue(/restart/)
       await page.locator('#jobNameFilter').fill('upgrade-test-container')
       await saveJob(page, 'e2e-upgrade-notice-job')
 
@@ -580,7 +585,9 @@ docker restart "$1"`)
       await openJobsTab(page)
       await openAddForm(page)
       await page.locator('#jobTabScript').click()
+      await expect(page.locator('#jobTabScriptContent')).toBeVisible()
       await page.locator('#jobScript').fill('#!/bin/sh\necho "dry-run-ok"')
+      await expect(page.locator('#jobScript')).toHaveValue(/dry-run-ok/)
       const [res] = await Promise.all([
         page.waitForResponse(r => r.url().includes('/api/scripts/dry-run')),
         page.locator('#dryRunScriptBtn').click(),
@@ -596,7 +603,9 @@ docker restart "$1"`)
       await openJobsTab(page)
       await openAddForm(page)
       await page.locator('#jobTabScript').click()
+      await expect(page.locator('#jobTabScriptContent')).toBeVisible()
       await page.locator('#jobScript').fill('#!/bin/sh\necho "unique-marker-xyz"')
+      await expect(page.locator('#jobScript')).toHaveValue(/unique-marker-xyz/)
       const [res] = await Promise.all([
         page.waitForResponse(r => r.url().includes('/api/scripts/dry-run')),
         page.locator('#dryRunScriptBtn').click(),
@@ -614,7 +623,9 @@ docker restart "$1"`)
       await openJobsTab(page)
       await openAddForm(page)
       await page.locator('#jobTabScript').click()
+      await expect(page.locator('#jobTabScriptContent')).toBeVisible()
       await page.locator('#jobScript').fill('#!/bin/sh\n[ "$DRY_RUN" = "1" ] && echo "dry-run-mode" || exit 99')
+      await expect(page.locator('#jobScript')).toHaveValue(/dry-run-mode/)
       const [res] = await Promise.all([
         page.waitForResponse(r => r.url().includes('/api/scripts/dry-run')),
         page.locator('#dryRunScriptBtn').click(),
