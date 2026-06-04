@@ -2103,12 +2103,6 @@
                       <input type="number" id="jobPostWait" min="0" max="600" style="max-width:120px;" />
                       <div class="field-error"></div>
                     </div>
-                    <!-- Script timeout — only relevant for Bash Script jobs -->
-                    <div class="field" id="jobScriptTimeoutWrap" style="display:none;">
-                      <label>Script Timeout (s) <span class="hint" style="text-transform:none;letter-spacing:0;">(blank = use action timeout)</span></label>
-                      <input type="number" id="jobScriptTimeout" min="5" max="3600" style="max-width:120px;" placeholder="e.g. 120" />
-                      <div class="field-error"></div>
-                    </div>
                   </div>
 
                   <div class="job-notify-section">
@@ -2374,7 +2368,7 @@
       'primaryBaseURL', 'displayTimezone', 'serverTimezone',
       'logLevel', 'logRetentionDays'
     ];
-    const jobFields = ['jobName', 'jobGroup', 'jobAction', 'jobNameFilter', 'jobLabelKey', 'jobLabelValue', 'jobEnvFilter', 'jobScript', 'jobRetryCount', 'jobMonitorInterval', 'jobActionTimeout', 'jobScriptTimeout'];
+    const jobFields = ['jobName', 'jobGroup', 'jobAction', 'jobNameFilter', 'jobLabelKey', 'jobLabelValue', 'jobEnvFilter', 'jobScript', 'jobRetryCount', 'jobMonitorInterval', 'jobActionTimeout'];
     const PROVIDER_DEFS = {
       discord:  { label: 'Discord',  badge: 'DC', color: '#5865f2', description: 'Discord channel webhook',    fields: [{ key: 'webhookurl', label: 'Webhook URL', required: true, type: 'text', placeholder: 'https://discord.com/api/webhooks/ID/TOKEN', help: 'Channel Settings → Integrations → Webhooks → Copy URL' }] },
       slack:    { label: 'Slack',    badge: 'SL', color: '#4A154B', description: 'Slack incoming webhook',    fields: [
@@ -2747,9 +2741,7 @@ echo "Restart complete"`,
       document.getElementById('jobTabScript').classList.toggle('active', isScript);
       document.getElementById('jobTabStandardContent').classList.toggle('active', !isScript);
       document.getElementById('jobTabScriptContent').classList.toggle('active', isScript);
-      // Show script timeout only for script jobs
-      const stWrap = document.getElementById('jobScriptTimeoutWrap');
-      if (stWrap) stWrap.style.display = isScript ? '' : 'none';
+
       if (isScript) updateScriptValidation();
     }
 
@@ -5011,7 +5003,6 @@ echo "Restart complete"`,
           document.getElementById('jobMonitorInterval').value = job.monitorIntervalSeconds > 0 ? String(job.monitorIntervalSeconds) : '';
           document.getElementById('jobActionTimeout').value = job.actionTimeoutSeconds > 0 ? String(job.actionTimeoutSeconds) : '';
           document.getElementById('jobPostWait').value = job.postActionWaitSeconds > 0 ? String(job.postActionWaitSeconds) : '';
-          document.getElementById('jobScriptTimeout').value = job.scriptTimeoutSeconds > 0 ? String(job.scriptTimeoutSeconds) : '';
           document.getElementById('jobStatus').textContent = '';
           renderJobNotifyChips(Array.isArray(job.notifications) ? job.notifications : []);
           if (job.action === 'run-script') {
@@ -5129,7 +5120,6 @@ echo "Restart complete"`,
       document.getElementById('jobMonitorInterval').value = '';
       document.getElementById('jobActionTimeout').value = '';
       document.getElementById('jobPostWait').value = '0';
-      document.getElementById('jobScriptTimeout').value = '';
       document.getElementById('scriptUpgradeNotice').style.display = 'none';
       setJobActionTab('standard');
       renderJobNotifyChips([]);
@@ -5174,8 +5164,6 @@ echo "Restart complete"`,
       const retryLimitEnabled = document.getElementById('jobRetryLimitEnabled').checked;
       const retryMode = currentJobRetryMode;
       const monitorIntervalRaw = document.getElementById('jobMonitorInterval').value;
-      const scriptTimeoutRaw = document.getElementById('jobScriptTimeout').value;
-      const scriptTimeoutSeconds = scriptTimeoutRaw ? (parseInt(scriptTimeoutRaw, 10) || 0) : 0;
       const actionTimeoutRaw = document.getElementById('jobActionTimeout').value;
       const monitorIntervalSeconds = parseInt(monitorIntervalRaw, 10);
       const actionTimeoutSeconds = parseInt(actionTimeoutRaw, 10);
@@ -5207,7 +5195,7 @@ echo "Restart complete"`,
         containerNameFilter, containerLabelFilter, containerEnvVarFilter,
         enabled: toBool(document.getElementById('jobEnabled').value),
         startExited: toBool(document.getElementById('jobStartExited').value),
-        retryCount, maxMonitoringDurationMinutes, monitorIntervalSeconds, actionTimeoutSeconds, scriptTimeoutSeconds, postActionWaitSeconds,
+        retryCount, maxMonitoringDurationMinutes, monitorIntervalSeconds, actionTimeoutSeconds, postActionWaitSeconds,
         dockerHostID: document.getElementById('jobDockerHostID').value || '',
       };
 

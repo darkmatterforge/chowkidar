@@ -425,27 +425,19 @@ docker restart "$1" && echo "Restarted successfully"`)
       await deleteJob(page, 'e2e-bash-script-job')
     })
 
-    // ── Script Timeout field ──────────────────────────────────────────────────
+    // ── Action Timeout applies to both docker actions and bash scripts ────────
 
-    test('script timeout field is hidden for standard action', async ({ page }) => {
+    test('action timeout field is visible for standard and script actions', async ({ page }) => {
       await openJobsTab(page)
       await openAddForm(page)
-      await expect(page.locator('#jobScriptTimeoutWrap')).toBeHidden()
-      await page.locator('#closeJobFormBtn').click()
-    })
-
-    test('script timeout field appears when Bash Script tab is selected', async ({ page }) => {
-      await openJobsTab(page)
-      await openAddForm(page)
+      await expect(page.locator('#jobActionTimeout')).toBeVisible()
       await page.locator('#jobTabScript').click()
-      await expect(page.locator('#jobScriptTimeoutWrap')).toBeVisible()
-      // Switching back hides it again
-      await page.locator('#jobTabStandard').click()
-      await expect(page.locator('#jobScriptTimeoutWrap')).toBeHidden()
+      await expect(page.locator('#jobTabScriptContent')).toBeVisible()
+      await expect(page.locator('#jobActionTimeout')).toBeVisible()
       await page.locator('#closeJobFormBtn').click()
     })
 
-    test('script timeout value is saved and restored when editing a job', async ({ page }) => {
+    test('action timeout value is saved and restored when editing a bash script job', async ({ page }) => {
       await openJobsTab(page)
       await openAddForm(page)
       await page.locator('#jobTabScript').click()
@@ -453,18 +445,17 @@ docker restart "$1" && echo "Restarted successfully"`)
       await expect(page.locator('#jobScript')).toBeVisible()
       await page.locator('#jobScript').fill('#!/bin/sh\necho hi')
       await expect(page.locator('#jobScript')).toHaveValue(/echo hi/)
-      await page.locator('#jobScriptTimeout').fill('180')
+      await page.locator('#jobActionTimeout').fill('180')
       await page.locator('#jobNameFilter').fill('timeout-test-container')
-      await saveJob(page, 'e2e-script-timeout-job')
+      await saveJob(page, 'e2e-action-timeout-job')
 
       const editBtn = page.locator('#jobsTbody tr')
-        .filter({ hasText: 'e2e-script-timeout-job' })
+        .filter({ hasText: 'e2e-action-timeout-job' })
         .getByRole('button', { name: /edit/i })
       await editBtn.click()
-      await expect(page.locator('#jobScriptTimeoutWrap')).toBeVisible()
-      await expect(page.locator('#jobScriptTimeout')).toHaveValue('180')
+      await expect(page.locator('#jobActionTimeout')).toHaveValue('180')
       await page.locator('#cancelJobEditBtn').click()
-      await deleteJob(page, 'e2e-script-timeout-job')
+      await deleteJob(page, 'e2e-action-timeout-job')
     })
 
     // ── Template upgrade notice ───────────────────────────────────────────────
