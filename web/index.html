@@ -1313,9 +1313,9 @@
             <h2 class="section-title">General</h2>
             <div class="form-grid">
               <select id="action" style="display:none;"></select>
-              <div class="field"><label>External Hostname</label><input type="text" id="externalHostname" /></div>
-              <div class="field-error" id="externalHostnameError"></div>
-              <div class="field">
+              <div class="field" style="grid-column:1/-1;"><label>External Hostname</label><input type="text" id="externalHostname" /></div>
+              <div class="field-error" id="externalHostnameError" style="grid-column:1/-1;"></div>
+              <div class="field" style="grid-column:1/-1;">
                 <label>Primary Base URL</label>
                 <div style="display:flex;gap:8px;">
                   <input type="text" id="primaryBaseURL" placeholder="https://chowkidar.example.com" style="flex:1;" />
@@ -1323,7 +1323,7 @@
                 </div>
                 <div class="hint" style="margin-top:4px;">Used for links in notifications and webhooks</div>
               </div>
-              <div class="field-error" id="primaryBaseURLError"></div>
+              <div class="field-error" id="primaryBaseURLError" style="grid-column:1/-1;"></div>
               <div class="field">
                 <label>Display Timezone</label>
                 <div style="display:flex;align-items:center;gap:10px;">
