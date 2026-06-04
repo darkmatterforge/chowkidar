@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Infrastructure
+- Migrated Docker build and runtime images from Alpine to Chainguard (Wolfi-base + Chainguard Go) for reduced CVE surface
+- Docker Hub repository description now synced automatically from `README.md` on every release via `peter-evans/dockerhub-description`
+- Added `security-patch` workflow: daily check that detects base image updates, package upgrades, and fixable CVEs — opens a PR with auto-merge when a rebuild improves the image
+- Added `security-tag` workflow: pushes the version tag when a security patch PR merges, triggering the full `docker-publish` + `release` chain
+- Updated `release.sh`: changelog commit now goes via a PR branch; CI must pass before the PR is admin-merged and the tag is pushed — prevents publishing a broken image
+
 ## [0.3.0] - 2026-06-04
 
 ### Added

@@ -74,41 +74,87 @@ awk -v ver="$NEW_VERSION" -v date="$TODAY" '
   { print }
 ' "$CHANGELOG" > "$TEMP_FILE"
 
-# Update comparison links at the bottom
-if grep -q "\[Unreleased\]:" "$TEMP_FILE"; then
-  sed -i.bak \
-    -e "s|\[Unreleased\]: .*|\[Unreleased\]: ${REPO_URL}/compare/${NEW_TAG}...HEAD|" \
-    "$TEMP_FILE"
-  # Add new version link before the first versioned link
-  PREV_TAG="${LATEST_TAG:-}"
-  if [[ -n "$PREV_TAG" ]]; then
-    NEW_LINK="[${NEW_VERSION}]: ${REPO_URL}/compare/${PREV_TAG}...${NEW_TAG}"
-  else
-    NEW_LINK="[${NEW_VERSION}]: ${REPO_URL}/releases/tag/${NEW_TAG}"
-  fi
-  sed -i.bak "/^\[Unreleased\]:/a\\
-${NEW_LINK}" "$TEMP_FILE"
-  rm -f "${TEMP_FILE}.bak"
+# Update comparison links at the bottom (newest first).
+if [[ -n "$LATEST_TAG" ]]; then
+  NEW_LINK="[${NEW_VERSION}]: ${REPO_URL}/compare/${LATEST_TAG}...${NEW_TAG}"
 else
-  # Append links section
-  {
-    echo ""
-    echo "[Unreleased]: ${REPO_URL}/compare/${NEW_TAG}...HEAD"
-    if [[ -n "${LATEST_TAG:-}" ]]; then
-      echo "[${NEW_VERSION}]: ${REPO_URL}/compare/${LATEST_TAG}...${NEW_TAG}"
-    else
-      echo "[${NEW_VERSION}]: ${REPO_URL}/releases/tag/${NEW_TAG}"
-    fi
-  } >> "$TEMP_FILE"
+  NEW_LINK="[${NEW_VERSION}]: ${REPO_URL}/releases/tag/${NEW_TAG}"
+fi
+UNRELEASED_LINK="[Unreleased]: ${REPO_URL}/compare/${NEW_TAG}...HEAD"
+
+if grep -q "^\[Unreleased\]:" "$TEMP_FILE"; then
+  # [Unreleased]: already exists — update it and insert new version link after it
+  awk -v unreleased="$UNRELEASED_LINK" -v new_link="$NEW_LINK" '
+    /^\[Unreleased\]:/ { print unreleased; print new_link; next }
+    { print }
+  ' "$TEMP_FILE" > "${TEMP_FILE}.new" && mv "${TEMP_FILE}.new" "$TEMP_FILE"
+elif grep -qE "^\[[0-9]" "$TEMP_FILE"; then
+  # Version links exist but no [Unreleased]: — insert both before the first version link
+  awk -v unreleased="$UNRELEASED_LINK" -v new_link="$NEW_LINK" '
+    !inserted && /^\[[0-9]/ { print unreleased; print new_link; inserted=1 }
+    { print }
+  ' "$TEMP_FILE" > "${TEMP_FILE}.new" && mv "${TEMP_FILE}.new" "$TEMP_FILE"
+else
+  # No links section at all — append one
+  { echo ""; echo "$UNRELEASED_LINK"; echo "$NEW_LINK"; } >> "$TEMP_FILE"
 fi
 
 mv "$TEMP_FILE" "$CHANGELOG"
 
-# ── Commit, tag, push ────────────────────────────────────────────────────────
+# ── Commit, open PR, wait for CI on branch, then admin-merge and tag ─────────
+# CI runs on the branch before anything touches main.
+# If CI fails the PR is closed and main stays clean — no orphaned changelog entry.
+RELEASE_BRANCH="release/${NEW_TAG}"
+git checkout -b "$RELEASE_BRANCH"
 git add "$CHANGELOG"
 git commit -m "chore: release ${NEW_TAG}"
+git push origin "$RELEASE_BRANCH"
+
+BRANCH_SHA="$(git rev-parse HEAD)"
+
+echo ""
+echo "Opening PR for ${NEW_TAG}..."
+PR_URL=$(gh pr create \
+  --title "chore: release ${NEW_TAG}" \
+  --body "Automated changelog commit for ${NEW_TAG}." \
+  --base main \
+  --head "$RELEASE_BRANCH")
+echo "  PR: ${PR_URL}"
+
+echo ""
+echo "Waiting for CI on branch (this can take 10-15 min)..."
+RUN_ID=""
+for i in $(seq 1 60); do
+  RUN_ID=$(gh run list --commit "$BRANCH_SHA" --workflow ci.yml \
+    --json databaseId --jq '.[0].databaseId // empty' 2>/dev/null || true)
+  [[ -n "$RUN_ID" ]] && break
+  echo "  Run not registered yet (${i}/60)..."
+  sleep 10
+done
+
+if [[ -z "$RUN_ID" ]]; then
+  echo "Error: CI run never appeared. Closing PR — main is untouched." >&2
+  gh pr close "$PR_URL" --delete-branch
+  git checkout main && git branch -D "$RELEASE_BRANCH"
+  exit 1
+fi
+
+echo "  CI run ID: ${RUN_ID}"
+if ! gh run watch "$RUN_ID" --exit-status; then
+  echo ""
+  echo "CI failed — closing PR. main is untouched, no changelog committed." >&2
+  gh pr close "$PR_URL" --delete-branch
+  git checkout main && git branch -D "$RELEASE_BRANCH"
+  exit 1
+fi
+echo "  CI passed ✓"
+
+echo "Merging with admin override (bypasses review requirement)..."
+gh pr merge "$PR_URL" --admin --merge --delete-branch
+
+git checkout main
+git pull origin main
 git tag -a "$NEW_TAG" -m "Release ${NEW_TAG}"
-git push origin main
 git push origin "$NEW_TAG"
 
 echo ""
