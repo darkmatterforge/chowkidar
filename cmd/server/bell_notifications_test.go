@@ -24,7 +24,6 @@ func newBellTestServer(t *testing.T) (*app, *httptest.Server) {
 	cfg := config.Config{
 		Port:                          "8080",
 		ConfigDir:                     configDir,
-		RetryCount:                    3,
 		Action:                        "restart",
 		WorkerCount:                   2,
 		QueueSize:                     16,
@@ -37,7 +36,6 @@ func newBellTestServer(t *testing.T) (*app, *httptest.Server) {
 		DockerClientRetryDelaySeconds: 2,
 		ActionTimeoutSeconds:          20,
 		NotificationRatePerSec:        5,
-		SQLiteBusyTimeoutSeconds:      5000,
 	}
 	if err := config.SaveFileConfig(configDir, config.ToFileConfig(cfg)); err != nil {
 		t.Fatalf("SaveFileConfig: %v", err)

@@ -27,7 +27,6 @@ func newRecoveryApp(t *testing.T, fake *fakeDockerClient, jobs []config.Job) (*a
 		cfg: config.Config{
 			Action:               "restart",
 			ActionTimeoutSeconds: 5,
-			RetryCount:           3,
 		},
 		docker:               fake,
 		pool:                 pool,
@@ -77,7 +76,7 @@ func TestHealthRecovery_UnhealthyContainerQueuesRestart(t *testing.T) {
 func TestHealthRecovery_SuccessfulRestartWritesHistoryEntry(t *testing.T) {
 	fake := &fakeDockerClient{}
 	a := &app{
-		cfg:                config.Config{RetryCount: 1, ActionTimeoutSeconds: 5},
+		cfg:                config.Config{ActionTimeoutSeconds: 5},
 		docker:             fake,
 		notifier:           notify.New(""),
 		lastNotified:       make(map[string]time.Time),

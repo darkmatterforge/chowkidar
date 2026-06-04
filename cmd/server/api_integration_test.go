@@ -22,8 +22,6 @@ func newIntegrationTestServer(t *testing.T) (*app, *httptest.Server) {
 	cfg := config.Config{
 		Port:                          "8080",
 		ConfigDir:                     configDir,
-		RetryCount:                    3,
-		RetryDelay:                    5 * time.Second,
 		Action:                        "restart",
 		WorkerCount:                   2,
 		QueueSize:                     16,
@@ -36,9 +34,6 @@ func newIntegrationTestServer(t *testing.T) (*app, *httptest.Server) {
 		DockerClientRetryDelaySeconds: 2,
 		ActionTimeoutSeconds:          20,
 		RequireFilterForExited:        true,
-		SQLitePath:                    "/config/data/app.db",
-		SQLiteBusyTimeoutSeconds:      5000,
-		SQLitePragmas:                 "journal_mode=WAL;synchronous=NORMAL",
 	}
 
 	if err := config.SaveFileConfig(configDir, config.ToFileConfig(cfg)); err != nil {

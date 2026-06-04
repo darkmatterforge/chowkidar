@@ -179,7 +179,7 @@ func TestRetryHistoryLogging(t *testing.T) {
 	// postActionWaitSeconds=0 so no deadline is set between cycles.
 	fake := &fakeDockerClient{restartErrs: []error{errors.New("first"), errors.New("second"), nil}}
 	a := &app{
-		cfg:                config.Config{RetryCount: 3, ActionTimeoutSeconds: 5},
+		cfg:                config.Config{ActionTimeoutSeconds: 5},
 		docker:             fake,
 		history:            historyStore,
 		notifier:           notify.New(""),
@@ -219,7 +219,7 @@ func TestRetriesExhaustedAfterMaxCycles(t *testing.T) {
 	historyStore, _ := history.NewStore(dir)
 	fake := &fakeDockerClient{restartErrs: []error{errors.New("fail"), errors.New("fail"), errors.New("fail"), errors.New("fail")}}
 	a := &app{
-		cfg:                config.Config{RetryCount: 3, ActionTimeoutSeconds: 5},
+		cfg:                config.Config{ActionTimeoutSeconds: 5},
 		docker:             fake,
 		history:            historyStore,
 		notifier:           notify.New(""),
@@ -287,7 +287,6 @@ func TestScanOnceSafetyGateSkipsExitedWithoutFilters(t *testing.T) {
 
 	a := &app{
 		cfg: config.Config{
-			RetryCount:                    1,
 			ActionTimeoutSeconds:          5,
 			StartExited:                   true,
 			RequireFilterForExited:        true,
@@ -564,7 +563,6 @@ func newScanOnceApp(t *testing.T, fake *fakeDockerClient, jobs []config.Job) (*a
 		cfg: config.Config{
 			Action:                        "restart",
 			ActionTimeoutSeconds:          5,
-			RetryCount:                    1,
 			DockerClientRetryCount:        1,
 			DockerClientRetryDelaySeconds: 1,
 		},
@@ -732,7 +730,7 @@ func TestHandleSettingsReloadsRuntimeAndWorkerPool(t *testing.T) {
 	defer a.stopPool()
 	oldPool := a.pool
 
-	body := []byte(`{"retryCount":4,"retryDelaySeconds":6,"workerCount":4,"queueSize":96,"httpClientTimeoutSeconds":19,"httpMaxIdleConns":30,"httpMaxIdleConnsPerHost":14,"httpIdleConnTimeoutSeconds":99,"dockerPingTimeoutSeconds":8,"dockerClientRetryCount":2,"dockerClientRetryDelaySeconds":3,"actionTimeoutSeconds":29,"notificationRatePerSec":7,"action":"restart","externalHostname":"pool.example","runScriptPath":"/config/scripts/heal.sh","startExited":true,"requireFilterForExited":true,"sqlitePath":"/config/data/app.db","sqliteBusyTimeoutSeconds":6000,"sqlitePragmas":"journal_mode=WAL;synchronous=NORMAL"}`)
+	body := []byte(`{"workerCount":4,"queueSize":96,"httpClientTimeoutSeconds":19,"httpMaxIdleConns":30,"httpMaxIdleConnsPerHost":14,"httpIdleConnTimeoutSeconds":99,"dockerPingTimeoutSeconds":8,"dockerClientRetryCount":2,"dockerClientRetryDelaySeconds":3,"actionTimeoutSeconds":29,"notificationRatePerSec":7,"action":"restart","externalHostname":"pool.example","runScriptPath":"/config/scripts/heal.sh","startExited":true,"requireFilterForExited":true}`)
 	req := httptest.NewRequest(http.MethodPut, "/api/settings", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
@@ -917,17 +915,17 @@ func TestHandleSettingsPUTRejectsBadJSON(t *testing.T) {
 
 func TestHandleSettingsPUTClampsOutOfRangeValues(t *testing.T) {
 	// normalizeSettingsBody clamps invalid values rather than rejecting them.
-	// Verify a save with retryCount=-1 succeeds and the stored value is clamped to >=1.
+	// Verify a save with workerCount=-1 succeeds and is clamped to >=1.
 	a := newMinimalTestApp(t)
-	body := bytes.NewBufferString(`{"retryCount":-1}`)
+	body := bytes.NewBufferString(`{"workerCount":-1}`)
 	req := httptest.NewRequest(http.MethodPut, "/api/settings", body)
 	rr := httptest.NewRecorder()
 	a.handleSettingsPUT(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200 (clamped), got %d (body: %s)", rr.Code, rr.Body.String())
 	}
-	if a.getConfig().RetryCount < 1 {
-		t.Fatalf("expected RetryCount >= 1 after clamp, got %d", a.getConfig().RetryCount)
+	if a.getConfig().WorkerCount < 1 {
+		t.Fatalf("expected WorkerCount >= 1 after clamp, got %d", a.getConfig().WorkerCount)
 	}
 }
 

@@ -1811,9 +1811,6 @@ func normalizeSettingsBody(body *config.FileConfig) {
 	if body.QueueSize < 1 {
 		body.QueueSize = 64
 	}
-	if body.RetryCount < 1 {
-		body.RetryCount = 1
-	}
 	if body.HttpClientTimeoutSeconds < 1 {
 		body.HttpClientTimeoutSeconds = 15
 	}
@@ -1847,9 +1844,6 @@ func normalizeSettingsBody(body *config.FileConfig) {
 	if body.LogRetentionDays < 1 {
 		body.LogRetentionDays = 7
 	}
-	if body.SQLiteBusyTimeoutSeconds < 1 {
-		body.SQLiteBusyTimeoutSeconds = 5000
-	}
 	body.DockerSocketPath = strings.TrimSpace(body.DockerSocketPath)
 	if body.DockerSocketPath == "" {
 		body.DockerSocketPath = "/var/run/docker.sock"
@@ -1867,8 +1861,6 @@ func normalizeSettingsBody(body *config.FileConfig) {
 }
 
 func syncConfigFromBody(cfg *config.Config, body config.FileConfig) {
-	cfg.RetryCount = body.RetryCount
-	cfg.RetryDelay = time.Duration(body.RetryDelaySeconds) * time.Second
 	cfg.Action = body.Action
 	cfg.WorkerCount = body.WorkerCount
 	cfg.QueueSize = body.QueueSize
@@ -1890,9 +1882,6 @@ func syncConfigFromBody(cfg *config.Config, body config.FileConfig) {
 	cfg.BootNotificationProfiles = body.BootNotificationProfiles
 	cfg.ActionTimeoutSeconds = body.ActionTimeoutSeconds
 	cfg.RequireFilterForExited = body.RequireFilterForExited
-	cfg.SQLitePath = body.SQLitePath
-	cfg.SQLiteBusyTimeoutSeconds = body.SQLiteBusyTimeoutSeconds
-	cfg.SQLitePragmas = body.SQLitePragmas
 	cfg.DisplayTimezone = body.DisplayTimezone
 	cfg.ServerTimezone = body.ServerTimezone
 	cfg.PrimaryBaseURL = body.PrimaryBaseURL

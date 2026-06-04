@@ -58,7 +58,7 @@ func TestScriptRecovery_OutputStoredInHistoryEntry(t *testing.T) {
 	store, _ := history.NewStore(dir)
 	fake := &fakeDockerClient{}
 	a := &app{
-		cfg:                  config.Config{RetryCount: 1, ActionTimeoutSeconds: 10},
+		cfg:                  config.Config{ActionTimeoutSeconds: 10},
 		docker:               fake,
 		history:              store,
 		notifier:             notify.New(""),
