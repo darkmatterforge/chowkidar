@@ -2,8 +2,6 @@ name: CI
 
 on:
   push:
-  pull_request:
-    types: [opened, reopened]
   # Manual trigger with the option to skip jobs selectively.
   workflow_dispatch:
     inputs:
