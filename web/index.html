@@ -2209,7 +2209,7 @@
               <div class="field-error" id="httpIdleConnTimeoutSecondsError"></div>
               <div class="field setting-row"><label>Docker Ping Timeout (s)</label><input type="number" inputmode="numeric" id="dockerPingTimeoutSeconds" min="1" max="3600" /></div>
               <div class="field-error" id="dockerPingTimeoutSecondsError"></div>
-              <div class="field setting-row"><label>Docker Client Retry Count</label><input type="number" inputmode="numeric" id="dockerClientRetryCount" min="1" max="20" /></div>
+              <div class="field setting-row"><label>Docker Client Retry Count</label><input type="number" inputmode="numeric" id="dockerClientRetryCount" min="1" max="100" /></div>
               <div class="field-error" id="dockerClientRetryCountError"></div>
               <div class="field setting-row"><label>Docker Client Retry Delay (s)</label><input type="number" inputmode="numeric" id="dockerClientRetryDelaySeconds" min="1" max="3600" /></div>
               <div class="field-error" id="dockerClientRetryDelaySecondsError"></div>
@@ -4667,7 +4667,7 @@ echo "Restart complete"`,
       if (httpMaxIdleConnsPerHost < 1 || httpMaxIdleConnsPerHost > 1000) { setFieldError('httpMaxIdleConnsPerHost', 'Use 1-1000.'); hasErrors = true; }
       if (httpIdleConnTimeoutSeconds < 1 || httpIdleConnTimeoutSeconds > 3600) { setFieldError('httpIdleConnTimeoutSeconds', 'Use 1-3600 seconds.'); hasErrors = true; }
       if (dockerPingTimeoutSeconds < 1 || dockerPingTimeoutSeconds > 3600) { setFieldError('dockerPingTimeoutSeconds', 'Use 1-3600 seconds.'); hasErrors = true; }
-      if (dockerClientRetryCount < 1 || dockerClientRetryCount > 20) { setFieldError('dockerClientRetryCount', 'Use 1-20 retries.'); hasErrors = true; }
+      if (dockerClientRetryCount < 1 || dockerClientRetryCount > 100) { setFieldError('dockerClientRetryCount', 'Use 1-100 retries.'); hasErrors = true; }
       if (dockerClientRetryDelaySeconds < 1 || dockerClientRetryDelaySeconds > 3600) { setFieldError('dockerClientRetryDelaySeconds', 'Use 1-3600 seconds.'); hasErrors = true; }
       if (notificationCooldownSeconds < 0 || notificationCooldownSeconds > 86400) { setFieldError('notificationCooldownSeconds', 'Use 0-86400 seconds (0 = always notify).'); hasErrors = true; }
       if (startupDelaySeconds < 0 || startupDelaySeconds > 3600) { setFieldError('startupDelaySeconds', 'Use 0-3600 seconds (0 = start immediately).'); hasErrors = true; }
