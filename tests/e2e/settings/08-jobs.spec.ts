@@ -386,10 +386,18 @@ test.describe('Settings — Jobs tab', () => {
       await openJobsTab(page)
       await openAddForm(page)
       await page.locator('#jobTabScript').click()
+      // Wait for tab content to be visible before filling — the class toggle
+      // must complete and the textarea must be interactive, otherwise fill()
+      // is a no-op, script validation fails, and no HTTP request is made.
+      await expect(page.locator('#jobTabScriptContent')).toBeVisible()
+      await expect(page.locator('#jobScript')).toBeVisible()
       await page.locator('#jobScript').fill(`#!/bin/sh
 # $1 = container ID, $2 = container name
 echo "Recovering container: $2 (id=$1)"
 docker restart "$1" && echo "Restarted successfully"`)
+      // Verify fill actually worked before proceeding — if empty, saveJob will
+      // fail validation silently (no HTTP call) and waitForResponse will timeout.
+      await expect(page.locator('#jobScript')).toHaveValue(/Recovering container/)
       await page.locator('#jobNameFilter').fill('bash-test-container')
       await saveJob(page, 'e2e-bash-script-job')
     })

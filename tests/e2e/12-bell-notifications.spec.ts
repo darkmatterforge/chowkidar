@@ -15,6 +15,35 @@ import { gotoApp } from './helpers/nav.js'
 
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:8080'
 
+// Synthetic alerts used when the server has no active alerts (e.g. all dismissed
+// by a prior test). page.route intercepts only the read call; dismiss/un-dismiss
+// calls are still forwarded to the real server so server-side behaviour is tested.
+const MOCK_ALERTS = [
+  {
+    id: `monitoring_started_1000000000000`,
+    type: 'monitoring_started',
+    message: 'Monitoring started',
+    timestamp: new Date(Date.now() - 60_000).toISOString(),
+  },
+  {
+    id: `failed_recovery_1000000000001`,
+    type: 'failed_recovery',
+    message: 'Recovery failed for test-container',
+    timestamp: new Date(Date.now() - 30_000).toISOString(),
+  },
+]
+
+async function withMockedAlerts(page: Page): Promise<void> {
+  const real = await page.request.get(`${BASE_URL}/api/system-alerts`)
+  const data = await real.json()
+  if ((data.alerts as any[]).length > 0) return  // real alerts exist, no mock needed
+  await page.route('**/api/system-alerts', route => {
+    if (route.request().method() !== 'GET') { route.continue(); return }
+    route.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify({ alerts: MOCK_ALERTS }) })
+  })
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 async function openBell(page: Page) {
@@ -161,17 +190,8 @@ test.describe('Notification bell — persistence across page refresh', () => {
 
   test('undismissed alerts still show after page reload', async ({ page }) => {
     await gotoApp(page)
-
-    // Clear all dismissed alerts so everything should show.
+    await withMockedAlerts(page)
     await clearDismissedAlerts(page)
-
-    const alertsRes = await page.request.get(`${BASE_URL}/api/system-alerts`)
-    const alertsData = await alertsRes.json()
-    const alerts: any[] = alertsData.alerts ?? []
-    if (alerts.length === 0) {
-      test.skip()
-      return
-    }
 
     await page.reload()
     await expect(page.locator('#themeToggleBtn')).toBeVisible()
@@ -190,14 +210,13 @@ test.describe('Notification bell — persistence across page refresh', () => {
     // server — not localStorage.  Verify by dismissing via the API directly and
     // confirming the alert does not appear in a fresh page load.
     await gotoApp(page)
+    await withMockedAlerts(page)
 
     const alertsRes = await page.request.get(`${BASE_URL}/api/system-alerts`)
     const alertsData = await alertsRes.json()
-    const alerts: any[] = alertsData.alerts ?? []
-    if (alerts.length === 0) {
-      test.skip()
-      return
-    }
+    const alerts: any[] = (alertsData.alerts as any[]).length
+      ? alertsData.alerts
+      : MOCK_ALERTS
 
     const target = alerts[0]
     // Dismiss via backend API.
@@ -449,13 +468,7 @@ test.describe('Bell notification timestamp formatting', () => {
   test('bell timestamps use clean YYYY-MM-DD HH:MM:SS format (24h)', async ({ page }) => {
     await gotoApp(page)
     await page.evaluate(() => localStorage.removeItem('cwk-dismissed-alerts'))
-
-    const alertsRes = await page.request.get(`${BASE_URL}/api/system-alerts`)
-    const alertsData = await alertsRes.json()
-    if ((alertsData.alerts as any[]).length === 0) {
-      test.skip()
-      return
-    }
+    await withMockedAlerts(page)
 
     await page.reload()
     await expect(page.locator('#themeToggleBtn')).toBeVisible()

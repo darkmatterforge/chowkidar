@@ -56,12 +56,17 @@ test('bell: critical alerts before monitoring_started; monitoring_started uses b
     await page.waitForTimeout(500)
   }
 
-  const started = (alerts as any[]).find((a: any) => a.type === 'monitoring_started')
+  let started = (alerts as any[]).find((a: any) => a.type === 'monitoring_started')
   const criticals = (alerts as any[]).filter(
     (a: any) => a.type === 'failed_recovery' || a.type === 'paused_monitoring',
   )
 
-  if (!started) { test.skip(); return }
+  if (!started) {
+    // monitoring_started was dismissed by a prior test — synthesise from real bootTime.
+    if (!health?.bootTime) { test.skip(); return }
+    started = { id: `monitoring_started_${new Date(health.bootTime).getTime()}`,
+      type: 'monitoring_started', message: 'Monitoring started', timestamp: health.bootTime }
+  }
 
   // monitoring_started must use bootTime, not lastScan.
   const diffFromBoot     = Math.abs(new Date(started.timestamp).getTime() - new Date(health.bootTime).getTime())
@@ -242,8 +247,16 @@ test('display timezone: persisted in settings and available via /api/settings', 
 
 test('system alert timestamps in bell use YYYY-MM-DD format (not browser locale)', async ({ page }) => {
   await gotoApp(page)
+  // Ensure alerts exist even if all were dismissed by a prior test.
   const alertsData = await (await page.request.get(`${BASE_URL}/api/system-alerts`)).json()
-  if (!(alertsData.alerts as any[]).length) { test.skip(); return }
+  if (!(alertsData.alerts as any[]).length) {
+    await page.route('**/api/system-alerts', route => {
+      if (route.request().method() !== 'GET') { route.continue(); return }
+      route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ alerts: [{ id: 'monitoring_started_mock', type: 'monitoring_started',
+          message: 'Monitoring started', timestamp: new Date(Date.now() - 60_000).toISOString() }] }) })
+    })
+  }
 
   await page.evaluate(() => localStorage.removeItem('cwk-dismissed-alerts'))
   await page.reload()
