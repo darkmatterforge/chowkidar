@@ -1,13 +1,20 @@
 package notify
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
+	"net/http"
+	"net/url"
 	"os/exec"
 	"strings"
 	"time"
 )
+
+const defaultAppIconURL = "https://raw.githubusercontent.com/darkmatterforge/chowkidar/main/unraid/icon.svg"
 
 // Notifier sends notifications through the Apprise CLI tool.
 // When Enabled is false all Send calls are silent no-ops.
@@ -39,18 +46,109 @@ func (n *Notifier) Send(title, body string) error {
 
 	log.Printf("[notify] send title=%q services=%v", title, n.Services)
 
-	args := []string{"-vv", "-t", title, "-b", body}
-	args = append(args, n.Services...)
+	// Handle Discord webhooks directly so we can set the avatar (app icon).
+	remaining := make([]string, 0, len(n.Services))
+	var discordErrs []string
+	for _, svc := range n.Services {
+		s := strings.TrimSpace(svc)
+		if s == "" {
+			continue
+		}
+		// Slack incoming webhook (https://hooks.slack.com/services/...) — allow icon_url query param or default to app icon
+		if strings.Contains(s, "hooks.slack.com") {
+			wh := s
+			var iconURL string
+			if u, err := url.Parse(s); err == nil {
+				q := u.Query()
+				iconURL = q.Get("icon_url")
+				wh = u.String()
+			}
+			if iconURL == "" {
+				iconURL = defaultAppIconURL
+			}
+			payload := map[string]any{
+				"text":     body,
+				"username": title,
+				"icon_url": iconURL,
+			}
+			b, _ := json.Marshal(payload)
+			req, _ := http.NewRequest("POST", wh, bytes.NewReader(b))
+			req.Header.Set("Content-Type", "application/json")
+			cli := &http.Client{Timeout: 10 * time.Second}
+			resp, err := cli.Do(req)
+			if err != nil {
+				discordErrs = append(discordErrs, fmt.Sprintf("slack send failed: %v", err))
+				continue
+			}
+			resp.Body.Close()
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				discordErrs = append(discordErrs, fmt.Sprintf("slack send failed: status=%d", resp.StatusCode))
+			}
+			continue
+		}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
+		// discord://ID/TOKEN
+		if strings.HasPrefix(s, "discord://") || strings.HasPrefix(s, "https://discord.com/api/webhooks/") {
+			// Normalize to full webhook URL
+			wh := s
+			if strings.HasPrefix(s, "discord://") {
+				parts := strings.Split(strings.TrimPrefix(s, "discord://"), "/")
+				if len(parts) >= 2 {
+					wh = fmt.Sprintf("https://discord.com/api/webhooks/%s/%s", parts[0], parts[1])
+				} else {
+					discordErrs = append(discordErrs, fmt.Sprintf("invalid discord service: %s", s))
+					continue
+				}
+			}
 
-	cmd := exec.CommandContext(ctx, "apprise", args...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Printf("[notify] send failed: %v — output: %s", err, strings.TrimSpace(string(out)))
-		return fmt.Errorf("apprise send failed: %w (%s)", err, strings.TrimSpace(string(out)))
+			// Build payload with avatar pointing to project icon on GitHub (public fallback)
+			payload := map[string]any{
+				"content":    body,
+				"username":   title,
+				"avatar_url": defaultAppIconURL,
+			}
+			b, _ := json.Marshal(payload)
+			req, _ := http.NewRequest("POST", wh, bytes.NewReader(b))
+			req.Header.Set("Content-Type", "application/json")
+			cli := &http.Client{Timeout: 10 * time.Second}
+			resp, err := cli.Do(req)
+			if err != nil {
+				discordErrs = append(discordErrs, fmt.Sprintf("discord send failed: %v", err))
+				continue
+			}
+			resp.Body.Close()
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				discordErrs = append(discordErrs, fmt.Sprintf("discord send failed: status=%d", resp.StatusCode))
+			}
+			continue
+		}
+		remaining = append(remaining, s)
 	}
-	log.Printf("[notify] send ok output=%s", strings.TrimSpace(string(out)))
+
+	// If there are remaining services, call apprise CLI for them
+	if len(remaining) > 0 {
+		args := []string{"-vv", "-t", title, "-b", body}
+		args = append(args, remaining...)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+
+		cmd := exec.CommandContext(ctx, "apprise", args...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Printf("[notify] send failed: %v — output: %s", err, strings.TrimSpace(string(out)))
+			// include any discord errors too
+			allErr := strings.TrimSpace(string(out))
+			if len(discordErrs) > 0 {
+				allErr = allErr + "; " + strings.Join(discordErrs, "; ")
+			}
+			return fmt.Errorf("apprise send failed: %w (%s)", err, allErr)
+		}
+		log.Printf("[notify] send ok output=%s", strings.TrimSpace(string(out)))
+	} else if len(discordErrs) > 0 {
+		// No apprise services called, but there were discord errors
+		return errors.New(strings.Join(discordErrs, "; "))
+	}
+
 	return nil
 }
