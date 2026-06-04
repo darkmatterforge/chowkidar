@@ -19,6 +19,7 @@ type Config struct {
 	RetryCount                    int
 	RetryDelay                    time.Duration
 	Action                        string
+	AppIconURL                    string
 	AppriseServices               string
 	ContainerNameFilter           string
 	ContainerLabelFilter          string
@@ -61,6 +62,7 @@ type Config struct {
 // returned/accepted by the /api/settings endpoint.
 type FileConfig struct {
 	Port                          string   `yaml:"port,omitempty"                json:"port"`
+	AppIconURL                    string   `yaml:"appIconURL,omitempty"          json:"appIconURL"`
 	RetryCount                    int      `yaml:"retryCount"                    json:"retryCount"`
 	RetryDelaySeconds             int      `yaml:"retryDelaySeconds"             json:"retryDelaySeconds"`
 	Action                        string   `yaml:"action"                        json:"action"`
@@ -148,6 +150,8 @@ func Load() (Config, error) {
 		DashboardRefreshSeconds:       fileCfg.DashboardRefreshSeconds,
 		Theme:                         fileCfg.Theme,
 	}
+	// App icon URL: allow override via APP_ICON_URL or file config
+	cfg.AppIconURL = envOr("APP_ICON_URL", fileCfg.AppIconURL)
 
 	if cfg.SQLitePath == "" {
 		cfg.SQLitePath = filepath.Join(configDir, "data", "app.db")
@@ -209,6 +213,9 @@ func applyConfigDefaults(cfg *Config) {
 	}
 	if cfg.NotificationRatePerSec < 1 {
 		cfg.NotificationRatePerSec = 5
+	}
+	if cfg.AppIconURL == "" {
+		cfg.AppIconURL = "https://raw.githubusercontent.com/darkmatterforge/chowkidar/main/unraid/icon.svg"
 	}
 }
 

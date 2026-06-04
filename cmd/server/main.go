@@ -584,7 +584,7 @@ func main() {
 	defer func() { _ = dockerClient.Close() }()
 	logInfof("boot: docker client initialized")
 
-	notifier := notify.New(cfg.AppriseServices)
+	notifier := notify.NewWithIcon(cfg.AppriseServices, cfg.AppIconURL)
 	pool := worker.NewPool(cfg.WorkerCount, cfg.QueueSize)
 
 	a := &app{
@@ -1936,7 +1936,7 @@ func (a *app) handleSettingsPUT(w http.ResponseWriter, r *http.Request) {
 		transport.MaxIdleConnsPerHost = reloaded.HttpMaxIdleConnsPerHost
 		transport.IdleConnTimeout = time.Duration(reloaded.HttpIdleConnTimeoutSeconds) * time.Second
 	}
-	a.notifier = notify.New(buildNotifierServicesFromProfiles(a.notifications))
+	a.notifier = notify.NewWithIcon(buildNotifierServicesFromProfiles(a.notifications), reloaded.AppIconURL)
 	a.mu.Unlock()
 
 	applyLogConfig(filepath.Join(reloaded.ConfigDir, "logs"), reloaded)
@@ -2141,7 +2141,7 @@ func (a *app) handleNotifications(w http.ResponseWriter, r *http.Request) {
 
 		a.mu.Lock()
 		a.cfg.AppriseServices = svc
-		a.notifier = notify.New(svc)
+		a.notifier = notify.NewWithIcon(svc, a.cfg.AppIconURL)
 		a.mu.Unlock()
 
 		writeJSON(w, http.StatusOK, map[string]any{"saved": true, "profiles": profiles})
@@ -3010,7 +3010,7 @@ func (a *app) handleTestNotification(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(req.Service) != "" {
 		svc := strings.TrimSpace(req.Service)
 		logInfof("notify: test direct service=%s", svc)
-		n := notify.New(svc)
+		n := notify.NewWithIcon(svc, cfg.AppIconURL)
 		if err := n.Send(prefix+" test", testMsg); err != nil {
 			logWarnf("notify: test failed service=%s err=%v", svc, err)
 			writeJSON(w, http.StatusBadRequest, map[string]any{"sent": false, "error": err.Error()})
@@ -3039,7 +3039,7 @@ func (a *app) handleTestNotification(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		logInfof("notify: test profile=%s service=%s", found.ID, found.Service)
-		n := notify.New(found.Service)
+		n := notify.NewWithIcon(found.Service, cfg.AppIconURL)
 		if err := n.Send(prefix+" test", testMsg); err != nil {
 			logWarnf("notify: test failed profile=%s err=%v", found.ID, err)
 			writeJSON(w, http.StatusBadRequest, map[string]any{"sent": false, "error": err.Error()})
@@ -3935,7 +3935,7 @@ func (a *app) sendJobNotifications(event string, data notifData, profileIDs []st
 		if host != "" {
 			body = "host=" + host + " | " + body
 		}
-		n := notify.New(p.Service)
+		n := notify.NewWithIcon(p.Service, a.cfg.AppIconURL)
 		if err := n.Send(title, body); err != nil {
 			logWarnf("job notification failed profile=%s err=%v", p.Name, err)
 			lastErr = err

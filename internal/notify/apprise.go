@@ -21,11 +21,20 @@ const defaultAppIconURL = "https://raw.githubusercontent.com/darkmatterforge/cho
 type Notifier struct {
 	Services []string
 	Enabled  bool
+	IconURL  string
 }
 
 // New builds a Notifier from a comma-separated list of Apprise service URLs.
 // If servicesCSV is empty or whitespace-only, Enabled is false.
+// New builds a Notifier using the default icon (env or built-in).
 func New(servicesCSV string) *Notifier {
+	return NewWithIcon(servicesCSV, "")
+}
+
+// NewWithIcon builds a Notifier and sets the icon URL to use for provider
+// payloads that support custom avatars/icons. If iconURL is empty, the
+// built-in GitHub raw URL is used as a sensible default.
+func NewWithIcon(servicesCSV, iconURL string) *Notifier {
 	parts := strings.Split(servicesCSV, ",")
 	services := make([]string, 0, len(parts))
 	for _, part := range parts {
@@ -34,7 +43,10 @@ func New(servicesCSV string) *Notifier {
 			services = append(services, trimmed)
 		}
 	}
-	return &Notifier{Services: services, Enabled: len(services) > 0}
+	if strings.TrimSpace(iconURL) == "" {
+		iconURL = defaultAppIconURL
+	}
+	return &Notifier{Services: services, Enabled: len(services) > 0, IconURL: iconURL}
 }
 
 // Send dispatches a notification with the given title and body to all configured
@@ -64,7 +76,10 @@ func (n *Notifier) Send(title, body string) error {
 				wh = u.String()
 			}
 			if iconURL == "" {
-				iconURL = defaultAppIconURL
+				iconURL = n.IconURL
+				if iconURL == "" {
+					iconURL = defaultAppIconURL
+				}
 			}
 			payload := map[string]any{
 				"text":     body,
@@ -102,10 +117,14 @@ func (n *Notifier) Send(title, body string) error {
 			}
 
 			// Build payload with avatar pointing to project icon on GitHub (public fallback)
+			avatar := n.IconURL
+			if strings.TrimSpace(avatar) == "" {
+				avatar = defaultAppIconURL
+			}
 			payload := map[string]any{
 				"content":    body,
 				"username":   title,
-				"avatar_url": defaultAppIconURL,
+				"avatar_url": avatar,
 			}
 			b, _ := json.Marshal(payload)
 			req, _ := http.NewRequest("POST", wh, bytes.NewReader(b))
