@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const defaultAppIconURL = "https://raw.githubusercontent.com/darkmatterforge/chowkidar/main/unraid/icon.svg"
+const defaultAppIconURL = "https://raw.githubusercontent.com/darkmatterforge/chowkidar/main/web/assets/logo-horizontal-light-transparent.svg"
 
 // Notifier sends notifications through the Apprise CLI tool.
 // When Enabled is false all Send calls are silent no-ops.

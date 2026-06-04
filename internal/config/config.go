@@ -215,7 +215,7 @@ func applyConfigDefaults(cfg *Config) {
 		cfg.NotificationRatePerSec = 5
 	}
 	if cfg.AppIconURL == "" {
-		cfg.AppIconURL = "https://raw.githubusercontent.com/darkmatterforge/chowkidar/main/unraid/icon.svg"
+		cfg.AppIconURL = "https://raw.githubusercontent.com/darkmatterforge/chowkidar/main/web/assets/logo-horizontal-light-transparent.svg"
 	}
 }
 
