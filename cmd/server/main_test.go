@@ -121,7 +121,7 @@ func TestExecuteActionRestartStartStopNone(t *testing.T) {
 	app := &app{cfg: config.Config{ActionTimeoutSeconds: 5}, docker: fake, httpClient: &http.Client{Timeout: 5 * time.Second}, notifier: notify.New("")}
 	container := containertypes.Summary{ID: "abc", Names: []string{"demo"}}
 	for _, action := range []string{"restart", "start", "stop", "none"} {
-		if _, err := app.executeAction(context.Background(), app.docker, action, "", container, 0, 0); err != nil {
+		if _, err := app.executeAction(context.Background(), app.docker, action, "", container, 0); err != nil {
 			t.Fatalf("executeAction(%s) error = %v", action, err)
 		}
 	}
@@ -147,7 +147,7 @@ func TestExecuteActionRunScript(t *testing.T) {
 		scripts:  []config.ScriptEntry{{Path: scriptPath, Enabled: true}},
 	}
 	container := containertypes.Summary{ID: "abc", Names: []string{"demo"}}
-	if _, err := app.executeAction(context.Background(), app.docker, "run-script", "", container, 0, 0); err != nil {
+	if _, err := app.executeAction(context.Background(), app.docker, "run-script", "", container, 0); err != nil {
 		t.Fatalf("run-script error = %v", err)
 	}
 }
@@ -155,16 +155,16 @@ func TestExecuteActionRunScript(t *testing.T) {
 func TestExecuteActionInvalidPathsUnsupportedAction(t *testing.T) {
 	app := &app{cfg: config.Config{ActionTimeoutSeconds: 5}, docker: &fakeDockerClient{}, httpClient: &http.Client{Timeout: 5 * time.Second}, notifier: notify.New("")}
 	container := containertypes.Summary{ID: "abc", Names: []string{"demo"}}
-	if _, err := app.executeAction(context.Background(), app.docker, "run-script", "", container, 0, 0); err == nil {
+	if _, err := app.executeAction(context.Background(), app.docker, "run-script", "", container, 0); err == nil {
 		t.Fatal("expected run-script error with empty path")
 	}
-	if _, err := app.executeAction(context.Background(), app.docker, "bogus", "", container, 0, 0); err == nil {
+	if _, err := app.executeAction(context.Background(), app.docker, "bogus", "", container, 0); err == nil {
 		t.Fatal("expected unsupported action error")
 	}
-	if _, err := app.executeAction(context.Background(), app.docker, "run-script", "#!/bin/sh\nexit 0\n", container, 0, 0); err != nil {
+	if _, err := app.executeAction(context.Background(), app.docker, "run-script", "#!/bin/sh\nexit 0\n", container, 0); err != nil {
 		t.Fatalf("expected inline script to succeed: %v", err)
 	}
-	if _, err := app.executeAction(context.Background(), app.docker, "run-script", "#!/bin/sh\nexit 1\n", container, 0, 0); err == nil {
+	if _, err := app.executeAction(context.Background(), app.docker, "run-script", "#!/bin/sh\nexit 1\n", container, 0); err == nil {
 		t.Fatal("expected inline script with exit 1 to fail")
 	}
 }
@@ -189,7 +189,8 @@ func TestRetryHistoryLogging(t *testing.T) {
 		activeJobs:         make(map[string]bool),
 		postActionDeadline: make(map[string]time.Time),
 	}
-	job := actionJob{app: a, container: containertypes.Summary{ID: "c1", Names: []string{"demo"}}, reason: "unhealthy", action: "restart"}
+	// jobID must be non-empty so resolveJobSettings returns per-job retryCount (not the hardcoded fallback of 1).
+	job := actionJob{app: a, container: containertypes.Summary{ID: "c1", Names: []string{"demo"}}, reason: "unhealthy", action: "restart", jobID: "test-job", retryCount: 3}
 	job.Run(context.Background()) // cycle 1: fail
 	job.Run(context.Background()) // cycle 2: fail
 	job.Run(context.Background()) // cycle 3: success
@@ -770,7 +771,7 @@ func TestExecuteActionDockerRestartError(t *testing.T) {
 fake := &fakeDockerClient{restartErrs: []error{errors.New("connection refused")}}
 a := &app{cfg: config.Config{ActionTimeoutSeconds: 5}, docker: fake, httpClient: &http.Client{Timeout: 5 * time.Second}, notifier: notify.New("")}
 container := containertypes.Summary{ID: "abc", Names: []string{"demo"}}
-_, err := a.executeAction(context.Background(), a.docker, "restart", "", container, 0, 0)
+_, err := a.executeAction(context.Background(), a.docker, "restart", "", container, 0)
 if err == nil {
 t.Fatal("expected error when docker restart fails, got nil")
 }
@@ -783,7 +784,7 @@ func TestExecuteActionDockerStartError(t *testing.T) {
 fake := &fakeDockerClient{startErr: errors.New("no such container")}
 a := &app{cfg: config.Config{ActionTimeoutSeconds: 5}, docker: fake, httpClient: &http.Client{Timeout: 5 * time.Second}, notifier: notify.New("")}
 container := containertypes.Summary{ID: "abc", Names: []string{"demo"}}
-_, err := a.executeAction(context.Background(), a.docker, "start", "", container, 0, 0)
+_, err := a.executeAction(context.Background(), a.docker, "start", "", container, 0)
 if err == nil {
 t.Fatal("expected error when docker start fails, got nil")
 }
@@ -793,7 +794,7 @@ func TestExecuteActionDockerStopError(t *testing.T) {
 fake := &fakeDockerClient{stopErr: errors.New("timeout stopping container")}
 a := &app{cfg: config.Config{ActionTimeoutSeconds: 5}, docker: fake, httpClient: &http.Client{Timeout: 5 * time.Second}, notifier: notify.New("")}
 container := containertypes.Summary{ID: "abc", Names: []string{"demo"}}
-_, err := a.executeAction(context.Background(), a.docker, "stop", "", container, 0, 0)
+_, err := a.executeAction(context.Background(), a.docker, "stop", "", container, 0)
 if err == nil {
 t.Fatal("expected error when docker stop fails, got nil")
 }
