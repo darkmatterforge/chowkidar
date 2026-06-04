@@ -5,11 +5,18 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Infrastructure
-- Migrated Docker build and runtime images from Alpine to Chainguard (Wolfi-base + Chainguard Go) for reduced CVE surface
+- Migrated Docker build and runtime images from Alpine to Chainguard (`wolfi-base` + `cgr.dev/chainguard/go`) for reduced CVE surface
+- `apk upgrade` runs on every Docker build so all installed packages stay current without waiting for a scheduled patch
 - Docker Hub repository description now synced automatically from `README.md` on every release via `peter-evans/dockerhub-description`
-- Added `security-patch` workflow: daily check that detects base image updates, package upgrades, and fixable CVEs — opens a PR with auto-merge when a rebuild improves the image
+- Added `security-patch` workflow: weekly check (Mondays) that detects base image updates, package upgrades, and fixable CVEs — opens an auto-merge PR when a rebuild improves the published image
 - Added `security-tag` workflow: pushes the version tag when a security patch PR merges, triggering the full `docker-publish` + `release` chain
 - Updated `release.sh`: changelog commit now goes via a PR branch; CI must pass before the PR is admin-merged and the tag is pushed — prevents publishing a broken image
+- Fixed dev image (`Dockerfile.dev`): migrated to `wolfi-base`; `air` installed via `GOBIN` so it lands in `$PATH`
+- Fixed CI double-run: removed `pull_request` trigger so each commit runs CI exactly once via `push`
+
+### Tests
+- E2E bell notification tests now mock `/api/system-alerts` when the server has no active alerts (prior test dismisses all server-side), eliminating spurious skips
+- Fixed flaky bash script job test: wait for tab content to be visible before filling the script textarea
 
 ## [0.3.0] - 2026-06-04
 
