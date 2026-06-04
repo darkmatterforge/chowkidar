@@ -1313,17 +1313,21 @@
             <h2 class="section-title">General</h2>
             <div class="form-grid">
               <select id="action" style="display:none;"></select>
-              <div class="field" style="grid-column:1/-1;"><label>External Hostname</label><input type="text" id="externalHostname" style="max-width:480px;" /></div>
-              <div class="field-error" id="externalHostnameError" style="grid-column:1/-1;"></div>
-              <div class="field" style="grid-column:1/-1;">
+              <div class="field">
+                <label>External Hostname</label>
+                <input type="text" id="externalHostname" placeholder="myserver.example.com" autocomplete="off" />
+                <div class="hint" style="margin-top:4px;">Hostname shown in notification payloads</div>
+              </div>
+              <div class="field-error" id="externalHostnameError"></div>
+              <div class="field">
                 <label>Primary Base URL</label>
-                <div style="display:flex;gap:8px;max-width:560px;">
-                  <input type="text" id="primaryBaseURL" placeholder="https://chowkidar.example.com" style="flex:1;" />
+                <div style="display:flex;gap:8px;">
+                  <input type="url" id="primaryBaseURL" placeholder="https://chowkidar.example.com" style="flex:1;" />
                   <button type="button" class="btn" id="autoDetectBaseURLBtn" style="white-space:nowrap;">Auto Detect</button>
                 </div>
                 <div class="hint" style="margin-top:4px;">Used for links in notifications and webhooks</div>
               </div>
-              <div class="field-error" id="primaryBaseURLError" style="grid-column:1/-1;"></div>
+              <div class="field-error" id="primaryBaseURLError"></div>
               <div class="field">
                 <label>Display Timezone</label>
                 <div style="display:flex;align-items:center;gap:10px;">
@@ -4641,7 +4645,8 @@ echo "Restart complete"`,
       if (notificationCooldownSeconds < 0 || notificationCooldownSeconds > 86400) { setFieldError('notificationCooldownSeconds', 'Use 0-86400 seconds (0 = always notify).'); hasErrors = true; }
       if (startupDelaySeconds < 0 || startupDelaySeconds > 3600) { setFieldError('startupDelaySeconds', 'Use 0-3600 seconds (0 = start immediately).'); hasErrors = true; }
       if (notificationRatePerSec < 1 || notificationRatePerSec > 1000) { setFieldError('notificationRatePerSec', 'Use 1-1000 per second.'); hasErrors = true; }
-      if (externalHostname && /\s/.test(externalHostname)) { setFieldError('externalHostname', 'Hostname cannot contain spaces.'); hasErrors = true; }
+      if (externalHostname && !/^[a-zA-Z0-9]([a-zA-Z0-9\-\.]*[a-zA-Z0-9])?$/.test(externalHostname)) { setFieldError('externalHostname', 'Enter a valid hostname (e.g. myserver.example.com) — no protocol or path.'); hasErrors = true; }
+      if (primaryBaseURL && !/^https?:\/\/.+/.test(primaryBaseURL)) { setFieldError('primaryBaseURL', 'Must start with http:// or https://'); hasErrors = true; }
       if (logToFile && (logRetentionDays < 1 || logRetentionDays > 365)) { setFieldError('logRetentionDays', 'Use 1-365 days.'); hasErrors = true; }
       if (hasErrors) { showSaveResult('settingsStatus', false, 'Please fix highlighted settings fields.', ''); return; }
 
