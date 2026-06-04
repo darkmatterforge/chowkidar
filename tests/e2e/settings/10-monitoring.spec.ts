@@ -36,10 +36,11 @@ test.describe('Settings — Monitoring tab', () => {
     await page.locator('#saveSettingsBtn').click()
   })
 
-  test('saving from General tab preserves hidden settings (retryCount not reset to 0)', async ({ page }) => {
+  test('saving from General tab preserves workerCount and dockerPingTimeout', async ({ page }) => {
     const before = await page.request.get(`${BASE_URL}/api/settings`)
     const beforeJson = await before.json()
-    const retryBefore = beforeJson.retryCount ?? 3
+    const workersBefore = beforeJson.workerCount
+    const pingBefore = beforeJson.dockerPingTimeoutSeconds
 
     await gotoSettings(page)
     const [res] = await Promise.all([
@@ -50,8 +51,9 @@ test.describe('Settings — Monitoring tab', () => {
 
     const after = await page.request.get(`${BASE_URL}/api/settings`)
     const afterJson = await after.json()
-    expect(afterJson.retryCount).toBe(retryBefore)
-    expect(afterJson.retryCount).toBeGreaterThan(0)
+    expect(afterJson.workerCount).toBe(workersBefore)
+    expect(afterJson.dockerPingTimeoutSeconds).toBe(pingBefore)
+    expect(afterJson.workerCount).toBeGreaterThan(0)
   })
 })
 
@@ -63,8 +65,6 @@ test.describe('Settings — default values', () => {
     const s = await res.json()
 
     // These must never be zero — zero would break monitoring or notifications.
-    expect(s.retryCount).toBeGreaterThanOrEqual(1)
-    expect(s.retryDelaySeconds).toBeGreaterThanOrEqual(1)
     expect(s.actionTimeoutSeconds).toBeGreaterThanOrEqual(1)
     expect(s.workerCount).toBeGreaterThanOrEqual(1)
     expect(s.queueSize).toBeGreaterThanOrEqual(1)

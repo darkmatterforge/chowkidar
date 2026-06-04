@@ -14,9 +14,20 @@ All notable changes to this project will be documented in this file.
 - Fixed dev image (`Dockerfile.dev`): migrated to `wolfi-base`; `air` installed via `GOBIN` so it lands in `$PATH`
 - Fixed CI double-run: removed `pull_request` trigger so each commit runs CI exactly once via `push`
 
+### Changed
+- Removed global `RetryCount`/`RetryDelay` config fields — retry behaviour is now per-job only; start-exited and manual actions use a single attempt
+- Removed `ScriptTimeoutSeconds` per-job field — `actionTimeoutSeconds` now covers both docker actions and bash script execution
+- Removed `DefaultAction` from the Settings UI — configurable via `ACTION` env var only; every job requires an explicit action
+- Removed SQLite config fields (`sqlitePath`, `sqliteBusyTimeoutSeconds`, `sqlitePragmas`) — SQLite is not used; history is stored in JSON
+- Settings form fields now use `max` attributes and `inputmode=numeric` for numeric inputs; two-column grid collapses to single column on mobile
+- External Hostname and Primary Base URL are optional fields with relaxed validation
+- Monitoring settings tab uses horizontal label-right-value layout for a cleaner settings panel appearance
+
 ### Tests
 - E2E bell notification tests now mock `/api/system-alerts` when the server has no active alerts (prior test dismisses all server-side), eliminating spurious skips
 - Fixed flaky bash script job test: wait for tab content to be visible before filling the script textarea
+- Added settings persistence tests: verify `primaryBaseURL`, `externalHostname`, `displayTimezone`, `serverTimezone` survive page reload and container restart
+- Added monitoring defaults test: all critical numeric settings have sensible non-zero values on fresh install
 
 ## [0.3.0] - 2026-06-04
 
