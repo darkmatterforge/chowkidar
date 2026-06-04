@@ -2186,12 +2186,6 @@
               <div class="field-error" id="dockerClientRetryDelaySecondsError"></div>
               <div class="field"><label>Notification Rate (/s)</label><input type="number" id="notificationRatePerSec" min="1" /></div>
               <div class="field-error" id="notificationRatePerSecError"></div>
-              <div class="field"><label>SQLite Path</label><input type="text" id="sqlitePath" /></div>
-              <div class="field-error" id="sqlitePathError"></div>
-              <div class="field"><label>SQLite Busy Timeout (ms)</label><input type="number" id="sqliteBusyTimeoutSeconds" min="1" /></div>
-              <div class="field-error" id="sqliteBusyTimeoutSecondsError"></div>
-              <div class="field"><label>SQLite Pragmas</label><input type="text" id="sqlitePragmas" /></div>
-              <div class="field-error" id="sqlitePragmasError"></div>
             </div>
           </section>
 
@@ -2377,7 +2371,6 @@
       'httpClientTimeoutSeconds', 'httpMaxIdleConns', 'httpMaxIdleConnsPerHost', 'httpIdleConnTimeoutSeconds',
       'dockerPingTimeoutSeconds', 'dockerClientRetryCount', 'dockerClientRetryDelaySeconds',
       'notificationRatePerSec', 'action', 'externalHostname',
-      'sqlitePath', 'sqliteBusyTimeoutSeconds', 'sqlitePragmas',
       'primaryBaseURL', 'displayTimezone', 'serverTimezone',
       'logLevel', 'logRetentionDays'
     ];
@@ -4578,9 +4571,6 @@ echo "Restart complete"`,
       document.getElementById('action').value = s.action ?? 'restart';
       document.getElementById('externalHostname').value = s.externalHostname ?? '';
       document.getElementById('primaryBaseURL').value = s.primaryBaseURL ?? '';
-      document.getElementById('sqlitePath').value = s.sqlitePath ?? '/config/data/app.db';
-      document.getElementById('sqliteBusyTimeoutSeconds').value = s.sqliteBusyTimeoutSeconds ?? 5000;
-      document.getElementById('sqlitePragmas').value = s.sqlitePragmas ?? 'journal_mode=WAL;synchronous=NORMAL';
       buildTZSelect('displayTimezone', s.displayTimezone ?? '');
       buildTZSelect('serverTimezone', s.serverTimezone ?? '');
       updateTZClocks();
@@ -4639,9 +4629,6 @@ echo "Restart complete"`,
       const notificationRatePerSec = Number(document.getElementById('notificationRatePerSec').value || 5);
       const action = document.getElementById('action').value;
       const externalHostname = document.getElementById('externalHostname').value.trim();
-      const sqlitePath = document.getElementById('sqlitePath').value.trim();
-      const sqliteBusyTimeoutSeconds = Number(document.getElementById('sqliteBusyTimeoutSeconds').value || 5000);
-      const sqlitePragmas = document.getElementById('sqlitePragmas').value.trim();
       const logLevel = document.getElementById('logLevel').value;
       const logToFile = document.getElementById('logToFile').checked;
       const logRetentionDays = Number(document.getElementById('logRetentionDays').value || 7);
@@ -4660,7 +4647,6 @@ echo "Restart complete"`,
       if (startupDelaySeconds < 0 || startupDelaySeconds > 3600) { setFieldError('startupDelaySeconds', 'Use 0-3600 seconds (0 = start immediately).'); hasErrors = true; }
       if (notificationRatePerSec < 1 || notificationRatePerSec > 1000) { setFieldError('notificationRatePerSec', 'Use 1-1000 per second.'); hasErrors = true; }
       if (externalHostname && /\s/.test(externalHostname)) { setFieldError('externalHostname', 'Hostname cannot contain spaces.'); hasErrors = true; }
-      if (sqlitePath && sqlitePath.includes(' ')) { setFieldError('sqlitePath', 'SQLite path cannot contain spaces.'); hasErrors = true; }
       if (logToFile && (logRetentionDays < 1 || logRetentionDays > 365)) { setFieldError('logRetentionDays', 'Use 1-365 days.'); hasErrors = true; }
       if (hasErrors) { showSaveResult('settingsStatus', false, 'Please fix highlighted settings fields.', ''); return; }
 
@@ -4688,9 +4674,6 @@ echo "Restart complete"`,
           primaryBaseURL: document.getElementById('primaryBaseURL').value.trim(),
           displayTimezone: document.getElementById('displayTimezone').value,
           serverTimezone: document.getElementById('serverTimezone').value,
-          sqlitePath,
-          sqliteBusyTimeoutSeconds,
-          sqlitePragmas,
           logLevel,
           logToFile,
           logRetentionDays,

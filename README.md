@@ -27,6 +27,8 @@ Chowkidar watches your containers for `unhealthy` health events and exited state
 - **Authentication** — optional username/password protection with bcrypt hashing
 - **Encryption** — notification credentials encrypted at rest via `CHOWKIDAR_SECRET_KEY`
 - **3 dashboard layouts** — Card List, Compact Table, Status Grid
+- **Notification bell** — persistent system alerts (boot, failed recovery, paused monitoring) with per-alert dismiss and mark-all-read
+- **Version check** — settings sidebar shows running version; background check surfaces a bell alert when a newer release is available
 - **Light/dark/auto theme**
 - **Persistent config** — everything stored under `/config` (YAML + SQLite + logs)
 - **Docker socket proxy** support for reduced attack surface
@@ -178,22 +180,31 @@ Templates can be customised per provider for each lifecycle event:
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/health` | Liveness check |
+| `GET` | `/api/health` | Liveness check — returns version, bootTime, latestVersion |
 | `GET` | `/api/diagnostics` | Docker socket diagnostics |
 | `GET` | `/api/containers` | Watched containers |
 | `GET/PUT` | `/api/settings` | App settings |
+| `PUT` | `/api/settings/theme` | Save theme preference |
 | `GET/POST` | `/api/jobs` | List / create jobs |
 | `PUT/DELETE` | `/api/jobs/{id}` | Update / delete a job |
 | `GET/PUT` | `/api/notifications` | Notification profiles |
+| `DELETE` | `/api/notifications/{id}` | Delete a notification profile |
+| `POST` | `/api/test-notification` | Send a test notification |
 | `POST` | `/api/scripts/dry-run` | Execute a script in an isolated container without triggering real actions |
+| `POST` | `/api/scripts/dry-run/cleanup` | Clean up dry-run containers |
 | `GET/PUT` | `/api/scripts` | Script allowlist |
 | `GET/PUT` | `/api/docker-hosts` | Multi-host profiles |
 | `GET` | `/api/docker-hosts/status` | Multi-host status |
-| `GET` | `/api/history` | Action history |
-| `POST` | `/api/test-notification` | Send a test notification |
+| `GET/DELETE` | `/api/history` | Action history / clear all history |
 | `POST` | `/api/action` | Trigger a manual action |
+| `POST` | `/api/containers/{id}/reset-cooldown` | Reset monitoring cooldown for a container |
+| `GET` | `/api/system-alerts` | Active system alerts (bell notifications) |
+| `POST` | `/api/system-alerts/dismiss` | Dismiss alerts by ID |
+| `GET` | `/api/auth/status` | Auth state and setup status |
 | `POST` | `/api/auth/login` | Login |
+| `POST` | `/api/auth/logout` | Logout |
 | `POST` | `/api/auth/change-password` | Change password |
+| `POST` | `/api/auth/disable` | Disable authentication |
 
 ---
 
