@@ -1,11 +1,12 @@
 # --- Dev Build Stage ---
-FROM golang:1.26.3-alpine
+FROM cgr.dev/chainguard/go:latest
 
 # Install dev dependencies
-RUN apk add --no-cache ca-certificates git python3 py3-pip bash curl jq docker-cli nodejs npm
-
-# Install Apprise for notifications
-RUN python3 -m venv /apprise && /apprise/bin/pip install --quiet apprise && ln -sf /apprise/bin/apprise /usr/local/bin/apprise
+RUN apk add --no-cache ca-certificates git python-3.13 py3-pip bash curl jq docker-cli nodejs npm && \
+    python3 -m venv /apprise && \
+    /apprise/bin/pip install --quiet apprise && \
+    mkdir -p /usr/local/bin && \
+    ln -sf /apprise/bin/apprise /usr/local/bin/apprise
 
 # Install Air live-reload tool
 RUN go install github.com/air-verse/air@v1.61.1
