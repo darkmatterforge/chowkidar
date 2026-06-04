@@ -1936,7 +1936,7 @@
                   </div>
 
                   <div class="form-grid" style="margin-top:12px;">
-                    <div class="field"><label>Name</label><input type="text" id="jobName" placeholder="e.g. restart-nginx" /></div>
+                    <div class="field"><label>Name <span style="color:var(--danger)">*</span></label><input type="text" id="jobName" placeholder="e.g. restart-nginx" /></div>
                     <div class="field-error" id="jobNameError"></div>
                     <div class="field"><label>Group</label><input type="text" id="jobGroup" placeholder="optional" /></div>
                     <div class="field-error" id="jobGroupError"></div>
@@ -1951,7 +1951,7 @@
 
                     <div id="jobTabStandardContent" class="job-tab-content active">
                       <div class="field" style="max-width:260px;">
-                        <label>Action</label>
+                        <label>Action <span style="color:var(--danger)">*</span></label>
                         <select id="jobAction">
                           <option value="restart">restart</option>
                           <option value="start">start</option>
@@ -2022,7 +2022,7 @@
                   <!-- Container filter — same tab-toggle style as Standard Action / Bash Script -->
                   <div class="job-filter-row" style="margin-top:14px;">
                     <div class="field">
-                      <label>Container Filter</label>
+                      <label>Container Filter <span style="color:var(--danger)">*</span></label>
                       <div class="job-tab-bar">
                         <button class="job-tab-btn active" id="jobFilterTypeName"  type="button">Container Name</button>
                         <button class="job-tab-btn"        id="jobFilterTypeLabel" type="button">Label</button>
@@ -2097,12 +2097,12 @@
                       <div class="field-error"></div>
                     </div>
                     <div class="field">
-                      <label>Monitor Interval (s)</label>
+                      <label>Monitor Interval (s) <span style="color:var(--danger)">*</span></label>
                       <input type="number" id="jobMonitorInterval" min="5" max="3600" required style="max-width:120px;" />
                       <div class="field-error" id="jobMonitorIntervalError"></div>
                     </div>
                     <div class="field">
-                      <label>Action Timeout (s) <span class="hint" style="text-transform:none;letter-spacing:0;">restart / stop / start / bash script</span></label>
+                      <label>Action Timeout (s) <span style="color:var(--danger)">*</span> <span class="hint" style="text-transform:none;letter-spacing:0;">restart / stop / start / bash script</span></label>
                       <input type="number" id="jobActionTimeout" min="5" max="300" required style="max-width:120px;" />
                       <div class="field-error" id="jobActionTimeoutError"></div>
                     </div>
