@@ -1311,8 +1311,7 @@
           <section class="tab-panel active" id="tab-general">
             <h2 class="section-title">General</h2>
             <div class="form-grid">
-              <div class="field"><label>Default Action</label><select id="action"><option value="restart">restart</option><option value="start">start</option><option value="stop">stop</option><option value="none">none</option><option value="run-script">run-script</option></select></div>
-              <div class="field-error" id="actionError"></div>
+              <select id="action" style="display:none;"></select>
               <div class="field"><label>External Hostname</label><input type="text" id="externalHostname" /></div>
               <div class="field-error" id="externalHostnameError"></div>
               <div class="field">
@@ -4580,6 +4579,7 @@ echo "Restart complete"`,
       // Preserve ALL fields not exposed in the UI so they are never silently
       // reset to zero/empty when the user clicks Save on any settings tab.
       _hiddenSettings = {
+        action:                 s.action                 ?? 'restart',
         dockerSocketPath:       s.dockerSocketPath       ?? '/var/run/docker.sock',
         startExited:            s.startExited            ?? false,
         requireFilterForExited: s.requireFilterForExited ?? true,
