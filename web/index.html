@@ -621,10 +621,33 @@
     .form-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      gap: 10px;
+      gap: 0 24px;
     }
     @media (max-width: 600px) {
       .form-grid { grid-template-columns: 1fr; }
+    }
+    /* Settings-style rows: label left, input right */
+    .form-grid .field.setting-row {
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      padding: 11px 0;
+      border-bottom: 1px solid var(--line);
+      gap: 12px;
+    }
+    .form-grid .field.setting-row label {
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+      flex: 1;
+      margin: 0;
+    }
+    .form-grid .field.setting-row input[type="number"] {
+      max-width: 90px;
+      text-align: right;
+      flex-shrink: 0;
     }
     .field { display: flex; flex-direction: column; gap: 6px; }
     .field label {
@@ -2172,21 +2195,21 @@
           <section class="tab-panel" id="tab-monitoring">
             <h2 class="section-title">Monitoring</h2>
             <div class="form-grid">
-              <div class="field"><label>HTTP Client Timeout (s)</label><input type="number" inputmode="numeric" id="httpClientTimeoutSeconds" min="1" max="3600" /></div>
+              <div class="field setting-row"><label>HTTP Client Timeout (s)</label><input type="number" inputmode="numeric" id="httpClientTimeoutSeconds" min="1" max="3600" /></div>
               <div class="field-error" id="httpClientTimeoutSecondsError"></div>
-              <div class="field"><label>HTTP Max Idle Conns</label><input type="number" inputmode="numeric" id="httpMaxIdleConns" min="1" max="1000" /></div>
+              <div class="field setting-row"><label>HTTP Max Idle Conns</label><input type="number" inputmode="numeric" id="httpMaxIdleConns" min="1" max="1000" /></div>
               <div class="field-error" id="httpMaxIdleConnsError"></div>
-              <div class="field"><label>HTTP Max Idle Conns / Host</label><input type="number" inputmode="numeric" id="httpMaxIdleConnsPerHost" min="1" max="1000" /></div>
+              <div class="field setting-row"><label>HTTP Max Idle Conns / Host</label><input type="number" inputmode="numeric" id="httpMaxIdleConnsPerHost" min="1" max="1000" /></div>
               <div class="field-error" id="httpMaxIdleConnsPerHostError"></div>
-              <div class="field"><label>HTTP Idle Conn Timeout (s)</label><input type="number" inputmode="numeric" id="httpIdleConnTimeoutSeconds" min="1" max="3600" /></div>
+              <div class="field setting-row"><label>HTTP Idle Conn Timeout (s)</label><input type="number" inputmode="numeric" id="httpIdleConnTimeoutSeconds" min="1" max="3600" /></div>
               <div class="field-error" id="httpIdleConnTimeoutSecondsError"></div>
-              <div class="field"><label>Docker Ping Timeout (s)</label><input type="number" inputmode="numeric" id="dockerPingTimeoutSeconds" min="1" max="3600" /></div>
+              <div class="field setting-row"><label>Docker Ping Timeout (s)</label><input type="number" inputmode="numeric" id="dockerPingTimeoutSeconds" min="1" max="3600" /></div>
               <div class="field-error" id="dockerPingTimeoutSecondsError"></div>
-              <div class="field"><label>Docker Client Retry Count</label><input type="number" inputmode="numeric" id="dockerClientRetryCount" min="1" max="20" /></div>
+              <div class="field setting-row"><label>Docker Client Retry Count</label><input type="number" inputmode="numeric" id="dockerClientRetryCount" min="1" max="20" /></div>
               <div class="field-error" id="dockerClientRetryCountError"></div>
-              <div class="field"><label>Docker Client Retry Delay (s)</label><input type="number" inputmode="numeric" id="dockerClientRetryDelaySeconds" min="1" max="3600" /></div>
+              <div class="field setting-row"><label>Docker Client Retry Delay (s)</label><input type="number" inputmode="numeric" id="dockerClientRetryDelaySeconds" min="1" max="3600" /></div>
               <div class="field-error" id="dockerClientRetryDelaySecondsError"></div>
-              <div class="field"><label>Notification Rate (/s)</label><input type="number" inputmode="numeric" id="notificationRatePerSec" min="1" max="1000" /></div>
+              <div class="field setting-row"><label>Notification Rate (/s)</label><input type="number" inputmode="numeric" id="notificationRatePerSec" min="1" max="1000" /></div>
               <div class="field-error" id="notificationRatePerSecError"></div>
             </div>
           </section>
