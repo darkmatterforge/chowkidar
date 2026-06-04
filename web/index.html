@@ -641,7 +641,8 @@
       border-color: var(--danger);
       background: var(--error-bg);
     }
-    .field-error { color: #b93847; min-height: 14px; font-size: 12px; pointer-events: none; }
+    .field-error { color: #b93847; font-size: 12px; pointer-events: none; }
+    .field-error:empty { display: none; }
 
     /* Jobs tab */
     .job-form-panel {
@@ -2094,7 +2095,7 @@
                       <div class="field-error" id="jobMonitorIntervalError"></div>
                     </div>
                     <div class="field">
-                      <label>Action Timeout (s) <span class="hint" style="text-transform:none;letter-spacing:0;">restart/stop/start</span></label>
+                      <label>Action Timeout (s) <span class="hint" style="text-transform:none;letter-spacing:0;">restart / stop / start / bash script</span></label>
                       <input type="number" id="jobActionTimeout" min="5" max="300" required style="max-width:120px;" />
                       <div class="field-error" id="jobActionTimeoutError"></div>
                     </div>
