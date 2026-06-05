@@ -6,8 +6,12 @@ const E2E_PASS = process.env.E2E_PASSWORD
 /**
  * Navigate to the app and wait until the app is ready and interactive.
  *
- * If the session is invalid (e.g. after a container restart), automatically
- * logs in via the form rather than failing the test with a cookie error.
+ * Auth state is determined via /api/auth/status (not CSS visibility) so a
+ * display:none change can never accidentally bypass the login check.
+ * If the session is invalid (e.g. after a container restart), logs in via
+ * the form and waits for the /api/auth/login response to confirm the session
+ * cookie is set before returning — NOT waitForSelector('#dashboardPage'),
+ * which resolves immediately because the element starts as `class="page active"`.
  */
 export async function gotoApp(page: Page) {
   await Promise.all([
@@ -17,13 +21,23 @@ export async function gotoApp(page: Page) {
       { timeout: 10_000 },
     ),
   ])
-  if (await page.locator('#loginPage').isVisible()) {
+
+  const statusRes = await page.request.get('/api/auth/status')
+  const auth = statusRes.ok() ? await statusRes.json() : { enabled: false, loggedIn: false }
+
+  if (auth.enabled && !auth.loggedIn) {
     await page.locator('#loginUsername').fill(E2E_USER)
     await page.locator('#loginPassword').fill(E2E_PASS)
-    await page.locator('#loginBtn').click()
-    await page.waitForSelector('#dashboardPage', { timeout: 10_000 })
+    const [loginRes] = await Promise.all([
+      page.waitForResponse(r => r.url().includes('/api/auth/login'), { timeout: 10_000 }),
+      page.locator('#loginBtn').click(),
+    ])
+    if (!loginRes.ok()) {
+      throw new Error(`Login failed: ${loginRes.status()}`)
+    }
     return
   }
+
   await expect(page.locator('#loginPage')).toBeHidden({ timeout: 5_000 })
 }
 
