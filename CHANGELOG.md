@@ -2,6 +2,43 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Infrastructure
+- Migrated Docker build and runtime images from Alpine to Chainguard (`wolfi-base` + `cgr.dev/chainguard/go`) for reduced CVE surface
+- `apk upgrade` runs on every Docker build so all installed packages stay current without waiting for a scheduled patch
+- Docker Hub repository description now synced automatically from `README.md` on every release via `peter-evans/dockerhub-description`
+- Added `security-patch` workflow: weekly check (Mondays) that detects base image updates, package upgrades, and fixable CVEs — opens an auto-merge PR when a rebuild improves the published image
+- Added `security-tag` workflow: pushes the version tag when a security patch PR merges, triggering the full `docker-publish` + `release` chain
+- Updated `release.sh`: changelog commit now goes via a PR branch; CI must pass before the PR is admin-merged and the tag is pushed — prevents publishing a broken image
+- Fixed dev image (`Dockerfile.dev`): migrated to `wolfi-base`; `air` installed via `GOBIN` so it lands in `$PATH`
+- Fixed CI double-run: removed `pull_request` trigger so each commit runs CI exactly once via `push`
+
+### Changed
+- Removed global `RetryCount`/`RetryDelay` config fields — retry behaviour is now per-job only; start-exited and manual actions use a single attempt
+- Removed `ScriptTimeoutSeconds` per-job field — `actionTimeoutSeconds` now covers both docker actions and bash script execution
+- Removed `DefaultAction` from the Settings UI — configurable via `ACTION` env var only; every job requires an explicit action
+- Removed dead SQLite config fields (`sqlitePath`, `sqliteBusyTimeoutSeconds`, `sqlitePragmas`) — history is stored in JSON.
+- Settings number inputs now enforce `min`/`max` bounds, `inputmode=numeric` for mobile keyboards, and fixed width for visual consistency
+- Docker Client Retry Count: no upper cap — set as high as needed for slow-starting Docker daemons
+- Monitoring settings tab uses a two-column horizontal label → value layout with dividers
+- Settings form grid: max two columns, collapses to one column below 600px
+- External Hostname and Primary Base URL validated on blur only (they are optional); saves from any tab are never blocked by these fields
+- Required job form fields (`Name`, `Action`, `Container Filter`, `Monitor Interval`, `Action Timeout`) now marked with a red `*`
+- Validation errors always appear under their own field — grid layout fix prevents error divs from drifting into the wrong column
+
+### Fixed
+- Settings saves were silently blocked when `externalHostname` stored a URL-style value (e.g. from auto-detect); relaxed to accept any non-space string
+- `primaryBaseURL` changed from `type="url"` to `type="text"` — prevents browser from showing native red border on optional empty field
+
+### Tests
+- E2E bell notification tests now mock `/api/system-alerts` when the server has no active alerts (prior test dismisses all server-side), eliminating spurious skips
+- Fixed flaky bash script job and notification tests: wait for tab content / provider fields to be visible before filling
+- Added settings persistence tests: verify `primaryBaseURL`, `externalHostname`, `displayTimezone`, `serverTimezone` survive page reload and container restart
+- Added monitoring defaults test: all critical numeric settings have sensible non-zero values on fresh install
+- Removed stale E2E tests that referenced removed fields (`#action` hidden select, `retryCount`, `retryDelaySeconds`)
+- `scripts/run-e2e-local.sh` now passes `E2E_CONTAINER_NAME` so restart persistence tests work locally
+
 ## [0.3.0] - 2026-06-04
 
 ### Added
@@ -89,7 +126,6 @@ All notable changes to this project will be documented in this file.
 - Optional username/password authentication with bcrypt hashing
 - Credential encryption at rest via `CHOWKIDAR_SECRET_KEY`
 - All settings configurable via web UI and persisted to `/config/config.yaml`
-- Action history stored in SQLite with daily rotating logs
 - Unraid Community Applications template
 - AGPL-3.0 license
 

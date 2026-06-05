@@ -1,14 +1,16 @@
 # --- Dev Build Stage ---
-FROM golang:1.26.3-alpine
+FROM cgr.dev/chainguard/wolfi-base:latest
 
-# Install dev dependencies
-RUN apk add --no-cache ca-certificates git python3 py3-pip bash curl jq docker-cli nodejs npm
+# Upgrade existing packages and install dev dependencies in one layer
+RUN apk upgrade --no-cache && \
+    apk add --no-cache ca-certificates git go python3 py3-pip bash curl jq docker-cli nodejs npm && \
+    python3 -m venv /apprise && \
+    /apprise/bin/pip install --quiet apprise && \
+    mkdir -p /usr/local/bin && \
+    ln -sf /apprise/bin/apprise /usr/local/bin/apprise
 
-# Install Apprise for notifications
-RUN python3 -m venv /apprise && /apprise/bin/pip install --quiet apprise && ln -sf /apprise/bin/apprise /usr/local/bin/apprise
-
-# Install Air live-reload tool
-RUN go install github.com/air-verse/air@v1.61.1
+# Install Air live-reload tool directly into PATH
+RUN GOBIN=/usr/local/bin go install github.com/air-verse/air@v1.61.1
 
 WORKDIR /src
 

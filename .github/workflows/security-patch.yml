@@ -1,0 +1,172 @@
+name: security-patch
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check-and-patch:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+      GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-tags: true
+          fetch-depth: 0
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Install Docker Scout
+        run: curl -fsSL https://raw.githubusercontent.com/docker/scout-cli/main/install.sh | sh -s --
+
+      - name: Pull published image
+        run: docker pull darkmatterforge/chowkidar:latest
+
+      - name: Check base image freshness
+        id: base
+        run: |
+          PUBLISHED_EPOCH=$(docker inspect darkmatterforge/chowkidar:latest \
+            --format '{{.Created}}' | xargs -I{} date -d {} +%s)
+
+          docker pull cgr.dev/chainguard/wolfi-base:latest --quiet
+          docker pull cgr.dev/chainguard/go:latest --quiet
+
+          WOLFI_EPOCH=$(docker inspect cgr.dev/chainguard/wolfi-base:latest \
+            --format '{{.Created}}' | xargs -I{} date -d {} +%s)
+          GO_EPOCH=$(docker inspect cgr.dev/chainguard/go:latest \
+            --format '{{.Created}}' | xargs -I{} date -d {} +%s)
+
+          UPDATED=false
+          REASON=""
+          [ "$WOLFI_EPOCH" -gt "$PUBLISHED_EPOCH" ] && UPDATED=true && REASON="wolfi-base updated"
+          if [ "$GO_EPOCH" -gt "$PUBLISHED_EPOCH" ]; then
+            UPDATED=true
+            REASON="${REASON:+$REASON, }go builder updated"
+          fi
+
+          echo "updated=${UPDATED}" >> "$GITHUB_OUTPUT"
+          echo "reason=${REASON}" >> "$GITHUB_OUTPUT"
+          echo "Base images updated: ${UPDATED} (${REASON:-none})"
+
+      - name: Count fixable CVEs in published image
+        id: published_cves
+        run: |
+          COUNT=$(docker scout cves darkmatterforge/chowkidar:latest \
+            --only-fixed 2>/dev/null | grep -cE "CVE-[0-9]+-[0-9]+" || true)
+          echo "fixable=${COUNT}" >> "$GITHUB_OUTPUT"
+          echo "Published fixable CVEs: ${COUNT}"
+
+      - name: Skip if nothing to do
+        if: steps.base.outputs.updated == 'false' && steps.published_cves.outputs.fixable == '0'
+        run: |
+          echo "Base images are current and no fixable CVEs — nothing to do."
+          exit 0
+
+      - name: Build candidate image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          load: true
+          tags: chowkidar:candidate
+          platforms: linux/amd64
+
+      - name: Count fixable CVEs in candidate
+        id: candidate_cves
+        run: |
+          COUNT=$(docker scout cves chowkidar:candidate \
+            --only-fixed 2>/dev/null | grep -cE "CVE-[0-9]+-[0-9]+" || true)
+          echo "fixable=${COUNT}" >> "$GITHUB_OUTPUT"
+          echo "Candidate fixable CVEs: ${COUNT}"
+
+      - name: Detect package version changes
+        id: packages
+        run: |
+          docker run --rm darkmatterforge/chowkidar:latest \
+            apk info -v 2>/dev/null | sort > /tmp/published-pkgs.txt
+          docker run --rm chowkidar:candidate \
+            apk info -v 2>/dev/null | sort > /tmp/candidate-pkgs.txt
+
+          CHANGED=$(diff /tmp/published-pkgs.txt /tmp/candidate-pkgs.txt \
+            | grep -cE "^[<>]" || true)
+          DIFF_SUMMARY=$(diff /tmp/published-pkgs.txt /tmp/candidate-pkgs.txt \
+            | grep -E "^[<>]" | head -20 || true)
+
+          echo "changed=${CHANGED}" >> "$GITHUB_OUTPUT"
+          {
+            echo "summary<<PKG_EOF"
+            echo "$DIFF_SUMMARY"
+            echo "PKG_EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "Package changes: ${CHANGED}"
+
+      - name: Decide whether to release
+        id: decision
+        run: |
+          BASE_UPDATED="${{ steps.base.outputs.updated }}"
+          BASE_REASON="${{ steps.base.outputs.reason }}"
+          PUBLISHED_CVES=${{ steps.published_cves.outputs.fixable }}
+          CANDIDATE_CVES=${{ steps.candidate_cves.outputs.fixable }}
+          FIXED_CVES=$((PUBLISHED_CVES - CANDIDATE_CVES))
+          PKG_CHANGES=${{ steps.packages.outputs.changed }}
+
+          SHOULD_RELEASE=false
+          REASON_PARTS=""
+
+          if [ "$BASE_UPDATED" = "true" ]; then
+            SHOULD_RELEASE=true
+            REASON_PARTS="${BASE_REASON}"
+          fi
+          if [ "$PKG_CHANGES" -gt 0 ]; then
+            SHOULD_RELEASE=true
+            REASON_PARTS="${REASON_PARTS:+$REASON_PARTS; }${PKG_CHANGES} package(s) updated"
+          fi
+          if [ "$FIXED_CVES" -gt 0 ]; then
+            SHOULD_RELEASE=true
+            REASON_PARTS="${REASON_PARTS:+$REASON_PARTS; }fixed ${FIXED_CVES} CVE(s)"
+          fi
+
+          [ "$SHOULD_RELEASE" = "false" ] && echo "No improvements detected — skipping."
+
+          echo "should_release=${SHOULD_RELEASE}" >> "$GITHUB_OUTPUT"
+          echo "reason=${REASON_PARTS}" >> "$GITHUB_OUTPUT"
+          echo "Decision: should_release=${SHOULD_RELEASE}, reason=${REASON_PARTS}"
+
+      - name: Get next version
+        if: steps.decision.outputs.should_release == 'true'
+        id: version
+        run: |
+          LATEST=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+          MAJOR=$(echo "$LATEST" | cut -d. -f1 | tr -d v)
+          MINOR=$(echo "$LATEST" | cut -d. -f2)
+          PATCH=$(echo "$LATEST" | cut -d. -f3)
+          NEXT="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+          echo "next=${NEXT}" >> "$GITHUB_OUTPUT"
+          echo "Current: ${LATEST} → Next: ${NEXT}"
+
+      - name: Create PR with auto-merge
+        if: steps.decision.outputs.should_release == 'true'
+        run: |
+          bash scripts/security-patch.sh \
+            "${{ steps.version.outputs.next }}" \
+            "${{ steps.decision.outputs.reason }}" \
+            "${{ steps.packages.outputs.summary }}"

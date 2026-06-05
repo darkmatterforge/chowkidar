@@ -1,5 +1,5 @@
 # --- Build Stage ---
-FROM golang:1.26.3-alpine AS builder
+FROM cgr.dev/chainguard/go:latest AS builder
 
 WORKDIR /src
 
@@ -18,12 +18,14 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} \
     -o /out/chowkidar ./cmd/server
 
 # --- Runtime Stage ---
-FROM alpine:3.23
+FROM cgr.dev/chainguard/wolfi-base:latest
 
-# Install runtime dependencies
-RUN apk add --no-cache ca-certificates dumb-init bash curl jq docker-cli python3 py3-pip && \
+# Upgrade existing packages and install runtime dependencies in one layer
+RUN apk upgrade --no-cache && \
+    apk add --no-cache ca-certificates dumb-init bash curl jq docker-cli python-3.13 py3-pip && \
     python3 -m venv /apprise && \
     /apprise/bin/pip install --quiet apprise && \
+    mkdir -p /usr/local/bin && \
     ln -sf /apprise/bin/apprise /usr/local/bin/apprise
 
 WORKDIR /app

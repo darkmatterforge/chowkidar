@@ -386,10 +386,18 @@ test.describe('Settings — Jobs tab', () => {
       await openJobsTab(page)
       await openAddForm(page)
       await page.locator('#jobTabScript').click()
+      // Wait for tab content to be visible before filling — the class toggle
+      // must complete and the textarea must be interactive, otherwise fill()
+      // is a no-op, script validation fails, and no HTTP request is made.
+      await expect(page.locator('#jobTabScriptContent')).toBeVisible()
+      await expect(page.locator('#jobScript')).toBeVisible()
       await page.locator('#jobScript').fill(`#!/bin/sh
 # $1 = container ID, $2 = container name
 echo "Recovering container: $2 (id=$1)"
 docker restart "$1" && echo "Restarted successfully"`)
+      // Verify fill actually worked before proceeding — if empty, saveJob will
+      // fail validation silently (no HTTP call) and waitForResponse will timeout.
+      await expect(page.locator('#jobScript')).toHaveValue(/Recovering container/)
       await page.locator('#jobNameFilter').fill('bash-test-container')
       await saveJob(page, 'e2e-bash-script-job')
     })
@@ -417,43 +425,37 @@ docker restart "$1" && echo "Restarted successfully"`)
       await deleteJob(page, 'e2e-bash-script-job')
     })
 
-    // ── Script Timeout field ──────────────────────────────────────────────────
+    // ── Action Timeout applies to both docker actions and bash scripts ────────
 
-    test('script timeout field is hidden for standard action', async ({ page }) => {
+    test('action timeout field is visible for standard and script actions', async ({ page }) => {
       await openJobsTab(page)
       await openAddForm(page)
-      await expect(page.locator('#jobScriptTimeoutWrap')).toBeHidden()
+      await expect(page.locator('#jobActionTimeout')).toBeVisible()
+      await page.locator('#jobTabScript').click()
+      await expect(page.locator('#jobTabScriptContent')).toBeVisible()
+      await expect(page.locator('#jobActionTimeout')).toBeVisible()
       await page.locator('#closeJobFormBtn').click()
     })
 
-    test('script timeout field appears when Bash Script tab is selected', async ({ page }) => {
+    test('action timeout value is saved and restored when editing a bash script job', async ({ page }) => {
       await openJobsTab(page)
       await openAddForm(page)
       await page.locator('#jobTabScript').click()
-      await expect(page.locator('#jobScriptTimeoutWrap')).toBeVisible()
-      // Switching back hides it again
-      await page.locator('#jobTabStandard').click()
-      await expect(page.locator('#jobScriptTimeoutWrap')).toBeHidden()
-      await page.locator('#closeJobFormBtn').click()
-    })
-
-    test('script timeout value is saved and restored when editing a job', async ({ page }) => {
-      await openJobsTab(page)
-      await openAddForm(page)
-      await page.locator('#jobTabScript').click()
+      await expect(page.locator('#jobTabScriptContent')).toBeVisible()
+      await expect(page.locator('#jobScript')).toBeVisible()
       await page.locator('#jobScript').fill('#!/bin/sh\necho hi')
-      await page.locator('#jobScriptTimeout').fill('180')
+      await expect(page.locator('#jobScript')).toHaveValue(/echo hi/)
+      await page.locator('#jobActionTimeout').fill('180')
       await page.locator('#jobNameFilter').fill('timeout-test-container')
-      await saveJob(page, 'e2e-script-timeout-job')
+      await saveJob(page, 'e2e-action-timeout-job')
 
       const editBtn = page.locator('#jobsTbody tr')
-        .filter({ hasText: 'e2e-script-timeout-job' })
+        .filter({ hasText: 'e2e-action-timeout-job' })
         .getByRole('button', { name: /edit/i })
       await editBtn.click()
-      await expect(page.locator('#jobScriptTimeoutWrap')).toBeVisible()
-      await expect(page.locator('#jobScriptTimeout')).toHaveValue('180')
+      await expect(page.locator('#jobActionTimeout')).toHaveValue('180')
       await page.locator('#cancelJobEditBtn').click()
-      await deleteJob(page, 'e2e-script-timeout-job')
+      await deleteJob(page, 'e2e-action-timeout-job')
     })
 
     // ── Template upgrade notice ───────────────────────────────────────────────
@@ -489,9 +491,11 @@ docker restart "$1" && echo "Restarted successfully"`)
       await openJobsTab(page)
       await openAddForm(page)
       await page.locator('#jobTabScript').click()
+      await expect(page.locator('#jobTabScriptContent')).toBeVisible()
       await page.locator('#jobScript').fill(`#!/bin/sh
 # chowkidar-template: restart@1
 docker restart "$1"`)
+      await expect(page.locator('#jobScript')).toHaveValue(/restart/)
       await page.locator('#jobNameFilter').fill('upgrade-test-container')
       await saveJob(page, 'e2e-upgrade-notice-job')
 
@@ -572,7 +576,9 @@ docker restart "$1"`)
       await openJobsTab(page)
       await openAddForm(page)
       await page.locator('#jobTabScript').click()
+      await expect(page.locator('#jobTabScriptContent')).toBeVisible()
       await page.locator('#jobScript').fill('#!/bin/sh\necho "dry-run-ok"')
+      await expect(page.locator('#jobScript')).toHaveValue(/dry-run-ok/)
       const [res] = await Promise.all([
         page.waitForResponse(r => r.url().includes('/api/scripts/dry-run')),
         page.locator('#dryRunScriptBtn').click(),
@@ -588,7 +594,9 @@ docker restart "$1"`)
       await openJobsTab(page)
       await openAddForm(page)
       await page.locator('#jobTabScript').click()
+      await expect(page.locator('#jobTabScriptContent')).toBeVisible()
       await page.locator('#jobScript').fill('#!/bin/sh\necho "unique-marker-xyz"')
+      await expect(page.locator('#jobScript')).toHaveValue(/unique-marker-xyz/)
       const [res] = await Promise.all([
         page.waitForResponse(r => r.url().includes('/api/scripts/dry-run')),
         page.locator('#dryRunScriptBtn').click(),
@@ -606,7 +614,9 @@ docker restart "$1"`)
       await openJobsTab(page)
       await openAddForm(page)
       await page.locator('#jobTabScript').click()
+      await expect(page.locator('#jobTabScriptContent')).toBeVisible()
       await page.locator('#jobScript').fill('#!/bin/sh\n[ "$DRY_RUN" = "1" ] && echo "dry-run-mode" || exit 99')
+      await expect(page.locator('#jobScript')).toHaveValue(/dry-run-mode/)
       const [res] = await Promise.all([
         page.waitForResponse(r => r.url().includes('/api/scripts/dry-run')),
         page.locator('#dryRunScriptBtn').click(),

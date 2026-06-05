@@ -513,7 +513,7 @@ func TestContainerActionStillBuilds(t *testing.T) {
 	a := &app{cfg: config.Config{ActionTimeoutSeconds: 5}, docker: fake, notifier: notify.New(""),
 		notifUsage: make(map[string]*notifProfileUsage)}
 	c := containertypes.Summary{ID: "z1", Names: []string{"/svc"}}
-	_, err := a.executeAction(context.Background(), fake, "restart", "", c, 0, 0)
+	_, err := a.executeAction(context.Background(), fake, "restart", "", c, 0)
 	if err != nil {
 		t.Fatalf("restart should succeed with fake docker: %v", err)
 	}

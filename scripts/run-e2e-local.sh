@@ -94,6 +94,7 @@ info "Running Playwright tests against ${BASE_URL}..."
 cd "${ROOT}/tests/e2e"
 
 BASE_URL="${BASE_URL}" \
+E2E_CONTAINER_NAME="${APP}" \
 E2E_USERNAME="testadmin" \
 E2E_PASSWORD="TestPassword1!" \
   npx playwright test "$@"

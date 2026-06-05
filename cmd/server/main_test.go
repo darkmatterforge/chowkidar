@@ -121,7 +121,7 @@ func TestExecuteActionRestartStartStopNone(t *testing.T) {
 	app := &app{cfg: config.Config{ActionTimeoutSeconds: 5}, docker: fake, httpClient: &http.Client{Timeout: 5 * time.Second}, notifier: notify.New("")}
 	container := containertypes.Summary{ID: "abc", Names: []string{"demo"}}
 	for _, action := range []string{"restart", "start", "stop", "none"} {
-		if _, err := app.executeAction(context.Background(), app.docker, action, "", container, 0, 0); err != nil {
+		if _, err := app.executeAction(context.Background(), app.docker, action, "", container, 0); err != nil {
 			t.Fatalf("executeAction(%s) error = %v", action, err)
 		}
 	}
@@ -147,7 +147,7 @@ func TestExecuteActionRunScript(t *testing.T) {
 		scripts:  []config.ScriptEntry{{Path: scriptPath, Enabled: true}},
 	}
 	container := containertypes.Summary{ID: "abc", Names: []string{"demo"}}
-	if _, err := app.executeAction(context.Background(), app.docker, "run-script", "", container, 0, 0); err != nil {
+	if _, err := app.executeAction(context.Background(), app.docker, "run-script", "", container, 0); err != nil {
 		t.Fatalf("run-script error = %v", err)
 	}
 }
@@ -155,16 +155,16 @@ func TestExecuteActionRunScript(t *testing.T) {
 func TestExecuteActionInvalidPathsUnsupportedAction(t *testing.T) {
 	app := &app{cfg: config.Config{ActionTimeoutSeconds: 5}, docker: &fakeDockerClient{}, httpClient: &http.Client{Timeout: 5 * time.Second}, notifier: notify.New("")}
 	container := containertypes.Summary{ID: "abc", Names: []string{"demo"}}
-	if _, err := app.executeAction(context.Background(), app.docker, "run-script", "", container, 0, 0); err == nil {
+	if _, err := app.executeAction(context.Background(), app.docker, "run-script", "", container, 0); err == nil {
 		t.Fatal("expected run-script error with empty path")
 	}
-	if _, err := app.executeAction(context.Background(), app.docker, "bogus", "", container, 0, 0); err == nil {
+	if _, err := app.executeAction(context.Background(), app.docker, "bogus", "", container, 0); err == nil {
 		t.Fatal("expected unsupported action error")
 	}
-	if _, err := app.executeAction(context.Background(), app.docker, "run-script", "#!/bin/sh\nexit 0\n", container, 0, 0); err != nil {
+	if _, err := app.executeAction(context.Background(), app.docker, "run-script", "#!/bin/sh\nexit 0\n", container, 0); err != nil {
 		t.Fatalf("expected inline script to succeed: %v", err)
 	}
-	if _, err := app.executeAction(context.Background(), app.docker, "run-script", "#!/bin/sh\nexit 1\n", container, 0, 0); err == nil {
+	if _, err := app.executeAction(context.Background(), app.docker, "run-script", "#!/bin/sh\nexit 1\n", container, 0); err == nil {
 		t.Fatal("expected inline script with exit 1 to fail")
 	}
 }
@@ -179,7 +179,7 @@ func TestRetryHistoryLogging(t *testing.T) {
 	// postActionWaitSeconds=0 so no deadline is set between cycles.
 	fake := &fakeDockerClient{restartErrs: []error{errors.New("first"), errors.New("second"), nil}}
 	a := &app{
-		cfg:                config.Config{RetryCount: 3, ActionTimeoutSeconds: 5},
+		cfg:                config.Config{ActionTimeoutSeconds: 5},
 		docker:             fake,
 		history:            historyStore,
 		notifier:           notify.New(""),
@@ -189,7 +189,8 @@ func TestRetryHistoryLogging(t *testing.T) {
 		activeJobs:         make(map[string]bool),
 		postActionDeadline: make(map[string]time.Time),
 	}
-	job := actionJob{app: a, container: containertypes.Summary{ID: "c1", Names: []string{"demo"}}, reason: "unhealthy", action: "restart"}
+	// jobID must be non-empty so resolveJobSettings returns per-job retryCount (not the hardcoded fallback of 1).
+	job := actionJob{app: a, container: containertypes.Summary{ID: "c1", Names: []string{"demo"}}, reason: "unhealthy", action: "restart", jobID: "test-job", retryCount: 3}
 	job.Run(context.Background()) // cycle 1: fail
 	job.Run(context.Background()) // cycle 2: fail
 	job.Run(context.Background()) // cycle 3: success
@@ -218,7 +219,7 @@ func TestRetriesExhaustedAfterMaxCycles(t *testing.T) {
 	historyStore, _ := history.NewStore(dir)
 	fake := &fakeDockerClient{restartErrs: []error{errors.New("fail"), errors.New("fail"), errors.New("fail"), errors.New("fail")}}
 	a := &app{
-		cfg:                config.Config{RetryCount: 3, ActionTimeoutSeconds: 5},
+		cfg:                config.Config{ActionTimeoutSeconds: 5},
 		docker:             fake,
 		history:            historyStore,
 		notifier:           notify.New(""),
@@ -286,7 +287,6 @@ func TestScanOnceSafetyGateSkipsExitedWithoutFilters(t *testing.T) {
 
 	a := &app{
 		cfg: config.Config{
-			RetryCount:                    1,
 			ActionTimeoutSeconds:          5,
 			StartExited:                   true,
 			RequireFilterForExited:        true,
@@ -563,7 +563,6 @@ func newScanOnceApp(t *testing.T, fake *fakeDockerClient, jobs []config.Job) (*a
 		cfg: config.Config{
 			Action:                        "restart",
 			ActionTimeoutSeconds:          5,
-			RetryCount:                    1,
 			DockerClientRetryCount:        1,
 			DockerClientRetryDelaySeconds: 1,
 		},
@@ -731,7 +730,7 @@ func TestHandleSettingsReloadsRuntimeAndWorkerPool(t *testing.T) {
 	defer a.stopPool()
 	oldPool := a.pool
 
-	body := []byte(`{"retryCount":4,"retryDelaySeconds":6,"workerCount":4,"queueSize":96,"httpClientTimeoutSeconds":19,"httpMaxIdleConns":30,"httpMaxIdleConnsPerHost":14,"httpIdleConnTimeoutSeconds":99,"dockerPingTimeoutSeconds":8,"dockerClientRetryCount":2,"dockerClientRetryDelaySeconds":3,"actionTimeoutSeconds":29,"notificationRatePerSec":7,"action":"restart","externalHostname":"pool.example","runScriptPath":"/config/scripts/heal.sh","startExited":true,"requireFilterForExited":true,"sqlitePath":"/config/data/app.db","sqliteBusyTimeoutSeconds":6000,"sqlitePragmas":"journal_mode=WAL;synchronous=NORMAL"}`)
+	body := []byte(`{"workerCount":4,"queueSize":96,"httpClientTimeoutSeconds":19,"httpMaxIdleConns":30,"httpMaxIdleConnsPerHost":14,"httpIdleConnTimeoutSeconds":99,"dockerPingTimeoutSeconds":8,"dockerClientRetryCount":2,"dockerClientRetryDelaySeconds":3,"actionTimeoutSeconds":29,"notificationRatePerSec":7,"action":"restart","externalHostname":"pool.example","runScriptPath":"/config/scripts/heal.sh","startExited":true,"requireFilterForExited":true}`)
 	req := httptest.NewRequest(http.MethodPut, "/api/settings", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
@@ -770,7 +769,7 @@ func TestExecuteActionDockerRestartError(t *testing.T) {
 fake := &fakeDockerClient{restartErrs: []error{errors.New("connection refused")}}
 a := &app{cfg: config.Config{ActionTimeoutSeconds: 5}, docker: fake, httpClient: &http.Client{Timeout: 5 * time.Second}, notifier: notify.New("")}
 container := containertypes.Summary{ID: "abc", Names: []string{"demo"}}
-_, err := a.executeAction(context.Background(), a.docker, "restart", "", container, 0, 0)
+_, err := a.executeAction(context.Background(), a.docker, "restart", "", container, 0)
 if err == nil {
 t.Fatal("expected error when docker restart fails, got nil")
 }
@@ -783,7 +782,7 @@ func TestExecuteActionDockerStartError(t *testing.T) {
 fake := &fakeDockerClient{startErr: errors.New("no such container")}
 a := &app{cfg: config.Config{ActionTimeoutSeconds: 5}, docker: fake, httpClient: &http.Client{Timeout: 5 * time.Second}, notifier: notify.New("")}
 container := containertypes.Summary{ID: "abc", Names: []string{"demo"}}
-_, err := a.executeAction(context.Background(), a.docker, "start", "", container, 0, 0)
+_, err := a.executeAction(context.Background(), a.docker, "start", "", container, 0)
 if err == nil {
 t.Fatal("expected error when docker start fails, got nil")
 }
@@ -793,7 +792,7 @@ func TestExecuteActionDockerStopError(t *testing.T) {
 fake := &fakeDockerClient{stopErr: errors.New("timeout stopping container")}
 a := &app{cfg: config.Config{ActionTimeoutSeconds: 5}, docker: fake, httpClient: &http.Client{Timeout: 5 * time.Second}, notifier: notify.New("")}
 container := containertypes.Summary{ID: "abc", Names: []string{"demo"}}
-_, err := a.executeAction(context.Background(), a.docker, "stop", "", container, 0, 0)
+_, err := a.executeAction(context.Background(), a.docker, "stop", "", container, 0)
 if err == nil {
 t.Fatal("expected error when docker stop fails, got nil")
 }
@@ -916,17 +915,17 @@ func TestHandleSettingsPUTRejectsBadJSON(t *testing.T) {
 
 func TestHandleSettingsPUTClampsOutOfRangeValues(t *testing.T) {
 	// normalizeSettingsBody clamps invalid values rather than rejecting them.
-	// Verify a save with retryCount=-1 succeeds and the stored value is clamped to >=1.
+	// Verify a save with workerCount=-1 succeeds and is clamped to >=1.
 	a := newMinimalTestApp(t)
-	body := bytes.NewBufferString(`{"retryCount":-1}`)
+	body := bytes.NewBufferString(`{"workerCount":-1}`)
 	req := httptest.NewRequest(http.MethodPut, "/api/settings", body)
 	rr := httptest.NewRecorder()
 	a.handleSettingsPUT(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200 (clamped), got %d (body: %s)", rr.Code, rr.Body.String())
 	}
-	if a.getConfig().RetryCount < 1 {
-		t.Fatalf("expected RetryCount >= 1 after clamp, got %d", a.getConfig().RetryCount)
+	if a.getConfig().WorkerCount < 1 {
+		t.Fatalf("expected WorkerCount >= 1 after clamp, got %d", a.getConfig().WorkerCount)
 	}
 }
 

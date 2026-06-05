@@ -620,8 +620,35 @@
     .section-title { margin: 0 0 12px; font-size: 24px; }
     .form-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 10px;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0 24px;
+    }
+    @media (max-width: 600px) {
+      .form-grid { grid-template-columns: 1fr; }
+    }
+    /* Settings-style rows: label left, input right */
+    .form-grid .field.setting-row {
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      padding: 11px 0;
+      border-bottom: 1px solid var(--line);
+      gap: 12px;
+    }
+    .form-grid .field.setting-row label {
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+      flex: 1;
+      margin: 0;
+    }
+    .form-grid .field.setting-row input[type="number"] {
+      width: 90px;
+      min-width: 90px;
+      text-align: right;
+      flex-shrink: 0;
     }
     .field { display: flex; flex-direction: column; gap: 6px; }
     .field label {
@@ -637,11 +664,13 @@
       color: var(--text);
       padding: 9px;
     }
+    .form-grid .field input[type="number"] { max-width: 180px; }
     .field input.invalid, .field select.invalid {
       border-color: var(--danger);
       background: var(--error-bg);
     }
-    .field-error { color: #b93847; min-height: 14px; font-size: 12px; pointer-events: none; }
+    .field-error { color: #b93847; font-size: 12px; pointer-events: none; min-height: 14px; }
+    .field-error:empty { display: none; }
 
     /* Jobs tab */
     .job-form-panel {
@@ -1307,19 +1336,26 @@
           <section class="tab-panel active" id="tab-general">
             <h2 class="section-title">General</h2>
             <div class="form-grid">
-              <div class="field"><label>Default Action</label><select id="action"><option value="restart">restart</option><option value="start">start</option><option value="stop">stop</option><option value="none">none</option><option value="run-script">run-script</option></select></div>
-              <div class="field-error" id="actionError"></div>
-              <div class="field"><label>External Hostname</label><input type="text" id="externalHostname" /></div>
-              <div class="field-error" id="externalHostnameError"></div>
-              <div class="field">
-                <label>Primary Base URL</label>
-                <div style="display:flex;gap:8px;">
-                  <input type="text" id="primaryBaseURL" placeholder="https://chowkidar.example.com" style="flex:1;" />
-                  <button type="button" class="btn" id="autoDetectBaseURLBtn" style="white-space:nowrap;">Auto Detect</button>
+              <select id="action" style="display:none;"></select>
+              <div>
+                <div class="field">
+                  <label>External Hostname</label>
+                  <input type="text" id="externalHostname" placeholder="myserver.example.com" autocomplete="off" />
+                  <div class="hint" style="margin-top:4px;">Hostname shown in notification payloads (optional)</div>
                 </div>
-                <div class="hint" style="margin-top:4px;">Used for links in notifications and webhooks</div>
+                <div class="field-error" id="externalHostnameError"></div>
               </div>
-              <div class="field-error" id="primaryBaseURLError"></div>
+              <div>
+                <div class="field">
+                  <label>Primary Base URL</label>
+                  <div style="display:flex;gap:8px;">
+                    <input type="text" id="primaryBaseURL" placeholder="https://chowkidar.example.com" style="flex:1;" />
+                    <button type="button" class="btn" id="autoDetectBaseURLBtn" style="white-space:nowrap;">Auto Detect</button>
+                  </div>
+                  <div class="hint" style="margin-top:4px;">Used for links in notifications and webhooks (optional)</div>
+                </div>
+                <div class="field-error" id="primaryBaseURLError"></div>
+              </div>
               <div class="field">
                 <label>Display Timezone</label>
                 <div style="display:flex;align-items:center;gap:10px;">
@@ -1443,7 +1479,7 @@
                 <div id="logRetentionWrap">
                   <div class="field">
                     <label>Log Retention (days)</label>
-                    <input type="number" id="logRetentionDays" min="1" max="365" placeholder="7" />
+                    <input type="number" inputmode="numeric" id="logRetentionDays" min="1" max="365" placeholder="7" />
                     <div class="hint" style="margin-top:4px;">Log files older than this many days will be deleted automatically</div>
                   </div>
                   <div class="field-error" id="logRetentionDaysError"></div>
@@ -1894,13 +1930,13 @@
               </div>
               <div id="jobQueueBody" style="display:none;border-top:1px solid var(--line);padding:16px 18px;">
                 <div class="form-grid">
-                  <div class="field"><label>Worker Count</label><input type="number" id="workerCount" min="1" /></div>
+                  <div class="field"><label>Worker Count</label><input type="number" inputmode="numeric" id="workerCount" min="1" max="64" /></div>
                   <div class="field-error" id="workerCountError"></div>
-                  <div class="field"><label>Queue Size</label><input type="number" id="queueSize" min="1" /></div>
+                  <div class="field"><label>Queue Size</label><input type="number" inputmode="numeric" id="queueSize" min="1" max="100000" /></div>
                   <div class="field-error" id="queueSizeError"></div>
-                  <div class="field"><label>Notification Cooldown (s)</label><input type="number" id="notificationCooldownSeconds" min="0" title="Minimum seconds between repeated failure notifications for the same container. 0 = always notify." /></div>
+                  <div class="field"><label>Notification Cooldown (s)</label><input type="number" inputmode="numeric" id="notificationCooldownSeconds" min="0" max="86400" title="Minimum seconds between repeated failure notifications for the same container. 0 = always notify." /></div>
                   <div class="field-error" id="notificationCooldownSecondsError"></div>
-                  <div class="field"><label>Startup Delay (s) <span class="hint">(0 = off)</span></label><input type="number" id="startupDelaySeconds" min="0" title="Seconds to wait before monitoring begins after the application starts. 0 = start immediately." /></div>
+                  <div class="field"><label>Startup Delay (s) <span class="hint">(0 = off)</span></label><input type="number" inputmode="numeric" id="startupDelaySeconds" min="0" max="3600" title="Seconds to wait before monitoring begins after the application starts. 0 = start immediately." /></div>
                   <div class="field-error" id="startupDelaySecondsError"></div>
                 </div>
                 <div class="actions" style="margin-top:14px;">
@@ -1928,7 +1964,7 @@
                   </div>
 
                   <div class="form-grid" style="margin-top:12px;">
-                    <div class="field"><label>Name</label><input type="text" id="jobName" placeholder="e.g. restart-nginx" /></div>
+                    <div class="field"><label>Name <span style="color:var(--danger)">*</span></label><input type="text" id="jobName" placeholder="e.g. restart-nginx" /></div>
                     <div class="field-error" id="jobNameError"></div>
                     <div class="field"><label>Group</label><input type="text" id="jobGroup" placeholder="optional" /></div>
                     <div class="field-error" id="jobGroupError"></div>
@@ -1943,7 +1979,7 @@
 
                     <div id="jobTabStandardContent" class="job-tab-content active">
                       <div class="field" style="max-width:260px;">
-                        <label>Action</label>
+                        <label>Action <span style="color:var(--danger)">*</span></label>
                         <select id="jobAction">
                           <option value="restart">restart</option>
                           <option value="start">start</option>
@@ -2014,7 +2050,7 @@
                   <!-- Container filter — same tab-toggle style as Standard Action / Bash Script -->
                   <div class="job-filter-row" style="margin-top:14px;">
                     <div class="field">
-                      <label>Container Filter</label>
+                      <label>Container Filter <span style="color:var(--danger)">*</span></label>
                       <div class="job-tab-bar">
                         <button class="job-tab-btn active" id="jobFilterTypeName"  type="button">Container Name</button>
                         <button class="job-tab-btn"        id="jobFilterTypeLabel" type="button">Label</button>
@@ -2089,24 +2125,18 @@
                       <div class="field-error"></div>
                     </div>
                     <div class="field">
-                      <label>Monitor Interval (s)</label>
+                      <label>Monitor Interval (s) <span style="color:var(--danger)">*</span></label>
                       <input type="number" id="jobMonitorInterval" min="5" max="3600" required style="max-width:120px;" />
                       <div class="field-error" id="jobMonitorIntervalError"></div>
                     </div>
                     <div class="field">
-                      <label>Action Timeout (s) <span class="hint" style="text-transform:none;letter-spacing:0;">restart/stop/start</span></label>
+                      <label>Action Timeout (s) <span style="color:var(--danger)">*</span> <span class="hint" style="text-transform:none;letter-spacing:0;">restart / stop / start / bash script</span></label>
                       <input type="number" id="jobActionTimeout" min="5" max="300" required style="max-width:120px;" />
                       <div class="field-error" id="jobActionTimeoutError"></div>
                     </div>
                     <div class="field">
                       <label>Post-Action Wait (s) <span class="hint" style="text-transform:none;letter-spacing:0;">(0 = off)</span></label>
                       <input type="number" id="jobPostWait" min="0" max="600" style="max-width:120px;" />
-                      <div class="field-error"></div>
-                    </div>
-                    <!-- Script timeout — only relevant for Bash Script jobs -->
-                    <div class="field" id="jobScriptTimeoutWrap" style="display:none;">
-                      <label>Script Timeout (s) <span class="hint" style="text-transform:none;letter-spacing:0;">(blank = use action timeout)</span></label>
-                      <input type="number" id="jobScriptTimeout" min="5" max="3600" style="max-width:120px;" placeholder="e.g. 120" />
                       <div class="field-error"></div>
                     </div>
                   </div>
@@ -2170,28 +2200,14 @@
           <section class="tab-panel" id="tab-monitoring">
             <h2 class="section-title">Monitoring</h2>
             <div class="form-grid">
-              <div class="field"><label>HTTP Client Timeout (s)</label><input type="number" id="httpClientTimeoutSeconds" min="1" /></div>
-              <div class="field-error" id="httpClientTimeoutSecondsError"></div>
-              <div class="field"><label>HTTP Max Idle Conns</label><input type="number" id="httpMaxIdleConns" min="1" /></div>
-              <div class="field-error" id="httpMaxIdleConnsError"></div>
-              <div class="field"><label>HTTP Max Idle Conns / Host</label><input type="number" id="httpMaxIdleConnsPerHost" min="1" /></div>
-              <div class="field-error" id="httpMaxIdleConnsPerHostError"></div>
-              <div class="field"><label>HTTP Idle Conn Timeout (s)</label><input type="number" id="httpIdleConnTimeoutSeconds" min="1" /></div>
-              <div class="field-error" id="httpIdleConnTimeoutSecondsError"></div>
-              <div class="field"><label>Docker Ping Timeout (s)</label><input type="number" id="dockerPingTimeoutSeconds" min="1" /></div>
-              <div class="field-error" id="dockerPingTimeoutSecondsError"></div>
-              <div class="field"><label>Docker Client Retry Count</label><input type="number" id="dockerClientRetryCount" min="1" /></div>
-              <div class="field-error" id="dockerClientRetryCountError"></div>
-              <div class="field"><label>Docker Client Retry Delay (s)</label><input type="number" id="dockerClientRetryDelaySeconds" min="1" /></div>
-              <div class="field-error" id="dockerClientRetryDelaySecondsError"></div>
-              <div class="field"><label>Notification Rate (/s)</label><input type="number" id="notificationRatePerSec" min="1" /></div>
-              <div class="field-error" id="notificationRatePerSecError"></div>
-              <div class="field"><label>SQLite Path</label><input type="text" id="sqlitePath" /></div>
-              <div class="field-error" id="sqlitePathError"></div>
-              <div class="field"><label>SQLite Busy Timeout (ms)</label><input type="number" id="sqliteBusyTimeoutSeconds" min="1" /></div>
-              <div class="field-error" id="sqliteBusyTimeoutSecondsError"></div>
-              <div class="field"><label>SQLite Pragmas</label><input type="text" id="sqlitePragmas" /></div>
-              <div class="field-error" id="sqlitePragmasError"></div>
+              <div><div class="field setting-row"><label>HTTP Client Timeout (s)</label><input type="number" inputmode="numeric" id="httpClientTimeoutSeconds" min="1" max="3600" /></div><div class="field-error" id="httpClientTimeoutSecondsError"></div></div>
+              <div><div class="field setting-row"><label>HTTP Max Idle Conns</label><input type="number" inputmode="numeric" id="httpMaxIdleConns" min="1" max="1000" /></div><div class="field-error" id="httpMaxIdleConnsError"></div></div>
+              <div><div class="field setting-row"><label>HTTP Max Idle Conns / Host</label><input type="number" inputmode="numeric" id="httpMaxIdleConnsPerHost" min="1" max="1000" /></div><div class="field-error" id="httpMaxIdleConnsPerHostError"></div></div>
+              <div><div class="field setting-row"><label>HTTP Idle Conn Timeout (s)</label><input type="number" inputmode="numeric" id="httpIdleConnTimeoutSeconds" min="1" max="3600" /></div><div class="field-error" id="httpIdleConnTimeoutSecondsError"></div></div>
+              <div><div class="field setting-row"><label>Docker Ping Timeout (s)</label><input type="number" inputmode="numeric" id="dockerPingTimeoutSeconds" min="1" max="3600" /></div><div class="field-error" id="dockerPingTimeoutSecondsError"></div></div>
+              <div><div class="field setting-row"><label>Docker Client Retry Count</label><input type="number" inputmode="numeric" id="dockerClientRetryCount" min="1" /></div><div class="field-error" id="dockerClientRetryCountError"></div></div>
+              <div><div class="field setting-row"><label>Docker Client Retry Delay (s)</label><input type="number" inputmode="numeric" id="dockerClientRetryDelaySeconds" min="1" max="3600" /></div><div class="field-error" id="dockerClientRetryDelaySecondsError"></div></div>
+              <div><div class="field setting-row"><label>Notification Rate (/s)</label><input type="number" inputmode="numeric" id="notificationRatePerSec" min="1" max="1000" /></div><div class="field-error" id="notificationRatePerSecError"></div></div>
             </div>
           </section>
 
@@ -2377,11 +2393,10 @@
       'httpClientTimeoutSeconds', 'httpMaxIdleConns', 'httpMaxIdleConnsPerHost', 'httpIdleConnTimeoutSeconds',
       'dockerPingTimeoutSeconds', 'dockerClientRetryCount', 'dockerClientRetryDelaySeconds',
       'notificationRatePerSec', 'action', 'externalHostname',
-      'sqlitePath', 'sqliteBusyTimeoutSeconds', 'sqlitePragmas',
       'primaryBaseURL', 'displayTimezone', 'serverTimezone',
       'logLevel', 'logRetentionDays'
     ];
-    const jobFields = ['jobName', 'jobGroup', 'jobAction', 'jobNameFilter', 'jobLabelKey', 'jobLabelValue', 'jobEnvFilter', 'jobScript', 'jobRetryCount', 'jobMonitorInterval', 'jobActionTimeout', 'jobScriptTimeout'];
+    const jobFields = ['jobName', 'jobGroup', 'jobAction', 'jobNameFilter', 'jobLabelKey', 'jobLabelValue', 'jobEnvFilter', 'jobScript', 'jobRetryCount', 'jobMonitorInterval', 'jobActionTimeout'];
     const PROVIDER_DEFS = {
       discord:  { label: 'Discord',  badge: 'DC', color: '#5865f2', description: 'Discord channel webhook',    fields: [{ key: 'webhookurl', label: 'Webhook URL', required: true, type: 'text', placeholder: 'https://discord.com/api/webhooks/ID/TOKEN', help: 'Channel Settings → Integrations → Webhooks → Copy URL' }] },
       slack:    { label: 'Slack',    badge: 'SL', color: '#4A154B', description: 'Slack incoming webhook',    fields: [
@@ -2754,9 +2769,7 @@ echo "Restart complete"`,
       document.getElementById('jobTabScript').classList.toggle('active', isScript);
       document.getElementById('jobTabStandardContent').classList.toggle('active', !isScript);
       document.getElementById('jobTabScriptContent').classList.toggle('active', isScript);
-      // Show script timeout only for script jobs
-      const stWrap = document.getElementById('jobScriptTimeoutWrap');
-      if (stWrap) stWrap.style.display = isScript ? '' : 'none';
+
       if (isScript) updateScriptValidation();
     }
 
@@ -4578,9 +4591,6 @@ echo "Restart complete"`,
       document.getElementById('action').value = s.action ?? 'restart';
       document.getElementById('externalHostname').value = s.externalHostname ?? '';
       document.getElementById('primaryBaseURL').value = s.primaryBaseURL ?? '';
-      document.getElementById('sqlitePath').value = s.sqlitePath ?? '/config/data/app.db';
-      document.getElementById('sqliteBusyTimeoutSeconds').value = s.sqliteBusyTimeoutSeconds ?? 5000;
-      document.getElementById('sqlitePragmas').value = s.sqlitePragmas ?? 'journal_mode=WAL;synchronous=NORMAL';
       buildTZSelect('displayTimezone', s.displayTimezone ?? '');
       buildTZSelect('serverTimezone', s.serverTimezone ?? '');
       updateTZClocks();
@@ -4594,11 +4604,10 @@ echo "Restart complete"`,
       // Preserve ALL fields not exposed in the UI so they are never silently
       // reset to zero/empty when the user clicks Save on any settings tab.
       _hiddenSettings = {
+        action:                 s.action                 ?? 'restart',
         dockerSocketPath:       s.dockerSocketPath       ?? '/var/run/docker.sock',
         startExited:            s.startExited            ?? false,
         requireFilterForExited: s.requireFilterForExited ?? true,
-        retryCount:             s.retryCount             ?? 3,
-        retryDelaySeconds:      s.retryDelaySeconds      ?? 10,
         actionTimeoutSeconds:   s.actionTimeoutSeconds   ?? 20,
         containerNameFilter:    s.containerNameFilter    ?? '',
         containerLabelFilter:   s.containerLabelFilter   ?? '',
@@ -4639,9 +4648,6 @@ echo "Restart complete"`,
       const notificationRatePerSec = Number(document.getElementById('notificationRatePerSec').value || 5);
       const action = document.getElementById('action').value;
       const externalHostname = document.getElementById('externalHostname').value.trim();
-      const sqlitePath = document.getElementById('sqlitePath').value.trim();
-      const sqliteBusyTimeoutSeconds = Number(document.getElementById('sqliteBusyTimeoutSeconds').value || 5000);
-      const sqlitePragmas = document.getElementById('sqlitePragmas').value.trim();
       const logLevel = document.getElementById('logLevel').value;
       const logToFile = document.getElementById('logToFile').checked;
       const logRetentionDays = Number(document.getElementById('logRetentionDays').value || 7);
@@ -4654,13 +4660,11 @@ echo "Restart complete"`,
       if (httpMaxIdleConnsPerHost < 1 || httpMaxIdleConnsPerHost > 1000) { setFieldError('httpMaxIdleConnsPerHost', 'Use 1-1000.'); hasErrors = true; }
       if (httpIdleConnTimeoutSeconds < 1 || httpIdleConnTimeoutSeconds > 3600) { setFieldError('httpIdleConnTimeoutSeconds', 'Use 1-3600 seconds.'); hasErrors = true; }
       if (dockerPingTimeoutSeconds < 1 || dockerPingTimeoutSeconds > 3600) { setFieldError('dockerPingTimeoutSeconds', 'Use 1-3600 seconds.'); hasErrors = true; }
-      if (dockerClientRetryCount < 1 || dockerClientRetryCount > 20) { setFieldError('dockerClientRetryCount', 'Use 1-20 retries.'); hasErrors = true; }
+      if (dockerClientRetryCount < 1) { setFieldError('dockerClientRetryCount', 'Must be at least 1.'); hasErrors = true; }
       if (dockerClientRetryDelaySeconds < 1 || dockerClientRetryDelaySeconds > 3600) { setFieldError('dockerClientRetryDelaySeconds', 'Use 1-3600 seconds.'); hasErrors = true; }
       if (notificationCooldownSeconds < 0 || notificationCooldownSeconds > 86400) { setFieldError('notificationCooldownSeconds', 'Use 0-86400 seconds (0 = always notify).'); hasErrors = true; }
       if (startupDelaySeconds < 0 || startupDelaySeconds > 3600) { setFieldError('startupDelaySeconds', 'Use 0-3600 seconds (0 = start immediately).'); hasErrors = true; }
       if (notificationRatePerSec < 1 || notificationRatePerSec > 1000) { setFieldError('notificationRatePerSec', 'Use 1-1000 per second.'); hasErrors = true; }
-      if (externalHostname && /\s/.test(externalHostname)) { setFieldError('externalHostname', 'Hostname cannot contain spaces.'); hasErrors = true; }
-      if (sqlitePath && sqlitePath.includes(' ')) { setFieldError('sqlitePath', 'SQLite path cannot contain spaces.'); hasErrors = true; }
       if (logToFile && (logRetentionDays < 1 || logRetentionDays > 365)) { setFieldError('logRetentionDays', 'Use 1-365 days.'); hasErrors = true; }
       if (hasErrors) { showSaveResult('settingsStatus', false, 'Please fix highlighted settings fields.', ''); return; }
 
@@ -4688,9 +4692,6 @@ echo "Restart complete"`,
           primaryBaseURL: document.getElementById('primaryBaseURL').value.trim(),
           displayTimezone: document.getElementById('displayTimezone').value,
           serverTimezone: document.getElementById('serverTimezone').value,
-          sqlitePath,
-          sqliteBusyTimeoutSeconds,
-          sqlitePragmas,
           logLevel,
           logToFile,
           logRetentionDays,
@@ -5030,7 +5031,6 @@ echo "Restart complete"`,
           document.getElementById('jobMonitorInterval').value = job.monitorIntervalSeconds > 0 ? String(job.monitorIntervalSeconds) : '';
           document.getElementById('jobActionTimeout').value = job.actionTimeoutSeconds > 0 ? String(job.actionTimeoutSeconds) : '';
           document.getElementById('jobPostWait').value = job.postActionWaitSeconds > 0 ? String(job.postActionWaitSeconds) : '';
-          document.getElementById('jobScriptTimeout').value = job.scriptTimeoutSeconds > 0 ? String(job.scriptTimeoutSeconds) : '';
           document.getElementById('jobStatus').textContent = '';
           renderJobNotifyChips(Array.isArray(job.notifications) ? job.notifications : []);
           if (job.action === 'run-script') {
@@ -5148,7 +5148,6 @@ echo "Restart complete"`,
       document.getElementById('jobMonitorInterval').value = '';
       document.getElementById('jobActionTimeout').value = '';
       document.getElementById('jobPostWait').value = '0';
-      document.getElementById('jobScriptTimeout').value = '';
       document.getElementById('scriptUpgradeNotice').style.display = 'none';
       setJobActionTab('standard');
       renderJobNotifyChips([]);
@@ -5193,8 +5192,6 @@ echo "Restart complete"`,
       const retryLimitEnabled = document.getElementById('jobRetryLimitEnabled').checked;
       const retryMode = currentJobRetryMode;
       const monitorIntervalRaw = document.getElementById('jobMonitorInterval').value;
-      const scriptTimeoutRaw = document.getElementById('jobScriptTimeout').value;
-      const scriptTimeoutSeconds = scriptTimeoutRaw ? (parseInt(scriptTimeoutRaw, 10) || 0) : 0;
       const actionTimeoutRaw = document.getElementById('jobActionTimeout').value;
       const monitorIntervalSeconds = parseInt(monitorIntervalRaw, 10);
       const actionTimeoutSeconds = parseInt(actionTimeoutRaw, 10);
@@ -5226,7 +5223,7 @@ echo "Restart complete"`,
         containerNameFilter, containerLabelFilter, containerEnvVarFilter,
         enabled: toBool(document.getElementById('jobEnabled').value),
         startExited: toBool(document.getElementById('jobStartExited').value),
-        retryCount, maxMonitoringDurationMinutes, monitorIntervalSeconds, actionTimeoutSeconds, scriptTimeoutSeconds, postActionWaitSeconds,
+        retryCount, maxMonitoringDurationMinutes, monitorIntervalSeconds, actionTimeoutSeconds, postActionWaitSeconds,
         dockerHostID: document.getElementById('jobDockerHostID').value || '',
       };
 
@@ -6203,6 +6200,17 @@ echo "Restart complete"`,
       document.getElementById('saveBootNotifyBtn').addEventListener('click', saveBootNotification);
       document.getElementById('autoDetectBaseURLBtn').addEventListener('click', () => {
         document.getElementById('primaryBaseURL').value = window.location.origin;
+        clearFieldError('primaryBaseURL');
+      });
+      document.getElementById('primaryBaseURL').addEventListener('blur', () => {
+        const v = document.getElementById('primaryBaseURL').value.trim();
+        if (v && !/^https?:\/\/.+/.test(v)) setFieldError('primaryBaseURL', 'Must start with http:// or https://');
+        else clearFieldError('primaryBaseURL');
+      });
+      document.getElementById('externalHostname').addEventListener('blur', () => {
+        const v = document.getElementById('externalHostname').value.trim();
+        if (v && /\s/.test(v)) setFieldError('externalHostname', 'Hostname cannot contain spaces.');
+        else clearFieldError('externalHostname');
       });
       document.getElementById('displayTimezone').addEventListener('change', () => { updateTZClocks(); updateDisplayTimezoneWarn(); });
       document.getElementById('serverTimezone').addEventListener('change', updateTZClocks);

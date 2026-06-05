@@ -16,19 +16,21 @@ Chowkidar watches your containers for `unhealthy` health events and exited state
 ## Features
 
 - **Container monitoring** — polls Docker for `unhealthy` and exited containers
-- **Configurable actions** — `restart`, `start`, `stop`, `none`, `run-script` per job or globally
-- **Per-job overrides** — individual retry count, retry delay, monitoring interval, and action timeout
+- **Configurable actions** — `restart`, `start`, `stop`, `none`, `run-script` per job
+- **Per-job overrides** — individual retry count, monitoring interval, and action timeout
 - **Multi-provider notifications** — Discord, Slack, Telegram, ntfy, Gotify, Pushover, SMTP/email, raw Apprise URLs
 - **Notification templates** — customise message content per provider per lifecycle event
 - **Jobs system** — define targeted monitoring rules with container name/label/env var filters
-- **Bash script action** — run a custom inline script per job with built-in templates, dry-run execution, per-job script timeout, and automatic template upgrade detection
+- **Bash script action** — run a custom inline script per job with built-in templates, dry-run execution, and automatic template upgrade detection
 - **Multi-Docker-host** — monitor containers across multiple Docker hosts or sockets
 - **Web UI** — dashboard, jobs, notification profiles, action history, settings
 - **Authentication** — optional username/password protection with bcrypt hashing
 - **Encryption** — notification credentials encrypted at rest via `CHOWKIDAR_SECRET_KEY`
 - **3 dashboard layouts** — Card List, Compact Table, Status Grid
+- **Notification bell** — persistent system alerts (boot, failed recovery, paused monitoring) with per-alert dismiss and mark-all-read
+- **Version check** — settings sidebar shows running version; background check surfaces a bell alert when a newer release is available
 - **Light/dark/auto theme**
-- **Persistent config** — everything stored under `/config` (YAML + SQLite + logs)
+- **Persistent config** — everything stored under `/config` (YAML + JSON history + logs)
 - **Docker socket proxy** support for reduced attack surface
 
 ---
@@ -132,7 +134,6 @@ All of these are also configurable via the web UI. Set as env vars only if you n
 | `SERVER_TIMEZONE` | UTC | IANA timezone for scheduling |
 | `LOG_TO_FILE` | `true` | Write logs to `$APP_PATH/logs/` |
 | `LOG_RETENTION_DAYS` | `7` | Log file retention in days |
-| `SQLITE_PATH` | `$APP_PATH/data/app.db` | SQLite database path |
 | `HTTP_CLIENT_TIMEOUT_SECONDS` | `15` | HTTP client timeout |
 | `DOCKER_PING_TIMEOUT_SECONDS` | `5` | Docker daemon liveness ping timeout |
 | `DOCKER_CLIENT_RETRY_COUNT` | `1` | Docker client retry attempts |
@@ -178,22 +179,31 @@ Templates can be customised per provider for each lifecycle event:
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/health` | Liveness check |
+| `GET` | `/api/health` | Liveness check — returns version, bootTime, latestVersion |
 | `GET` | `/api/diagnostics` | Docker socket diagnostics |
 | `GET` | `/api/containers` | Watched containers |
 | `GET/PUT` | `/api/settings` | App settings |
+| `PUT` | `/api/settings/theme` | Save theme preference |
 | `GET/POST` | `/api/jobs` | List / create jobs |
 | `PUT/DELETE` | `/api/jobs/{id}` | Update / delete a job |
 | `GET/PUT` | `/api/notifications` | Notification profiles |
+| `DELETE` | `/api/notifications/{id}` | Delete a notification profile |
+| `POST` | `/api/test-notification` | Send a test notification |
 | `POST` | `/api/scripts/dry-run` | Execute a script in an isolated container without triggering real actions |
+| `POST` | `/api/scripts/dry-run/cleanup` | Clean up dry-run containers |
 | `GET/PUT` | `/api/scripts` | Script allowlist |
 | `GET/PUT` | `/api/docker-hosts` | Multi-host profiles |
 | `GET` | `/api/docker-hosts/status` | Multi-host status |
-| `GET` | `/api/history` | Action history |
-| `POST` | `/api/test-notification` | Send a test notification |
+| `GET/DELETE` | `/api/history` | Action history / clear all history |
 | `POST` | `/api/action` | Trigger a manual action |
+| `POST` | `/api/containers/{id}/reset-cooldown` | Reset monitoring cooldown for a container |
+| `GET` | `/api/system-alerts` | Active system alerts (bell notifications) |
+| `POST` | `/api/system-alerts/dismiss` | Dismiss alerts by ID |
+| `GET` | `/api/auth/status` | Auth state and setup status |
 | `POST` | `/api/auth/login` | Login |
+| `POST` | `/api/auth/logout` | Logout |
 | `POST` | `/api/auth/change-password` | Change password |
+| `POST` | `/api/auth/disable` | Disable authentication |
 
 ---
 

@@ -124,7 +124,6 @@ type actionJob struct {
 	force                 bool
 	retryCount            int
 	actionTimeoutSeconds  int
-	scriptTimeoutSeconds  int
 	postActionWaitSeconds int
 }
 
@@ -304,7 +303,9 @@ func applyLogConfig(logsDir string, cfg config.Config) {
 
 func resolveJobSettings(j actionJob, cfg config.Config) (retryCount, actionTimeout int) {
 	if j.jobID == "" {
-		return cfg.RetryCount, cfg.ActionTimeoutSeconds
+		// No matching job (start-exited or manual action) — single attempt only.
+		// Retries for these cases should be handled by defining a job rule.
+		return 1, cfg.ActionTimeoutSeconds
 	}
 	// retryCount == 0 means unlimited; keep it as-is.
 	at := j.actionTimeoutSeconds
@@ -405,7 +406,7 @@ func (j actionJob) Run(ctx context.Context) {
 	if docker == nil {
 		docker = j.app.docker
 	}
-	scriptOutput, err := j.app.executeAction(ctx, docker, action, j.script, j.container, actionTimeout, j.scriptTimeoutSeconds)
+	scriptOutput, err := j.app.executeAction(ctx, docker, action, j.script, j.container, actionTimeout)
 	duration := time.Since(started)
 
 	if err == nil {
@@ -911,9 +912,7 @@ func applyMatchedJobSettings(job *actionJob, matched *config.Job) {
 	if matched.ActionTimeoutSeconds > 0 {
 		job.actionTimeoutSeconds = matched.ActionTimeoutSeconds
 	}
-	if matched.ScriptTimeoutSeconds > 0 {
-		job.scriptTimeoutSeconds = matched.ScriptTimeoutSeconds
-	}
+
 	job.postActionWaitSeconds = matched.PostActionWaitSeconds
 	if job.postActionWaitSeconds <= 0 {
 		job.postActionWaitSeconds = matched.MonitorIntervalSeconds
@@ -1812,9 +1811,6 @@ func normalizeSettingsBody(body *config.FileConfig) {
 	if body.QueueSize < 1 {
 		body.QueueSize = 64
 	}
-	if body.RetryCount < 1 {
-		body.RetryCount = 1
-	}
 	if body.HttpClientTimeoutSeconds < 1 {
 		body.HttpClientTimeoutSeconds = 15
 	}
@@ -1848,9 +1844,6 @@ func normalizeSettingsBody(body *config.FileConfig) {
 	if body.LogRetentionDays < 1 {
 		body.LogRetentionDays = 7
 	}
-	if body.SQLiteBusyTimeoutSeconds < 1 {
-		body.SQLiteBusyTimeoutSeconds = 5000
-	}
 	body.DockerSocketPath = strings.TrimSpace(body.DockerSocketPath)
 	if body.DockerSocketPath == "" {
 		body.DockerSocketPath = "/var/run/docker.sock"
@@ -1868,8 +1861,6 @@ func normalizeSettingsBody(body *config.FileConfig) {
 }
 
 func syncConfigFromBody(cfg *config.Config, body config.FileConfig) {
-	cfg.RetryCount = body.RetryCount
-	cfg.RetryDelay = time.Duration(body.RetryDelaySeconds) * time.Second
 	cfg.Action = body.Action
 	cfg.WorkerCount = body.WorkerCount
 	cfg.QueueSize = body.QueueSize
@@ -1891,9 +1882,6 @@ func syncConfigFromBody(cfg *config.Config, body config.FileConfig) {
 	cfg.BootNotificationProfiles = body.BootNotificationProfiles
 	cfg.ActionTimeoutSeconds = body.ActionTimeoutSeconds
 	cfg.RequireFilterForExited = body.RequireFilterForExited
-	cfg.SQLitePath = body.SQLitePath
-	cfg.SQLiteBusyTimeoutSeconds = body.SQLiteBusyTimeoutSeconds
-	cfg.SQLitePragmas = body.SQLitePragmas
 	cfg.DisplayTimezone = body.DisplayTimezone
 	cfg.ServerTimezone = body.ServerTimezone
 	cfg.PrimaryBaseURL = body.PrimaryBaseURL
@@ -3554,16 +3542,11 @@ func (a *app) executeRunScript(ctx context.Context, script string, cfg config.Co
 // executeAction runs the action for a container and returns any script output
 // (non-empty only for run-script actions) alongside the error.
 // scriptTimeoutSeconds overrides actionTimeoutSeconds specifically for run-script;
-// pass 0 to use the job/global action timeout.
-func (a *app) executeAction(ctx context.Context, docker dockerClient, action string, script string, c containertypes.Summary, actionTimeoutSeconds, scriptTimeoutSeconds int) (string, error) {
+func (a *app) executeAction(ctx context.Context, docker dockerClient, action string, script string, c containertypes.Summary, actionTimeoutSeconds int) (string, error) {
 	cfg := a.getConfig()
 
-	// Scripts can have a dedicated timeout that is independent of the docker action timeout.
-	effectiveTimeout := func(override int) time.Duration {
-		sec := override
-		if sec < 1 {
-			sec = actionTimeoutSeconds
-		}
+	effectiveTimeout := func() time.Duration {
+		sec := actionTimeoutSeconds
 		if sec < 1 {
 			sec = cfg.ActionTimeoutSeconds
 		}
@@ -3573,21 +3556,21 @@ func (a *app) executeAction(ctx context.Context, docker dockerClient, action str
 	name := containerName(c)
 	switch action {
 	case "restart":
-		actionCtx, cancel := context.WithTimeout(ctx, effectiveTimeout(0))
+		actionCtx, cancel := context.WithTimeout(ctx, effectiveTimeout())
 		defer cancel()
 		return "", docker.RestartContainer(actionCtx, c.ID, 10)
 	case "start":
-		actionCtx, cancel := context.WithTimeout(ctx, effectiveTimeout(0))
+		actionCtx, cancel := context.WithTimeout(ctx, effectiveTimeout())
 		defer cancel()
 		return "", docker.StartContainer(actionCtx, c.ID)
 	case "stop":
-		actionCtx, cancel := context.WithTimeout(ctx, effectiveTimeout(0))
+		actionCtx, cancel := context.WithTimeout(ctx, effectiveTimeout())
 		defer cancel()
 		return "", docker.StopContainer(actionCtx, c.ID, 10)
 	case "none":
 		return "", nil
 	case "run-script":
-		scriptCtx, cancel := context.WithTimeout(ctx, effectiveTimeout(scriptTimeoutSeconds))
+		scriptCtx, cancel := context.WithTimeout(ctx, effectiveTimeout())
 		defer cancel()
 		return a.executeRunScript(scriptCtx, script, cfg, c, name, false)
 	default:

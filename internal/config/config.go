@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -16,8 +15,6 @@ import (
 type Config struct {
 	Port                          string
 	ConfigDir                     string
-	RetryCount                    int
-	RetryDelay                    time.Duration
 	Action                        string
 	AppriseServices               string
 	ContainerNameFilter           string
@@ -43,9 +40,6 @@ type Config struct {
 	BootNotificationProfiles      []string
 	ActionTimeoutSeconds          int
 	RequireFilterForExited        bool
-	SQLitePath                    string
-	SQLiteBusyTimeoutSeconds      int
-	SQLitePragmas                 string
 	DisplayTimezone               string
 	ServerTimezone                string
 	PrimaryBaseURL                string
@@ -61,8 +55,6 @@ type Config struct {
 // returned/accepted by the /api/settings endpoint.
 type FileConfig struct {
 	Port                          string   `yaml:"port,omitempty"                json:"port"`
-	RetryCount                    int      `yaml:"retryCount"                    json:"retryCount"`
-	RetryDelaySeconds             int      `yaml:"retryDelaySeconds"             json:"retryDelaySeconds"`
 	Action                        string   `yaml:"action"                        json:"action"`
 	ContainerNameFilter           string   `yaml:"containerNameFilter,omitempty" json:"containerNameFilter"`
 	ContainerLabelFilter          string   `yaml:"containerLabelFilter,omitempty" json:"containerLabelFilter"`
@@ -87,9 +79,6 @@ type FileConfig struct {
 	BootNotificationProfiles      []string `yaml:"bootNotificationProfiles,omitempty" json:"bootNotificationProfiles,omitempty"`
 	ActionTimeoutSeconds          int      `yaml:"actionTimeoutSeconds"          json:"actionTimeoutSeconds"`
 	RequireFilterForExited        bool     `yaml:"requireFilterForExited"        json:"requireFilterForExited"`
-	SQLitePath                    string   `yaml:"sqlitePath"                    json:"sqlitePath"`
-	SQLiteBusyTimeoutSeconds      int      `yaml:"sqliteBusyTimeoutSeconds"      json:"sqliteBusyTimeoutSeconds"`
-	SQLitePragmas                 string   `yaml:"sqlitePragmas"                 json:"sqlitePragmas"`
 	DisplayTimezone               string   `yaml:"displayTimezone"               json:"displayTimezone"`
 	ServerTimezone                string   `yaml:"serverTimezone"                json:"serverTimezone"`
 	PrimaryBaseURL                string   `yaml:"primaryBaseURL"                json:"primaryBaseURL"`
@@ -135,9 +124,6 @@ func Load() (Config, error) {
 		BootNotificationProfiles:      fileCfg.BootNotificationProfiles,
 		ActionTimeoutSeconds:          envOrInt("ACTION_TIMEOUT_SECONDS", fileCfg.ActionTimeoutSeconds),
 		RequireFilterForExited:        envOrBool("REQUIRE_FILTER_FOR_EXITED", fileCfg.RequireFilterForExited),
-		SQLitePath:                    envOr("SQLITE_PATH", fileCfg.SQLitePath),
-		SQLiteBusyTimeoutSeconds:      envOrInt("SQLITE_BUSY_TIMEOUT_SECONDS", fileCfg.SQLiteBusyTimeoutSeconds),
-		SQLitePragmas:                 envOr("SQLITE_PRAGMAS", fileCfg.SQLitePragmas),
 		DisplayTimezone:               envOr("DISPLAY_TIMEZONE", fileCfg.DisplayTimezone),
 		ServerTimezone:                envOr("SERVER_TIMEZONE", fileCfg.ServerTimezone),
 		PrimaryBaseURL:                envOr("PRIMARY_BASE_URL", fileCfg.PrimaryBaseURL),
@@ -149,14 +135,6 @@ func Load() (Config, error) {
 		Theme:                         fileCfg.Theme,
 	}
 
-	if cfg.SQLitePath == "" {
-		cfg.SQLitePath = filepath.Join(configDir, "data", "app.db")
-	}
-
-	retryDelaySeconds := envOrInt("RETRY_DELAY", fileCfg.RetryDelaySeconds)
-	cfg.RetryDelay = time.Duration(retryDelaySeconds) * time.Second
-
-	cfg.RetryCount = envOrInt("RETRY_COUNT", fileCfg.RetryCount)
 	cfg.WorkerCount = envOrInt("WORKER_COUNT", fileCfg.WorkerCount)
 	cfg.QueueSize = envOrInt("QUEUE_SIZE", fileCfg.QueueSize)
 
@@ -194,9 +172,6 @@ func applyConfigDefaults(cfg *Config) {
 	}
 	if cfg.DockerClientRetryDelaySeconds < 1 {
 		cfg.DockerClientRetryDelaySeconds = 2
-	}
-	if cfg.SQLiteBusyTimeoutSeconds < 1 {
-		cfg.SQLiteBusyTimeoutSeconds = 5000
 	}
 	if cfg.Port == "" {
 		cfg.Port = "8080"
@@ -255,8 +230,6 @@ func SaveFileConfig(configDir string, fileCfg FileConfig) error {
 func ToFileConfig(cfg Config) FileConfig {
 	return FileConfig{
 		Port:                          cfg.Port,
-		RetryCount:                    cfg.RetryCount,
-		RetryDelaySeconds:             int(cfg.RetryDelay / time.Second),
 		Action:                        cfg.Action,
 		ContainerNameFilter:           cfg.ContainerNameFilter,
 		ContainerLabelFilter:          cfg.ContainerLabelFilter,
@@ -281,9 +254,6 @@ func ToFileConfig(cfg Config) FileConfig {
 		BootNotificationProfiles:      cfg.BootNotificationProfiles,
 		ActionTimeoutSeconds:          cfg.ActionTimeoutSeconds,
 		RequireFilterForExited:        cfg.RequireFilterForExited,
-		SQLitePath:                    cfg.SQLitePath,
-		SQLiteBusyTimeoutSeconds:      cfg.SQLiteBusyTimeoutSeconds,
-		SQLitePragmas:                 cfg.SQLitePragmas,
 		DisplayTimezone:               cfg.DisplayTimezone,
 		ServerTimezone:                cfg.ServerTimezone,
 		PrimaryBaseURL:                cfg.PrimaryBaseURL,
@@ -299,8 +269,6 @@ func ToFileConfig(cfg Config) FileConfig {
 func defaultFileConfig() FileConfig {
 	return FileConfig{
 		Port:                          "8080",
-		RetryCount:                    3,
-		RetryDelaySeconds:             10,
 		Action:                        "restart",
 		ContainerNameFilter:           "",
 		ContainerLabelFilter:          "",
@@ -322,9 +290,6 @@ func defaultFileConfig() FileConfig {
 		RunScriptPath:                 "",
 		ActionTimeoutSeconds:          20,
 		RequireFilterForExited:        true,
-		SQLitePath:                    "",
-		SQLiteBusyTimeoutSeconds:      5000,
-		SQLitePragmas:                 "journal_mode=WAL;synchronous=NORMAL",
 		LogLevel:                      "info",
 		LogToFile:                     true,
 		LogRetentionDays:              7,

@@ -234,3 +234,4 @@ test.describe('Settings — ExternalHostname and PrimaryBaseURL persistence', ()
     expect(afterJson.dashboardRefreshSeconds).toBe(refreshBefore)
   })
 })
+
