@@ -35,7 +35,6 @@ func newBellTestServer(t *testing.T) (*app, *httptest.Server) {
 		DockerClientRetryCount:        1,
 		DockerClientRetryDelaySeconds: 2,
 		ActionTimeoutSeconds:          20,
-		NotificationRatePerSec:        5,
 	}
 	if err := config.SaveFileConfig(configDir, config.ToFileConfig(cfg)); err != nil {
 		t.Fatalf("SaveFileConfig: %v", err)

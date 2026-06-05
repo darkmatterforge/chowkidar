@@ -35,6 +35,7 @@ type fakeDockerClient struct {
 	restarting  []containertypes.Summary
 	starting    []containertypes.Summary
 	all         []containertypes.Summary
+	running     []containertypes.Summary
 	restartIDs  []string
 	startIDs    []string
 	stopIDs     []string
@@ -75,6 +76,13 @@ func (f *fakeDockerClient) AllContainers(_ context.Context) ([]containertypes.Su
 	defer f.mu.Unlock()
 	out := make([]containertypes.Summary, len(f.all))
 	copy(out, f.all)
+	return out, nil
+}
+func (f *fakeDockerClient) RunningContainers(_ context.Context) ([]containertypes.Summary, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]containertypes.Summary, len(f.running))
+	copy(out, f.running)
 	return out, nil
 }
 func (f *fakeDockerClient) RestartContainer(_ context.Context, id string, _ int) error {

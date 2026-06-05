@@ -39,7 +39,6 @@ func TestLoadFreshInstall(t *testing.T) {
 		{"HttpMaxIdleConns", cfg.HttpMaxIdleConns, d.HttpMaxIdleConns},
 		{"HttpMaxIdleConnsPerHost", cfg.HttpMaxIdleConnsPerHost, d.HttpMaxIdleConnsPerHost},
 		{"HttpIdleConnTimeoutSeconds", cfg.HttpIdleConnTimeoutSeconds, d.HttpIdleConnTimeoutSeconds},
-		{"NotificationRatePerSec", cfg.NotificationRatePerSec, d.NotificationRatePerSec},
 		{"NotificationCooldownSeconds", cfg.NotificationCooldownSeconds, d.NotificationCooldownSeconds},
 		{"LogLevel", cfg.LogLevel, d.LogLevel},
 		{"LogToFile", cfg.LogToFile, d.LogToFile},
@@ -159,7 +158,6 @@ func TestFileConfigRoundTrip(t *testing.T) {
 	orig.DockerClientRetryDelaySeconds = 4
 	orig.DockerSocketPath = "/var/run/docker.sock"
 	orig.ExternalHostname = "pool.example"
-	orig.NotificationRatePerSec = 9
 	orig.StartExited = true
 	orig.RunScriptPath = "/config/scripts/heal.sh"
 	orig.ActionTimeoutSeconds = 35
@@ -194,7 +192,6 @@ func TestToFileConfigIncludesNewFields(t *testing.T) {
 		DockerClientRetryDelaySeconds: 5,
 		DockerSocketPath:              "/var/run/docker.sock",
 		ExternalHostname:              "example.internal",
-		NotificationRatePerSec:        6,
 		StartExited:                   true,
 		RunScriptPath:                 "/config/scripts/heal.sh",
 		ActionTimeoutSeconds:          31,
