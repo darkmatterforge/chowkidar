@@ -1,11 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { gotoSettings } from '../helpers/nav'
-import { exec } from 'child_process'
-import { promisify } from 'util'
 
-const execAsync = promisify(exec)
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:8080'
-const CONTAINER_NAME = process.env.E2E_CONTAINER_NAME ?? 'chowkidar-e2e'
 
 async function openMonitoringTab(page: Page) {
   await gotoSettings(page, 'monitoring')
@@ -116,44 +112,5 @@ test.describe('Settings — persist through page reload', () => {
   })
 })
 
-// ── Persistence through service restart ──────────────────────────────────────
-
-test.describe('Settings — persist through service restart', () => {
-  test('changed setting survives a container restart', async ({ page }) => {
-    await gotoSettings(page, 'monitoring')
-
-    const input = page.locator('#dockerPingTimeoutSeconds')
-    const original = await input.inputValue()
-    const newValue = original === '9' ? '8' : '9'
-
-    await input.fill(newValue)
-    const [res] = await Promise.all([
-      page.waitForResponse(r => r.url().includes('/api/settings') && r.request().method() !== 'GET'),
-      page.locator('#saveSettingsBtn').click(),
-    ])
-    expect(res.status()).toBeLessThan(500)
-
-    // Restart the container
-    await execAsync(`docker restart ${CONTAINER_NAME}`)
-
-    // Wait for the app to come back healthy
-    const deadline = Date.now() + 30_000
-    while (Date.now() < deadline) {
-      try {
-        const health = await page.request.get(`${BASE_URL}/api/health`, { timeout: 2_000 })
-        if (health.ok()) break
-      } catch { /* still starting */ }
-      await page.waitForTimeout(1_000)
-    }
-
-    // Verify the setting survived the restart
-    const settingsRes = await page.request.get(`${BASE_URL}/api/settings`)
-    const s = await settingsRes.json()
-    expect(String(s.dockerPingTimeoutSeconds)).toBe(newValue)
-
-    // Restore
-    await page.request.put(`${BASE_URL}/api/settings`, {
-      data: { ...s, dockerPingTimeoutSeconds: Number(original) },
-    })
-  })
-})
+// Restart persistence tests moved to 99-restart-persistence.spec.ts
+// to prevent session contamination of subsequent test files.

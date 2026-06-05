@@ -16,12 +16,12 @@ Chowkidar watches your containers for `unhealthy` health events and exited state
 ## Features
 
 - **Container monitoring** — polls Docker for `unhealthy` and exited containers
-- **Configurable actions** — `restart`, `start`, `stop`, `none`, `run-script` per job or globally
-- **Per-job overrides** — individual retry count, retry delay, monitoring interval, and action timeout
+- **Configurable actions** — `restart`, `start`, `stop`, `none`, `run-script` per job
+- **Per-job overrides** — individual retry count, monitoring interval, and action timeout
 - **Multi-provider notifications** — Discord, Slack, Telegram, ntfy, Gotify, Pushover, SMTP/email, raw Apprise URLs
 - **Notification templates** — customise message content per provider per lifecycle event
 - **Jobs system** — define targeted monitoring rules with container name/label/env var filters
-- **Bash script action** — run a custom inline script per job with built-in templates, dry-run execution, per-job script timeout, and automatic template upgrade detection
+- **Bash script action** — run a custom inline script per job with built-in templates, dry-run execution, and automatic template upgrade detection
 - **Multi-Docker-host** — monitor containers across multiple Docker hosts or sockets
 - **Web UI** — dashboard, jobs, notification profiles, action history, settings
 - **Authentication** — optional username/password protection with bcrypt hashing
@@ -30,7 +30,7 @@ Chowkidar watches your containers for `unhealthy` health events and exited state
 - **Notification bell** — persistent system alerts (boot, failed recovery, paused monitoring) with per-alert dismiss and mark-all-read
 - **Version check** — settings sidebar shows running version; background check surfaces a bell alert when a newer release is available
 - **Light/dark/auto theme**
-- **Persistent config** — everything stored under `/config` (YAML + SQLite + logs)
+- **Persistent config** — everything stored under `/config` (YAML + JSON history + logs)
 - **Docker socket proxy** support for reduced attack surface
 
 ---
@@ -134,7 +134,6 @@ All of these are also configurable via the web UI. Set as env vars only if you n
 | `SERVER_TIMEZONE` | UTC | IANA timezone for scheduling |
 | `LOG_TO_FILE` | `true` | Write logs to `$APP_PATH/logs/` |
 | `LOG_RETENTION_DAYS` | `7` | Log file retention in days |
-| `SQLITE_PATH` | `$APP_PATH/data/app.db` | SQLite database path |
 | `HTTP_CLIENT_TIMEOUT_SECONDS` | `15` | HTTP client timeout |
 | `DOCKER_PING_TIMEOUT_SECONDS` | `5` | Docker daemon liveness ping timeout |
 | `DOCKER_CLIENT_RETRY_COUNT` | `1` | Docker client retry attempts |
