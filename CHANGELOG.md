@@ -4,6 +4,51 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Multi-context job rules** — each job can now be pinned to one or more Docker contexts via a chip-select UI. Jobs with no context selected run on every host (existing behaviour). Context filter dropdown added to the job list.
+- **Per-job health-check script** — jobs now have a `Health Check` section with a `Docker Status` / `Bash Script` toggle. When set to script mode, a custom bash script runs against each matching container; exit 0 = healthy, non-zero = unhealthy (triggers the job action). Dry-run and template picker included, identical to the action script experience.
+- **Per-Docker-host monitoring settings** — each extra Docker host gains a collapsible `Monitoring Settings` panel with three per-host fields:
+  - `Monitor Interval (s)` — how often to ping this host (default: every global scan cycle)
+  - `Ping Timeout (s)` — overrides the global ping timeout for this host
+  - `Confirm Offline (s)` — seconds the host must be continuously unreachable before the offline notification fires (default 1800 s / 30 min)
+- **Per-Docker-host offline notifications** — each host can have its own notification profiles (chip-select) and two message templates with a dropdown picker:
+  - `Offline Message` — sent once when the host goes offline after the confirm window
+  - `Back Online Message` — sent once when the host recovers
+  - Template variable: `{{.HostName}}`; sent directly to all configured agents (Slack, Discord, Telegram, etc.) without profile template indirection
+- **Docker host enable/disable** — hosts can be individually disabled. Disabled hosts are excluded from scanning, ping checks, and offline notifications immediately on save (no restart needed). `Enabled` column added to the Docker Hosts table with green `true` / red `false` pills; built-in Local Docker shows `active`.
+- **`RunningContainers` Docker query** — new `dockerhealth.RunningContainers` method used by health-check script scans to query all running containers efficiently.
+- **Connectivity state tracking** — `scanOnce` pings each extra host before scanning, tracks `connected` / `offlineSince` / `notified` state per host, and sends offline/recovery notifications on state transitions only (no spam on repeated failures).
+
+### Changed
+
+- **Docker host form inputs replaced with checkboxes** — `Enabled` dropdown in Docker host form, Job form (`Enabled` and `Start Exited`), are now checkboxes matching the Notifications tab style.
+- **"Apply" button removed** — the Docker Hosts "Apply" button and `activeHostID` concept are removed. Use per-job Docker Context selection instead.
+- **`Docker Client Retry Count` removed from Monitoring UI** — no longer user-configurable; backend retains a hardcoded default of 3. Advanced users can still set `dockerClientRetryCount` in `config.yaml`.
+- **`Docker Client Retry Delay` removed from Monitoring UI** — same treatment as retry count.
+- **`Docker Ping Timeout` moved from Monitoring settings to per-host form** — global value removed from settings UI; each Docker host configures its own ping timeout (default 5 s). Built-in Local Docker uses the config file value or 5 s fallback.
+- **Dashboard Docker Hosts card** — shows individual host rows (with dot, name, `Connected`/`Offline`/`Disabled` label) for ≤ 5 hosts; shows `N/N healthy` or `N/N healthy — X offline · Y disabled` summary for 6+ hosts. Disabled hosts are excluded from the N/N count.
+- **`DockerHostID string` migrated to `DockerHostIDs []string`** — YAML schema version bumped to v2; existing jobs with a single `dockerHostID` are migrated to a one-element slice on first load.
+- **Queue Settings spacing** — form fields now use `gap: 14px 24px` so the grid rows breathe.
+- **Message template dropdowns** — Offline Message and Back Online Message now have a collapsible `Message Templates` section in the Docker host form, with a `Templates:` dropdown picker and full-width text inputs.
+
+### Fixed
+
+- **`offlineConfirmSeconds` not persisting** — blank form field was sending `0`, which `omitempty` dropped from YAML; JS now defaults to `1800` so the value is always written.
+- **Double cooldown / double scan** — jobs with no `dockerHostIDs` were scanned once per configured host, producing duplicate history entries. Resolved by pinning jobs to specific contexts; documented and covered by dual-context runtime tests.
+- **Health-check script notifications bypassed profile templates** — `sendDockerHostNotif` now calls `notify.New(p.Service).Send(title, body)` directly so the user's custom message is always delivered verbatim to every agent.
+
+### Tests
+
+- E2E checkbox fixes across `07-docker-hosts.spec.ts` and `08-jobs.spec.ts` (all `selectOption`/`toHaveValue` for enabled fields replaced with `check`/`uncheck`/`toBeChecked`)
+- New docker host tests: `Monitoring Settings` collapsible, offline notifications API round-trip, `offlineConfirmSeconds` default persistence, `active` pill for built-in host, message template picker
+- New job tests: `Enabled`/`Start Exited` checkbox defaults and API persistence
+- New runtime tests in `12-job-runtime.spec.ts`:
+  - Disabled job never fires even when container fails
+  - History entry records correct action type (`run-script`)
+  - Dual-context same-daemon suite: second-host fires, disabled-host skips, all-contexts double-fires, local-only fires fewer times than all-contexts
+- Restart persistence tests for all new Docker host fields (`monitorIntervalSeconds`, `pingTimeoutSeconds`, `offlineConfirmSeconds`, `downTemplate`, `recoveryTemplate`, `notifications`) and job `dockerHostIDs` / `healthCheckScript`
+
 ### Infrastructure
 - Migrated Docker build and runtime images from Alpine to Chainguard (`wolfi-base` + `cgr.dev/chainguard/go`) for reduced CVE surface
 - `apk upgrade` runs on every Docker build so all installed packages stay current without waiting for a scheduled patch

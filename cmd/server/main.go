@@ -92,6 +92,10 @@ type app struct {
 	clientTimezone       string               // last browser-reported IANA zone; reused when DisplayTimezone is unset
 	dismissedAlerts      map[string]time.Time // alert ID → time dismissed; persisted to dismissed-alerts.json
 	dismissedMu          sync.Mutex
+	dockerHostConnected   map[string]bool
+	dockerHostOfflineSince map[string]time.Time // when each host first went offline in the current outage
+	dockerHostNotified    map[string]bool      // whether the down notification has been sent for the current outage
+	dockerHostLastScan    map[string]time.Time
 }
 
 type dockerClient interface {
@@ -99,6 +103,7 @@ type dockerClient interface {
 	ExitedContainers(ctx context.Context) ([]containertypes.Summary, error)
 	RestartingContainers(ctx context.Context) ([]containertypes.Summary, error)
 	StartingContainers(ctx context.Context) ([]containertypes.Summary, error)
+	RunningContainers(ctx context.Context) ([]containertypes.Summary, error)
 	AllContainers(ctx context.Context) ([]containertypes.Summary, error)
 	RestartContainer(ctx context.Context, id string, timeoutSeconds int) error
 	StartContainer(ctx context.Context, id string) error
@@ -612,6 +617,10 @@ func main() {
 		sessions:             make(map[string]sessionEntry),
 		bootTime:             time.Now().UTC(),
 		dismissedAlerts:      make(map[string]time.Time),
+		dockerHostConnected:    map[string]bool{},
+		dockerHostOfflineSince: map[string]time.Time{},
+		dockerHostNotified:     map[string]bool{},
+		dockerHostLastScan:     map[string]time.Time{},
 	}
 	defer a.stopPool()
 	if da, err := loadDismissedAlerts(cfg.ConfigDir); err != nil {
@@ -1243,12 +1252,20 @@ func (a *app) recordHealthPulses(ctx context.Context, docker dockerClient, jobs 
 }
 
 // jobsForHost returns jobs that apply to the given hostID — jobs with empty
-// DockerHostID match every host; jobs with a specific ID match only that host.
+// DockerHostIDs match every host; jobs with a non-empty slice match only if
+// hostID appears in that slice.
 func jobsForHost(jobs []config.Job, hostID string) []config.Job {
 	out := make([]config.Job, 0, len(jobs))
 	for _, j := range jobs {
-		if j.DockerHostID == "" || j.DockerHostID == hostID {
+		if len(j.DockerHostIDs) == 0 {
 			out = append(out, j)
+		} else {
+			for _, id := range j.DockerHostIDs {
+				if id == hostID {
+					out = append(out, j)
+					break
+				}
+			}
 		}
 	}
 	return out
@@ -1267,6 +1284,16 @@ func (a *app) scanHost(ctx context.Context, hostID string, docker dockerClient, 
 		}
 	}
 
+	// Split jobs by health-check mode: native Docker status vs bash script.
+	var nativeJobs, scriptJobs []config.Job
+	for _, j := range jobs {
+		if j.HealthCheckScript != "" {
+			scriptJobs = append(scriptJobs, j)
+		} else {
+			nativeJobs = append(nativeJobs, j)
+		}
+	}
+
 	var unhealthyCtrs []containertypes.Summary
 	if err := a.retryDocker(ctx, func() error {
 		var err error
@@ -1277,14 +1304,110 @@ func (a *app) scanHost(ctx context.Context, hostID string, docker dockerClient, 
 		return
 	}
 
-	logInfof("monitor: scan start host=%s unhealthy=%d totalJobs=%d dueJobs=%d",
-		hostID, len(unhealthyCtrs), len(jobs), len(dueForHost))
+	logInfof("monitor: scan start host=%s unhealthy=%d totalJobs=%d dueJobs=%d scriptHealthJobs=%d",
+		hostID, len(unhealthyCtrs), len(jobs), len(dueForHost), len(scriptJobs))
 
-	filtered = a.processUnhealthyContainers(ctx, docker, hostID, unhealthyCtrs, cfg, jobs, dueForHost)
+	filtered = a.processUnhealthyContainers(ctx, docker, hostID, unhealthyCtrs, cfg, nativeJobs, dueForHost)
 	restarting = a.processRestartingContainers(ctx, docker, hostID, cfg, jobs, dueForHost, &filtered)
 	exitedFiltered = a.processExitedContainers(ctx, docker, hostID, cfg, jobs, dueJobs, dueForHost)
 	starting = a.fetchStartingContainers(ctx, docker)
+
+	if len(scriptJobs) > 0 {
+		scriptUnhealthy := a.processScriptHealthJobs(ctx, docker, hostID, cfg, scriptJobs, dueForHost)
+		filtered = append(filtered, scriptUnhealthy...)
+	}
 	return
+}
+
+// processScriptHealthJobs handles jobs whose health is determined by a bash
+// script rather than Docker's built-in health status. For each running
+// container that matches a script-health job's filter, the script is executed;
+// exit 0 means healthy (no action), non-zero exit means unhealthy (enqueue action).
+func (a *app) processScriptHealthJobs(ctx context.Context, docker dockerClient, hostID string, cfg config.Config, jobs []config.Job, dueJobIDs map[string]bool) []containertypes.Summary {
+	var running []containertypes.Summary
+	if err := a.retryDocker(ctx, func() error {
+		var err error
+		running, err = docker.RunningContainers(ctx)
+		return err
+	}); err != nil {
+		logErrorf("docker-hosts: failed to query running containers host=%s: %v", hostID, err)
+		return nil
+	}
+
+	var unhealthy []containertypes.Summary
+	for _, c := range running {
+		name := containerName(c)
+		if a.isSelfContainer(c) {
+			continue
+		}
+		for _, job := range jobs {
+			if !job.Enabled {
+				continue
+			}
+			matches, err := a.matchesJob(ctx, docker, c, job)
+			if err != nil || !matches {
+				continue
+			}
+
+			timeout := job.ActionTimeoutSeconds
+			if timeout < 5 {
+				timeout = 30
+			}
+			hcCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+			_, hcErr := a.executeRunScript(hcCtx, job.HealthCheckScript, cfg, c, name, false)
+			cancel()
+
+			if hcErr == nil {
+				// Exit 0 — container is healthy, no action needed.
+				continue
+			}
+			// Distinguish a non-zero exit (unhealthy) from a script execution error.
+			var exitErr *exec.ExitError
+			if !errors.As(hcErr, &exitErr) {
+				logWarnf("monitor: health-check script error container=%s job=%s: %v", name, job.ID, hcErr)
+				continue
+			}
+
+			logInfof("monitor: health-check script unhealthy container=%s id=%.12s jobID=%s jobName=%s", name, c.ID, job.ID, job.Name)
+			unhealthy = append(unhealthy, c)
+
+			if !dueJobIDs[job.ID] {
+				logDebugf("monitor: job not due container=%s jobID=%s", name, job.ID)
+				break
+			}
+			if a.isRetriesExhausted(name) {
+				logInfof("monitor: skip container=%s reason=retries-exhausted", name)
+				break
+			}
+			if remaining := a.postActionWaitRemaining(name); remaining > 0 {
+				logInfof("monitor: skip container=%s reason=post-action-wait remaining=%s", name, remaining.Round(time.Second))
+				a.logActionHistory(c, "unhealthy", job.Action, 0, "skipped", "cooldown active", "", 0)
+				break
+			}
+
+			aj := actionJob{
+				app: a, docker: docker, container: c, reason: "unhealthy",
+				action: job.Action, script: job.Script,
+				notifications: job.Notifications,
+				jobID: job.ID, jobName: job.Name,
+			}
+			applyMatchedJobSettings(&aj, &job)
+			logInfof("monitor: queueing script-unhealthy container=%s action=%s jobID=%s", name, job.Action, job.ID)
+			a.enqueueJob(aj)
+			if a.shouldNotify(name) {
+				if err := a.sendJobNotifications("unhealthy detected", notifData{
+					ContainerName: name,
+					RuleName:      job.Name,
+					Reason:        "unhealthy",
+					MaxRetries:    aj.retryCount,
+				}, job.Notifications); err != nil {
+					logWarnf("notify: job send failed event=unhealthy container=%s err=%v", name, err)
+				}
+			}
+			break // first matching script job wins per container
+		}
+	}
+	return unhealthy
 }
 
 func (a *app) scanOnce() {
@@ -1304,6 +1427,78 @@ func (a *app) scanOnce() {
 	allStarting = append(allStarting, s...)
 
 	for _, h := range a.getExtraClients() {
+		if !h.profile.Enabled {
+			continue
+		}
+
+		// Respect per-host monitor interval (0 = always scan on every cycle).
+		if interval := h.profile.MonitorIntervalSeconds; interval > 0 {
+			a.mu.RLock()
+			lastScan := a.dockerHostLastScan[h.profile.ID]
+			a.mu.RUnlock()
+			if time.Since(lastScan) < time.Duration(interval)*time.Second {
+				continue
+			}
+		}
+		a.mu.Lock()
+		a.dockerHostLastScan[h.profile.ID] = time.Now()
+		a.mu.Unlock()
+
+		// Ping using per-host timeout, falling back to global or 5s.
+		pingTimeout := h.profile.PingTimeoutSeconds
+		if pingTimeout <= 0 {
+			if cfg.DockerPingTimeoutSeconds > 0 {
+				pingTimeout = cfg.DockerPingTimeoutSeconds
+			} else {
+				pingTimeout = 5
+			}
+		}
+		pingCtx, pingCancel := context.WithTimeout(ctx, time.Duration(pingTimeout)*time.Second)
+		hostUp, _, _ := dockerhealth.PingHost(pingCtx, h.profile.Type, h.profile.Endpoint, pingTimeout, nil)
+		pingCancel()
+
+		a.mu.Lock()
+		wasUp := a.dockerHostConnected[h.profile.ID]
+		a.dockerHostConnected[h.profile.ID] = hostUp
+		if hostUp {
+			// Host is back — clear outage tracking.
+			delete(a.dockerHostOfflineSince, h.profile.ID)
+			if !wasUp {
+				a.dockerHostNotified[h.profile.ID] = false
+			}
+		} else if wasUp || !a.dockerHostOfflineSince[h.profile.ID].IsZero() == false {
+			// Just went offline — record start of outage.
+			if wasUp {
+				a.dockerHostOfflineSince[h.profile.ID] = time.Now()
+			}
+		}
+		offlineSince := a.dockerHostOfflineSince[h.profile.ID]
+		alreadyNotified := a.dockerHostNotified[h.profile.ID]
+		a.mu.Unlock()
+
+		if hostUp && !wasUp {
+			logInfof("docker-hosts: host came back online id=%s name=%s", h.profile.ID, h.profile.Name)
+			a.sendDockerHostNotif(h.profile, false)
+		} else if !hostUp && !alreadyNotified && !offlineSince.IsZero() {
+			// Fire notification once the host has been offline for OfflineConfirmSeconds.
+			confirmSecs := h.profile.OfflineConfirmSeconds
+			if confirmSecs <= 0 {
+				confirmSecs = 1800 // default: 30 minutes
+			}
+			if time.Since(offlineSince) >= time.Duration(confirmSecs)*time.Second {
+				logWarnf("docker-hosts: host offline >%ds id=%s name=%s", confirmSecs, h.profile.ID, h.profile.Name)
+				a.sendDockerHostNotif(h.profile, true)
+				a.mu.Lock()
+				a.dockerHostNotified[h.profile.ID] = true
+				a.mu.Unlock()
+			}
+		}
+
+		if !hostUp {
+			logWarnf("docker-hosts: skipping scan for offline host id=%s name=%s", h.profile.ID, h.profile.Name)
+			continue
+		}
+
 		f, e, r, s = a.scanHost(ctx, h.profile.ID, h.client, cfg, allJobs, dueJobs, dueJobIDs)
 		allFiltered = append(allFiltered, f...)
 		allExited = append(allExited, e...)
@@ -1832,12 +2027,6 @@ func normalizeSettingsBody(body *config.FileConfig) {
 	if body.DockerClientRetryDelaySeconds < 1 {
 		body.DockerClientRetryDelaySeconds = 2
 	}
-	if body.NotificationRatePerSec < 1 {
-		body.NotificationRatePerSec = 5
-	}
-	if body.NotificationRatePerSec > 1000 {
-		body.NotificationRatePerSec = 1000
-	}
 	if body.ActionTimeoutSeconds < 1 {
 		body.ActionTimeoutSeconds = 20
 	}
@@ -1873,7 +2062,7 @@ func syncConfigFromBody(cfg *config.Config, body config.FileConfig) {
 	cfg.DockerClientRetryDelaySeconds = body.DockerClientRetryDelaySeconds
 	cfg.DockerSocketPath = body.DockerSocketPath
 	cfg.ExternalHostname = body.ExternalHostname
-	cfg.NotificationRatePerSec = body.NotificationRatePerSec
+
 	cfg.NotificationCooldownSeconds = body.NotificationCooldownSeconds
 	cfg.StartupDelaySeconds = body.StartupDelaySeconds
 	cfg.StartExited = body.StartExited
@@ -1988,7 +2177,7 @@ func (a *app) handleSettingsTheme(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-func jobMatchesFilters(job config.Job, qStr, actionFilter, enabledFilter, groupFilter string) bool {
+func jobMatchesFilters(job config.Job, qStr, actionFilter, enabledFilter, groupFilter, hostIDFilter string) bool {
 	if actionFilter != "" && strings.ToLower(job.Action) != actionFilter {
 		return false
 	}
@@ -2000,6 +2189,18 @@ func jobMatchesFilters(job config.Job, qStr, actionFilter, enabledFilter, groupF
 	}
 	if groupFilter != "" && strings.ToLower(strings.TrimSpace(job.Group)) != groupFilter {
 		return false
+	}
+	if hostIDFilter != "" && len(job.DockerHostIDs) > 0 {
+		found := false
+		for _, id := range job.DockerHostIDs {
+			if id == hostIDFilter {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
 	}
 	if qStr != "" {
 		haystack := strings.ToLower(strings.Join([]string{
@@ -2016,12 +2217,13 @@ func filterJobsList(jobs []config.Job, q url.Values) []config.Job {
 	actionFilter := strings.ToLower(strings.TrimSpace(q.Get("action")))
 	enabledFilter := strings.ToLower(strings.TrimSpace(q.Get("enabled")))
 	groupFilter := strings.ToLower(strings.TrimSpace(q.Get("group")))
-	if qStr == "" && actionFilter == "" && enabledFilter == "" && groupFilter == "" {
+	hostIDFilter := strings.TrimSpace(q.Get("hostID"))
+	if qStr == "" && actionFilter == "" && enabledFilter == "" && groupFilter == "" && hostIDFilter == "" {
 		return jobs
 	}
 	filtered := make([]config.Job, 0, len(jobs))
 	for _, job := range jobs {
-		if jobMatchesFilters(job, qStr, actionFilter, enabledFilter, groupFilter) {
+		if jobMatchesFilters(job, qStr, actionFilter, enabledFilter, groupFilter, hostIDFilter) {
 			filtered = append(filtered, job)
 		}
 	}
@@ -2507,20 +2709,12 @@ func (a *app) handleDockerHostsGET(w http.ResponseWriter) {
 	profiles := a.getDockerHostProfiles()
 	builtIn := builtInDockerHostProfile(cfg.DockerSocketPath)
 	all := append([]config.DockerHostProfile{builtIn}, profiles...)
-	activeID := "local"
-	for _, p := range profiles {
-		if p.Type == "socket" && strings.TrimSpace(p.Endpoint) == strings.TrimSpace(cfg.DockerSocketPath) {
-			activeID = p.ID
-			break
-		}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"profiles": all, "activeHostID": activeID})
+	writeJSON(w, http.StatusOK, map[string]any{"profiles": all})
 }
 
 func (a *app) handleDockerHostsPUT(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Profiles     []config.DockerHostProfile `json:"profiles"`
-		ActiveHostID string                     `json:"activeHostID"`
+		Profiles []config.DockerHostProfile `json:"profiles"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid JSON"})
@@ -2537,38 +2731,9 @@ func (a *app) handleDockerHostsPUT(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	activeHostID := strings.TrimSpace(body.ActiveHostID)
-	if activeHostID != "" {
-		for _, p := range a.getDockerHostProfiles() {
-			if p.ID != activeHostID {
-				continue
-			}
-			if p.Type == "socket" {
-				cfg := a.getConfig()
-				cfg.DockerSocketPath = strings.TrimSpace(p.Endpoint)
-				// Load the current FileConfig so fields not present in Config
-				// (e.g. dashboardRefreshSeconds) are preserved on save.
-				fileCfg, ferr := config.LoadFileConfig(cfg.ConfigDir)
-				if ferr != nil {
-					writeJSON(w, http.StatusInternalServerError, map[string]any{"error": ferr.Error()})
-					return
-				}
-				fileCfg.DockerSocketPath = cfg.DockerSocketPath
-				if err := config.SaveFileConfig(cfg.ConfigDir, fileCfg); err != nil {
-					writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
-					return
-				}
-				a.mu.Lock()
-				a.cfg = cfg
-				a.mu.Unlock()
-			}
-			break
-		}
-	}
-
-	cfg2 := a.getConfig()
-	savedProfiles := append([]config.DockerHostProfile{builtInDockerHostProfile(cfg2.DockerSocketPath)}, a.getDockerHostProfiles()...)
-	writeJSON(w, http.StatusOK, map[string]any{"saved": true, "profiles": savedProfiles, "activeHostID": activeHostID})
+	cfg := a.getConfig()
+	savedProfiles := append([]config.DockerHostProfile{builtInDockerHostProfile(cfg.DockerSocketPath)}, a.getDockerHostProfiles()...)
+	writeJSON(w, http.StatusOK, map[string]any{"saved": true, "profiles": savedProfiles})
 }
 
 func (a *app) handleDockerHosts(w http.ResponseWriter, r *http.Request) {
@@ -2604,6 +2769,7 @@ func (a *app) handleDockerHostsStatus(w http.ResponseWriter, r *http.Request) {
 	type hostStatus struct {
 		ID        string `json:"id"`
 		Name      string `json:"name"`
+		Enabled   bool   `json:"enabled"`
 		Connected bool   `json:"connected"`
 		Info      string `json:"info"`
 		ErrMsg    string `json:"error,omitempty"`
@@ -2615,7 +2781,11 @@ func (a *app) handleDockerHostsStatus(w http.ResponseWriter, r *http.Request) {
 		wg.Add(1)
 		go func(idx int, host config.DockerHostProfile) {
 			defer wg.Done()
-			s := hostStatus{ID: host.ID, Name: host.Name}
+			s := hostStatus{ID: host.ID, Name: host.Name, Enabled: host.Enabled}
+			if !host.Enabled {
+				results[idx] = s
+				return
+			}
 			ok, info, err := dockerhealth.PingHost(r.Context(), host.Type, host.Endpoint, cfg.DockerPingTimeoutSeconds, nil)
 			s.Connected = ok
 			s.Info = info
@@ -3945,6 +4115,56 @@ func (a *app) sendJobNotifications(event string, data notifData, profileIDs []st
 		}
 	}
 	return lastErr
+}
+
+// sendDockerHostNotif sends a notification when a docker host goes offline or
+// recovers. Uses the host's DownTemplate if set, otherwise a default message.
+// sendDockerHostNotif sends the per-host offline or recovery notification to
+// every configured notification profile. It sends title + body directly via
+// Apprise so the user's custom message template is always delivered as-is,
+// regardless of which agent (Slack, Discord, Telegram, etc.) is configured.
+func (a *app) sendDockerHostNotif(host config.DockerHostProfile, down bool) {
+	if len(host.Notifications) == 0 {
+		return
+	}
+	var tmpl string
+	if down {
+		tmpl = strings.TrimSpace(host.DownTemplate)
+		if tmpl == "" {
+			tmpl = fmt.Sprintf("Docker host %q is offline", host.Name)
+		}
+	} else {
+		tmpl = strings.TrimSpace(host.RecoveryTemplate)
+		if tmpl == "" {
+			tmpl = fmt.Sprintf("Docker host %q is back online", host.Name)
+		}
+	}
+	body := strings.ReplaceAll(tmpl, "{{.HostName}}", host.Name)
+
+	cfg := a.getConfig()
+	prefix := "[chowkidar]"
+	if h := strings.TrimSpace(cfg.ExternalHostname); h != "" {
+		prefix = "[chowkidar@" + h + "]"
+	}
+	title := prefix + " Docker host offline"
+	if !down {
+		title = prefix + " Docker host recovered"
+	}
+
+	profiles := a.getNotificationProfiles()
+	byID := make(map[string]config.NotificationProfile, len(profiles))
+	for _, p := range profiles {
+		byID[p.ID] = p
+	}
+	for _, id := range host.Notifications {
+		p, ok := byID[id]
+		if !ok || !p.Enabled || strings.TrimSpace(p.Service) == "" {
+			continue
+		}
+		if err := notify.New(p.Service).Send(title, body); err != nil {
+			logWarnf("notif: docker host notification failed host=%s profile=%s err=%v", host.Name, p.Name, err)
+		}
+	}
 }
 
 func (a *app) isSelfContainer(c containertypes.Summary) bool {

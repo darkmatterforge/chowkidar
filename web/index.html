@@ -1332,7 +1332,7 @@
           </div>
         </aside>
 
-        <article class="card">
+        <article class="card" style="display:flex;flex-direction:column;">
           <section class="tab-panel active" id="tab-general">
             <h2 class="section-title">General</h2>
             <div class="form-grid">
@@ -1824,7 +1824,7 @@
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
               <div>
                 <h2 class="section-title" style="margin:0;">Docker Hosts</h2>
-                <div class="hint" style="margin-top:4px;">Host profiles are persisted server-side. Apply a socket host to set the active Docker socket path.</div>
+                <div class="hint" style="margin-top:4px;">Host profiles are persisted server-side.</div>
               </div>
               <button class="btn primary" id="openAddDockerHostBtn" type="button">+ Add Host</button>
             </div>
@@ -1890,10 +1890,87 @@
                   </div>
                 </div>
 
+                <!-- Notifications when this host goes offline -->
+                <div class="job-notify-section" style="margin-top:14px;">
+                  <div class="job-notify-label">
+                    Offline Notifications
+                    <span class="hint" style="text-transform:none;letter-spacing:0;">&mdash; alert these agents when this host goes offline</span>
+                  </div>
+                  <div id="dockerHostNotifyChips" class="notify-chips">
+                    <span class="job-notify-empty">No notification profiles configured yet.</span>
+                  </div>
+                </div>
+
+                <!-- Collapsible message templates -->
+                <div style="margin-top:14px;border:1px solid var(--line);border-radius:10px;overflow:hidden;">
+                  <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;cursor:pointer;user-select:none;background:var(--panel);" onclick="(function(){const b=document.getElementById('dockerHostMsgBody');const c=document.getElementById('dockerHostMsgChevron');const open=b.style.display!=='none';b.style.display=open?'none':'';c.style.transform=open?'':'rotate(180deg)';})()">
+                    <span style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);">Message Templates</span>
+                    <span id="dockerHostMsgChevron" style="font-size:11px;color:var(--muted);transition:transform .2s;">&#9660;</span>
+                  </div>
+                  <div id="dockerHostMsgBody" style="display:none;padding:14px;border-top:1px solid var(--line);">
+                    <div class="hint" style="margin-bottom:10px;line-height:1.6;">Use <code style="font-size:11px;background:var(--bg);padding:1px 4px;border-radius:3px;">{{.HostName}}</code> for the host name. Messages are sent as-is to all configured notification agents.</div>
+
+                    <div class="field" style="margin-bottom:12px;">
+                      <label>Offline Message</label>
+                      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+                        <span style="font-size:12px;color:var(--muted);">Templates:</span>
+                        <select style="font-size:12px;padding:3px 8px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--text);" onchange="(function(s){const v=s.value;if(!v)return;document.getElementById('dockerHostDownTemplate').value=v;s.value='';}).call(this,this)">
+                          <option value="">Insert example&#x2026;</option>
+                          <option value='Docker host "{{.HostName}}" is offline'>Default</option>
+                          <option value='&#x26A0; {{.HostName}} is unreachable'>Warning style</option>
+                          <option value='[ALERT] Docker host {{.HostName}} went offline'>Alert style</option>
+                        </select>
+                      </div>
+                      <input type="text" id="dockerHostDownTemplate" placeholder='Docker host "{{.HostName}}" is offline' style="width:100%;box-sizing:border-box;" />
+                    </div>
+
+                    <div class="field">
+                      <label>Back Online Message</label>
+                      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+                        <span style="font-size:12px;color:var(--muted);">Templates:</span>
+                        <select style="font-size:12px;padding:3px 8px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--text);" onchange="(function(s){const v=s.value;if(!v)return;document.getElementById('dockerHostRecoveryTemplate').value=v;s.value='';}).call(this,this)">
+                          <option value="">Insert example&#x2026;</option>
+                          <option value='Docker host "{{.HostName}}" is back online'>Default</option>
+                          <option value='&#x2713; {{.HostName}} has recovered'>Checkmark style</option>
+                          <option value='[RESOLVED] Docker host {{.HostName}} is back online'>Resolved style</option>
+                        </select>
+                      </div>
+                      <input type="text" id="dockerHostRecoveryTemplate" placeholder='Docker host "{{.HostName}}" is back online' style="width:100%;box-sizing:border-box;" />
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Collapsible per-host monitoring settings -->
+                <div style="margin-top:14px;border:1px solid var(--line);border-radius:10px;overflow:hidden;">
+                  <div id="dockerHostAdvHeader" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;cursor:pointer;user-select:none;background:var(--panel);" onclick="(function(){const b=document.getElementById('dockerHostAdvBody');const c=document.getElementById('dockerHostAdvChevron');const open=b.style.display!=='none';b.style.display=open?'none':'';c.style.transform=open?'':'rotate(180deg)';})()">
+                    <span style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);">Monitoring Settings</span>
+                    <span id="dockerHostAdvChevron" style="font-size:11px;color:var(--muted);transition:transform .2s;">&#9660;</span>
+                  </div>
+                  <div id="dockerHostAdvBody" style="display:none;padding:12px 14px;border-top:1px solid var(--line);">
+                    <div class="form-grid" style="gap:10px 24px;">
+                      <div>
+                        <div class="field setting-row"><label>Monitor Interval (s)</label><input type="number" inputmode="numeric" id="dockerHostMonitorInterval" min="0" max="3600" style="max-width:100px;" placeholder="60" /></div>
+                        <div class="hint" style="margin-top:2px;">How often to ping this host. Default 60s.</div>
+                      </div>
+                      <div>
+                        <div class="field setting-row"><label>Ping Timeout (s)</label><input type="number" inputmode="numeric" id="dockerHostPingTimeout" min="1" max="60" style="max-width:100px;" placeholder="5" /></div>
+                        <div class="hint" style="margin-top:2px;">Seconds to wait for a ping response. Default 5s.</div>
+                      </div>
+                      <div>
+                        <div class="field setting-row"><label>Confirm Offline (s)</label><input type="number" inputmode="numeric" id="dockerHostConfirmScans" min="0" max="86400" style="max-width:100px;" placeholder="1800" /></div>
+                        <div class="hint" style="margin-top:2px;">Seconds the host must be continuously offline before alerting. Default 1800s (30 min). Alerts once on down, once on recovery.</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="job-toggle-row" style="margin-top:14px;">
+                  <div class="field"><label style="display:flex;align-items:center;gap:8px;font-weight:normal;text-transform:none;letter-spacing:0;cursor:pointer;font-size:13px;"><input type="checkbox" id="dockerHostEnabled" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" /> Enabled</label></div>
+                </div>
+
                 <div class="actions" style="margin-top:14px;">
                   <button class="btn primary" id="saveDockerHostBtn" type="button">Save Host</button>
                   <button class="btn" id="testDockerHostBtn" type="button">Test Connection</button>
-                  <button class="btn" id="applyDockerHostBtn" type="button" style="display:none;">Apply</button>
                   <button class="btn warn" id="deleteDockerHostBtn" type="button" style="display:none;">Delete</button>
                   <button class="btn ghost" id="cancelDockerHostBtn" type="button">Cancel</button>
                   <span id="dockerHostStatus" class="hint"></span>
@@ -1908,7 +1985,7 @@
             <!-- Hosts table -->
             <div id="dockerHostsStatus" class="global-test-result" role="status" style="display:none;margin-bottom:10px;"></div>
             <table>
-              <thead><tr><th>Name</th><th>Type</th><th>Endpoint</th><th>Test</th><th>Apply</th><th>Edit</th><th>Delete</th></tr></thead>
+              <thead><tr><th>Name</th><th>Type</th><th>Endpoint</th><th>Enabled</th><th>Test</th><th>Edit</th><th>Delete</th></tr></thead>
               <tbody id="dockerHostsTbody"><tr><td colspan="7">No docker hosts configured</td></tr></tbody>
             </table>
           </section>
@@ -1929,15 +2006,11 @@
                 </div>
               </div>
               <div id="jobQueueBody" style="display:none;border-top:1px solid var(--line);padding:16px 18px;">
-                <div class="form-grid">
-                  <div class="field"><label>Worker Count</label><input type="number" inputmode="numeric" id="workerCount" min="1" max="64" /></div>
-                  <div class="field-error" id="workerCountError"></div>
-                  <div class="field"><label>Queue Size</label><input type="number" inputmode="numeric" id="queueSize" min="1" max="100000" /></div>
-                  <div class="field-error" id="queueSizeError"></div>
-                  <div class="field"><label>Notification Cooldown (s)</label><input type="number" inputmode="numeric" id="notificationCooldownSeconds" min="0" max="86400" title="Minimum seconds between repeated failure notifications for the same container. 0 = always notify." /></div>
-                  <div class="field-error" id="notificationCooldownSecondsError"></div>
-                  <div class="field"><label>Startup Delay (s) <span class="hint">(0 = off)</span></label><input type="number" inputmode="numeric" id="startupDelaySeconds" min="0" max="3600" title="Seconds to wait before monitoring begins after the application starts. 0 = start immediately." /></div>
-                  <div class="field-error" id="startupDelaySecondsError"></div>
+                <div class="form-grid" style="gap:14px 24px;">
+                  <div><div class="field"><label>Worker Count</label><input type="number" inputmode="numeric" id="workerCount" min="1" max="64" /></div><div class="field-error" id="workerCountError"></div></div>
+                  <div><div class="field"><label>Queue Size</label><input type="number" inputmode="numeric" id="queueSize" min="1" max="100000" /></div><div class="field-error" id="queueSizeError"></div></div>
+                  <div><div class="field"><label>Notification Cooldown (s)</label><input type="number" inputmode="numeric" id="notificationCooldownSeconds" min="0" max="86400" title="Minimum seconds between repeated failure notifications for the same container. 0 = always notify." /></div><div class="field-error" id="notificationCooldownSecondsError"></div></div>
+                  <div><div class="field"><label>Startup Delay (s) <span class="hint">(0 = off)</span></label><input type="number" inputmode="numeric" id="startupDelaySeconds" min="0" max="3600" title="Seconds to wait before monitoring begins after the application starts. 0 = start immediately." /></div><div class="field-error" id="startupDelaySecondsError"></div></div>
                 </div>
                 <div class="actions" style="margin-top:14px;">
                   <button class="btn primary" id="saveJobQueueBtn" type="button">Save</button>
@@ -2089,6 +2162,58 @@
                     </div>
                   </div>
 
+                  <!-- Health Check mode — Docker native status or bash script -->
+                  <div class="job-filter-row" style="margin-top:14px;">
+                    <div class="field" style="grid-column:1/-1;">
+                      <label>Health Check</label>
+                      <div class="job-tab-bar">
+                        <button class="job-tab-btn active" id="jobHCTabDocker" type="button">Docker Status</button>
+                        <button class="job-tab-btn" id="jobHCTabScript" type="button">Bash Script</button>
+                      </div>
+
+                      <div id="jobHCDockerContent" class="job-tab-content active">
+                        <div class="hint" style="margin-top:6px;line-height:1.7;">Uses Docker's built-in <code style="font-size:11px;background:var(--bg);padding:1px 4px;border-radius:3px;">health: unhealthy</code> status. Requires a <code style="font-size:11px;background:var(--bg);padding:1px 4px;border-radius:3px;">HEALTHCHECK</code> instruction in the container image.</div>
+                      </div>
+
+                      <div id="jobHCScriptContent" class="job-tab-content">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;margin-top:4px;">
+                          <span style="font-size:12px;color:var(--muted);">Templates:</span>
+                          <select id="hcTemplateSelect" style="font-size:12px;padding:3px 8px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--text);" onchange="applyHCTemplate(this.value);this.value=''">
+                            <option value="">Insert example…</option>
+                            <option value="hc-http">HTTP endpoint check</option>
+                            <option value="hc-custom">Custom script</option>
+                          </select>
+                        </div>
+
+                        <div class="script-editor-wrap">
+                          <div class="script-editor-toolbar">
+                            <div class="script-editor-toolbar-left">
+                              <span class="script-lang-badge">BASH</span>
+                              <span id="hcValidationMsg" class="script-validation-msg"></span>
+                            </div>
+                            <div style="display:flex;gap:6px;">
+                              <button class="btn" id="hcDryRunBtn" type="button" style="font-size:12px;padding:5px 10px;background:#2d4157;border-color:#3a5472;color:#a0bdd4;" title="Run script with a dummy container — safe test, no real container is affected">&#9654; Dry Run</button>
+                              <button class="btn" id="hcCopyBtn" type="button" style="font-size:12px;padding:5px 10px;background:#2d4157;border-color:#3a5472;color:#a0bdd4;">Copy</button>
+                            </div>
+                          </div>
+                          <textarea id="jobHealthCheckScript" class="script-editor" spellcheck="false"
+                            placeholder="#!/bin/bash&#10;# Exit 0 = healthy, non-zero = unhealthy&#10;# $1 = container ID, $2 = container name&#10;docker exec &quot;$1&quot; curl -sf http://localhost:8080/health &gt;/dev/null 2&gt;&amp;1"></textarea>
+                        </div>
+
+                        <div id="hcDryRunResult" style="display:none;margin-top:8px;">
+                          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:4px;">Dry Run Output <span id="hcDryRunStatusBadge"></span></div>
+                          <pre id="hcDryRunOutput" style="margin:0;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:6px;font-family:monospace;font-size:11px;color:var(--text);white-space:pre-wrap;overflow-wrap:anywhere;max-height:160px;overflow-y:auto;line-height:1.5;"></pre>
+                        </div>
+
+                        <div class="hint" style="margin-top:5px;line-height:1.7;">
+                          <strong>Exit 0 = healthy</strong> (no action taken), non-zero = unhealthy (action fires).<br>
+                          Called once per matched container. <code style="font-size:11px;background:var(--bg);padding:1px 4px;border-radius:3px;">$1</code> = container ID, <code style="font-size:11px;background:var(--bg);padding:1px 4px;border-radius:3px;">$2</code> = container name. Set <code style="font-size:11px;background:var(--bg);padding:1px 4px;border-radius:3px;">DRY_RUN=1</code> to skip destructive steps during a dry run.
+                        </div>
+                        <div class="field-error" id="jobHealthCheckScriptError"></div>
+                      </div>
+                    </div>
+                  </div>
+
                   <!-- Row 1: Retry Limit — own full-width row so the toggle has room -->
                   <div class="job-filter-row" style="margin-top:14px;">
                     <div class="field" style="grid-column:1/-1;">
@@ -2115,15 +2240,20 @@
                     </div>
                   </div>
 
+                  <!-- Docker Contexts chips — none selected means all contexts -->
+                  <div class="job-notify-section" id="jobDockerHostWrap" style="margin-top:14px;">
+                    <div class="job-notify-label">
+                      Docker Contexts
+                      <span class="hint" style="text-transform:none;letter-spacing:0;">&mdash; none selected = all contexts</span>
+                    </div>
+                    <div id="jobDockerHostChips" class="notify-chips">
+                      <span class="job-notify-empty">No additional Docker contexts configured yet.</span>
+                    </div>
+                  </div>
+
                   <!-- Row 2: Timing fields -->
                   <div class="job-filter-row" style="margin-top:10px;align-items:end;">
-                    <div class="field" id="jobDockerHostWrap">
-                      <label>Docker Host <span class="hint" style="text-transform:none;letter-spacing:0;">(empty = all hosts)</span></label>
-                      <select id="jobDockerHostID" style="max-width:220px;">
-                        <option value="">All Hosts</option>
-                      </select>
-                      <div class="field-error"></div>
-                    </div>
+                    <div style="display:none;" id="jobDockerHostSelectLegacy"></div>
                     <div class="field">
                       <label>Monitor Interval (s) <span style="color:var(--danger)">*</span></label>
                       <input type="number" id="jobMonitorInterval" min="5" max="3600" required style="max-width:120px;" />
@@ -2152,8 +2282,8 @@
                   </div>
 
                   <div class="job-toggle-row" style="margin-top:14px;">
-                    <div class="field"><label>Enabled</label><select id="jobEnabled"><option value="true">true</option><option value="false">false</option></select></div>
-                    <div class="field"><label>Start Exited</label><select id="jobStartExited"><option value="false">false</option><option value="true">true</option></select></div>
+                    <div class="field"><label style="display:flex;align-items:center;gap:8px;font-weight:normal;text-transform:none;letter-spacing:0;cursor:pointer;font-size:13px;"><input type="checkbox" id="jobEnabled" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" /> Enabled</label></div>
+                    <div class="field"><label style="display:flex;align-items:center;gap:8px;font-weight:normal;text-transform:none;letter-spacing:0;cursor:pointer;font-size:13px;"><input type="checkbox" id="jobStartExited" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" /> Start Exited</label></div>
                   </div>
 
                   <div class="actions" style="margin-top:14px;">
@@ -2186,6 +2316,9 @@
                   <option value="none">none</option>
                   <option value="run-script">run-script</option>
                 </select>
+                <select id="jobFilterContext" style="background:var(--input-bg);border:1px solid var(--line);border-radius:10px;color:var(--text);padding:9px;">
+                  <option value="">all contexts</option>
+                </select>
               </div>
 
               <table>
@@ -2204,10 +2337,6 @@
               <div><div class="field setting-row"><label>HTTP Max Idle Conns</label><input type="number" inputmode="numeric" id="httpMaxIdleConns" min="1" max="1000" /></div><div class="field-error" id="httpMaxIdleConnsError"></div></div>
               <div><div class="field setting-row"><label>HTTP Max Idle Conns / Host</label><input type="number" inputmode="numeric" id="httpMaxIdleConnsPerHost" min="1" max="1000" /></div><div class="field-error" id="httpMaxIdleConnsPerHostError"></div></div>
               <div><div class="field setting-row"><label>HTTP Idle Conn Timeout (s)</label><input type="number" inputmode="numeric" id="httpIdleConnTimeoutSeconds" min="1" max="3600" /></div><div class="field-error" id="httpIdleConnTimeoutSecondsError"></div></div>
-              <div><div class="field setting-row"><label>Docker Ping Timeout (s)</label><input type="number" inputmode="numeric" id="dockerPingTimeoutSeconds" min="1" max="3600" /></div><div class="field-error" id="dockerPingTimeoutSecondsError"></div></div>
-              <div><div class="field setting-row"><label>Docker Client Retry Count</label><input type="number" inputmode="numeric" id="dockerClientRetryCount" min="1" /></div><div class="field-error" id="dockerClientRetryCountError"></div></div>
-              <div><div class="field setting-row"><label>Docker Client Retry Delay (s)</label><input type="number" inputmode="numeric" id="dockerClientRetryDelaySeconds" min="1" max="3600" /></div><div class="field-error" id="dockerClientRetryDelaySecondsError"></div></div>
-              <div><div class="field setting-row"><label>Notification Rate (/s)</label><input type="number" inputmode="numeric" id="notificationRatePerSec" min="1" max="1000" /></div><div class="field-error" id="notificationRatePerSecError"></div></div>
             </div>
           </section>
 
@@ -2252,7 +2381,7 @@
           </section>
 
 
-          <div class="actions" style="margin-top:16px;">
+          <div class="actions" style="margin-top:auto;padding-top:16px;">
             <button class="btn primary" id="saveSettingsBtn" type="button">Save Settings</button>
           </div>
           <div id="settingsStatus" class="global-test-result" role="status" style="display:none;margin-top:10px;">
@@ -2362,7 +2491,6 @@
       return NOTIFY_PROVIDER_TEMPLATES[provider] || NOTIFY_PROVIDER_TEMPLATES.default;
     }
     let dockerHosts = [];
-    let selectedDockerHostId = '';
     let editingDockerHostId = null;
     let selectedDockerConnType = 'socket';
     let _hiddenSettings = {};
@@ -2383,6 +2511,9 @@
     let pendingDashLayout = currentDashLayout; // tracks picker selection before Save
     let currentJobs = [];
     let jobSelectedNotifications = new Set();
+    let dockerHostNotifSelected = new Set();
+    let jobSelectedDockerHosts = new Set();
+    let currentJobHealthCheckMode = 'docker';
     let bootNotifySelectedProfiles = new Set();
     let jobsPage = 1;
     const jobsPageSize = 15;
@@ -2391,8 +2522,7 @@
     const settingsFields = [
       'workerCount', 'queueSize',
       'httpClientTimeoutSeconds', 'httpMaxIdleConns', 'httpMaxIdleConnsPerHost', 'httpIdleConnTimeoutSeconds',
-      'dockerPingTimeoutSeconds', 'dockerClientRetryCount', 'dockerClientRetryDelaySeconds',
-      'notificationRatePerSec', 'action', 'externalHostname',
+      'action', 'externalHostname',
       'primaryBaseURL', 'displayTimezone', 'serverTimezone',
       'logLevel', 'logRetentionDays'
     ];
@@ -2528,6 +2658,38 @@
     // Template registry — increment version whenever a template changes meaningfully.
     // The version is embedded in each script as  # chowkidar-template: <key>@<version>
     // so we can detect jobs using an outdated copy and offer an upgrade.
+    const HC_TEMPLATES = {
+      'hc-http': `#!/bin/bash
+# chowkidar-template: hc-http@1
+# Health check: HTTP endpoint — exit 0 = healthy, non-zero = unhealthy
+# $1 = container ID, $2 = container name
+set -e
+
+if [ "$DRY_RUN" = "1" ]; then
+  echo "[DRY RUN] Would check HTTP health of $2 ($1)"
+  exit 0
+fi
+
+# Adjust port and path to match your service
+docker exec "$1" curl -sf http://localhost:8080/health >/dev/null 2>&1`,
+
+      'hc-custom': `#!/bin/bash
+# Health check script — exit 0 = healthy, non-zero = unhealthy
+# $1 = container ID, $2 = container name
+set -e
+
+if [ "$DRY_RUN" = "1" ]; then
+  echo "[DRY RUN] Would check health of $2 ($1)"
+  exit 0
+fi
+
+# Add your health check command here
+# Examples:
+#   docker exec "$1" curl -sf http://localhost:8080/health >/dev/null 2>&1
+#   docker top "$1" | grep -q myprocess
+#   docker exec "$1" /usr/local/bin/healthcheck.sh`,
+    };
+
     const TEMPLATE_META = {
       'restart':         { version: 2, label: 'Docker restart' },
       'restart-wait':    { version: 2, label: 'Restart + wait for healthy' },
@@ -2854,6 +3016,143 @@ echo "Restart complete"`,
             btn.querySelector('.chip-dot').style.background = '';
           } else {
             jobSelectedNotifications.add(id);
+            btn.classList.add('selected');
+          }
+        });
+      });
+    }
+
+    function renderJobDockerHostChips(selectedIDs) {
+      jobSelectedDockerHosts = new Set((selectedIDs || []).filter(Boolean));
+      const host = document.getElementById('jobDockerHostChips');
+      const wrap = document.getElementById('jobDockerHostWrap');
+      if (!host) return;
+      const all = [
+        { id: 'local', name: 'Local Docker', sub: 'built-in' },
+        ...(dockerHosts || []).filter(h => !h.built_in).map(h => ({ id: h.id, name: h.name, sub: h.type || '' })),
+      ];
+      if (all.length <= 1) {
+        if (wrap) wrap.style.display = 'none';
+        return;
+      }
+      if (wrap) wrap.style.display = '';
+      host.innerHTML = all.map(h => {
+        const sel = jobSelectedDockerHosts.has(h.id) ? ' selected' : '';
+        return `<button type="button" class="notify-chip${sel}" data-host-chip-id="${escapeHtml(h.id)}">
+          <span class="chip-dot"></span>
+          <span class="chip-name">${escapeHtml(h.name)}</span>
+          <span class="chip-provider">${escapeHtml(h.sub)}</span>
+        </button>`;
+      }).join('');
+      host.querySelectorAll('button[data-host-chip-id]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-host-chip-id');
+          if (jobSelectedDockerHosts.has(id)) {
+            jobSelectedDockerHosts.delete(id);
+            btn.classList.remove('selected');
+          } else {
+            jobSelectedDockerHosts.add(id);
+            btn.classList.add('selected');
+          }
+        });
+      });
+    }
+
+    function setJobHealthCheckTab(tab) {
+      currentJobHealthCheckMode = tab;
+      const isScript = tab === 'script';
+      document.getElementById('jobHCTabDocker').classList.toggle('active', !isScript);
+      document.getElementById('jobHCTabScript').classList.toggle('active', isScript);
+      document.getElementById('jobHCDockerContent').classList.toggle('active', !isScript);
+      document.getElementById('jobHCScriptContent').classList.toggle('active', isScript);
+      if (isScript) updateHCValidation();
+    }
+
+    function updateHCValidation() {
+      const script = document.getElementById('jobHealthCheckScript')?.value || '';
+      const msgEl = document.getElementById('hcValidationMsg');
+      if (!msgEl) return;
+      if (!script.trim()) { msgEl.textContent = ''; msgEl.className = 'script-validation-msg'; return; }
+      const result = validateBashScript(script);
+      msgEl.textContent = result.msg;
+      msgEl.className = `script-validation-msg ${result.level}`;
+    }
+
+    function applyHCTemplate(key) {
+      if (!key || !HC_TEMPLATES[key]) return;
+      const ta = document.getElementById('jobHealthCheckScript');
+      if (ta) { ta.value = HC_TEMPLATES[key]; ta.dispatchEvent(new Event('input')); }
+    }
+
+    async function dryRunHCScript() {
+      const script = document.getElementById('jobHealthCheckScript')?.value?.trim();
+      if (!script) { await showAlert('Write or select a template script before running a dry run.', 'No script'); return; }
+      const btn = document.getElementById('hcDryRunBtn');
+      const resultWrap = document.getElementById('hcDryRunResult');
+      const outputEl = document.getElementById('hcDryRunOutput');
+      const badge = document.getElementById('hcDryRunStatusBadge');
+      btn.disabled = true; btn.textContent = 'Running…';
+      resultWrap.style.display = '';
+      outputEl.textContent = '…';
+      badge.textContent = '';
+      try {
+        const res = await fetch('/api/scripts/dry-run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ script }),
+        });
+        const data = await res.json();
+        outputEl.textContent = data.output || '(no output)';
+        badge.textContent = data.error ? '✗ failed' : '✓ ok';
+        badge.style.color = data.error ? 'var(--danger)' : 'var(--ok)';
+        if (data.error) outputEl.textContent += '\n\n' + data.error;
+      } catch (e) {
+        outputEl.textContent = 'Request failed: ' + e.message;
+        badge.textContent = '✗ error'; badge.style.color = 'var(--danger)';
+      } finally {
+        btn.disabled = false; btn.textContent = '▶ Dry Run';
+      }
+    }
+
+    function populateContextFilter() {
+      const sel = document.getElementById('jobFilterContext');
+      if (!sel) return;
+      const prev = sel.value;
+      sel.innerHTML = '<option value="">all contexts</option><option value="local">Local Docker</option>';
+      (dockerHosts || []).filter(h => !h.built_in).forEach(h => {
+        const opt = document.createElement('option');
+        opt.value = h.id;
+        opt.textContent = h.name;
+        sel.appendChild(opt);
+      });
+      if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
+    }
+
+    function renderDockerHostNotifyChips(selectedIDs) {
+      dockerHostNotifSelected = new Set((selectedIDs || []).filter(Boolean));
+      const host = document.getElementById('dockerHostNotifyChips');
+      if (!host) return;
+      const active = notificationProfiles.filter((p) => p.enabled);
+      if (!active.length) {
+        host.innerHTML = '<span class="job-notify-empty">No enabled notification profiles yet.</span>';
+        return;
+      }
+      host.innerHTML = active.map((p) => {
+        const sel = dockerHostNotifSelected.has(p.id) ? ' selected' : '';
+        return `<button type="button" class="notify-chip${sel}" data-docker-notif-chip-id="${escapeHtml(p.id)}">
+          <span class="chip-dot"></span>
+          <span class="chip-name">${escapeHtml(p.name)}</span>
+          <span class="chip-provider">${escapeHtml(p.provider || '')}</span>
+        </button>`;
+      }).join('');
+      host.querySelectorAll('button[data-docker-notif-chip-id]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-docker-notif-chip-id');
+          if (dockerHostNotifSelected.has(id)) {
+            dockerHostNotifSelected.delete(id);
+            btn.classList.remove('selected');
+          } else {
+            dockerHostNotifSelected.add(id);
             btn.classList.add('selected');
           }
         });
@@ -4192,24 +4491,39 @@ echo "Restart complete"`,
 
         if (dockerHosts.length > 1) {
           // Multi-host: show N/M connected + per-host row
-          const connectedCount = dockerHosts.filter(h => h.connected).length;
-          const allOk = connectedCount === dockerHosts.length;
+          const enabledHosts   = dockerHosts.filter(h => h.enabled !== false);
+          const disabledCount  = dockerHosts.length - enabledHosts.length;
+          const connectedCount = enabledHosts.filter(h => h.connected).length;
+          const allOk = connectedCount === enabledHosts.length;
           const anyOk = connectedCount > 0;
           dockerCard.className = `db-stat ${allOk ? 'ok' : anyOk ? 'warn' : 'danger'}`;
           document.getElementById('statDockerVal').style.color = `var(--${allOk ? 'ok' : anyOk ? 'warn' : 'danger'})`;
-          document.getElementById('statDockerVal').textContent = `${connectedCount}/${dockerHosts.length}`;
+          document.getElementById('statDockerVal').textContent = `${connectedCount}/${enabledHosts.length}`;
           dockerLblEl.textContent = 'Docker Hosts';
           document.getElementById('statDockerSub').textContent = '';
-          dockerHostsEl.innerHTML = dockerHosts.map(h => {
-            const col = h.connected ? 'var(--ok)' : 'var(--danger)';
-            const label = h.connected ? 'Connected' : 'Offline';
-            return `<div style="display:flex;align-items:center;gap:5px;font-size:11px;line-height:1.3;">
-              <span style="width:6px;height:6px;border-radius:50%;background:${col};flex-shrink:0;"></span>
-              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;">${escapeHtml(h.name)}</span>
-              <span style="color:${col};font-size:10px;flex-shrink:0;">${label}</span>
-            </div>`;
-          }).join('');
-          document.getElementById('diagDetails').textContent = `${connectedCount}/${dockerHosts.length} Docker hosts connected`;
+          dockerHostsEl.style.maxHeight = '';
+          dockerHostsEl.style.overflowY = '';
+          if (dockerHosts.length <= 5) {
+            dockerHostsEl.innerHTML = dockerHosts.map(h => {
+              const disabled = h.enabled === false;
+              const col   = disabled ? 'var(--muted)' : h.connected ? 'var(--ok)' : 'var(--danger)';
+              const label = disabled ? 'Disabled' : h.connected ? 'Connected' : 'Offline';
+              return `<div style="display:flex;align-items:center;gap:5px;font-size:11px;line-height:1.3;${disabled ? 'opacity:0.5;' : ''}">
+                <span style="width:6px;height:6px;border-radius:50%;background:${col};flex-shrink:0;"></span>
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;">${escapeHtml(h.name)}</span>
+                <span style="color:${col};font-size:10px;flex-shrink:0;">${label}</span>
+              </div>`;
+            }).join('');
+          } else {
+            const offlineCount = enabledHosts.filter(h => !h.connected).length;
+            const col = offlineCount > 0 ? 'var(--danger)' : 'var(--ok)';
+            let summary = offlineCount > 0
+              ? `${connectedCount}/${enabledHosts.length} healthy &mdash; ${offlineCount} offline`
+              : `${connectedCount}/${enabledHosts.length} healthy`;
+            if (disabledCount > 0) summary += ` &middot; ${disabledCount} disabled`;
+            dockerHostsEl.innerHTML = `<div style="font-size:11px;color:${col};">${summary}</div>`;
+          }
+          document.getElementById('diagDetails').textContent = `${connectedCount}/${enabledHosts.length} Docker hosts connected`;
         } else {
           // Single host: current compact display
           let dockerLabel, dockerSub;
@@ -4582,12 +4896,8 @@ echo "Restart complete"`,
       document.getElementById('httpMaxIdleConns').value = s.httpMaxIdleConns ?? 20;
       document.getElementById('httpMaxIdleConnsPerHost').value = s.httpMaxIdleConnsPerHost ?? 10;
       document.getElementById('httpIdleConnTimeoutSeconds').value = s.httpIdleConnTimeoutSeconds ?? 90;
-      document.getElementById('dockerPingTimeoutSeconds').value = s.dockerPingTimeoutSeconds ?? 5;
-      document.getElementById('dockerClientRetryCount').value = s.dockerClientRetryCount ?? 1;
-      document.getElementById('dockerClientRetryDelaySeconds').value = s.dockerClientRetryDelaySeconds ?? 2;
       document.getElementById('notificationCooldownSeconds').value = s.notificationCooldownSeconds ?? 3600;
       document.getElementById('startupDelaySeconds').value = s.startupDelaySeconds ?? 0;
-      document.getElementById('notificationRatePerSec').value = s.notificationRatePerSec ?? 5;
       document.getElementById('action').value = s.action ?? 'restart';
       document.getElementById('externalHostname').value = s.externalHostname ?? '';
       document.getElementById('primaryBaseURL').value = s.primaryBaseURL ?? '';
@@ -4640,12 +4950,8 @@ echo "Restart complete"`,
       const httpMaxIdleConns = Number(document.getElementById('httpMaxIdleConns').value || 20);
       const httpMaxIdleConnsPerHost = Number(document.getElementById('httpMaxIdleConnsPerHost').value || 10);
       const httpIdleConnTimeoutSeconds = Number(document.getElementById('httpIdleConnTimeoutSeconds').value || 90);
-      const dockerPingTimeoutSeconds = Number(document.getElementById('dockerPingTimeoutSeconds').value || 5);
-      const dockerClientRetryCount = Number(document.getElementById('dockerClientRetryCount').value || 1);
-      const dockerClientRetryDelaySeconds = Number(document.getElementById('dockerClientRetryDelaySeconds').value || 2);
       const notificationCooldownSeconds = Number(document.getElementById('notificationCooldownSeconds').value || 0);
       const startupDelaySeconds = Number(document.getElementById('startupDelaySeconds').value || 0);
-      const notificationRatePerSec = Number(document.getElementById('notificationRatePerSec').value || 5);
       const action = document.getElementById('action').value;
       const externalHostname = document.getElementById('externalHostname').value.trim();
       const logLevel = document.getElementById('logLevel').value;
@@ -4659,12 +4965,8 @@ echo "Restart complete"`,
       if (httpMaxIdleConns < 1 || httpMaxIdleConns > 1000) { setFieldError('httpMaxIdleConns', 'Use 1-1000.'); hasErrors = true; }
       if (httpMaxIdleConnsPerHost < 1 || httpMaxIdleConnsPerHost > 1000) { setFieldError('httpMaxIdleConnsPerHost', 'Use 1-1000.'); hasErrors = true; }
       if (httpIdleConnTimeoutSeconds < 1 || httpIdleConnTimeoutSeconds > 3600) { setFieldError('httpIdleConnTimeoutSeconds', 'Use 1-3600 seconds.'); hasErrors = true; }
-      if (dockerPingTimeoutSeconds < 1 || dockerPingTimeoutSeconds > 3600) { setFieldError('dockerPingTimeoutSeconds', 'Use 1-3600 seconds.'); hasErrors = true; }
-      if (dockerClientRetryCount < 1) { setFieldError('dockerClientRetryCount', 'Must be at least 1.'); hasErrors = true; }
-      if (dockerClientRetryDelaySeconds < 1 || dockerClientRetryDelaySeconds > 3600) { setFieldError('dockerClientRetryDelaySeconds', 'Use 1-3600 seconds.'); hasErrors = true; }
       if (notificationCooldownSeconds < 0 || notificationCooldownSeconds > 86400) { setFieldError('notificationCooldownSeconds', 'Use 0-86400 seconds (0 = always notify).'); hasErrors = true; }
       if (startupDelaySeconds < 0 || startupDelaySeconds > 3600) { setFieldError('startupDelaySeconds', 'Use 0-3600 seconds (0 = start immediately).'); hasErrors = true; }
-      if (notificationRatePerSec < 1 || notificationRatePerSec > 1000) { setFieldError('notificationRatePerSec', 'Use 1-1000 per second.'); hasErrors = true; }
       if (logToFile && (logRetentionDays < 1 || logRetentionDays > 365)) { setFieldError('logRetentionDays', 'Use 1-365 days.'); hasErrors = true; }
       if (hasErrors) { showSaveResult('settingsStatus', false, 'Please fix highlighted settings fields.', ''); return; }
 
@@ -4679,12 +4981,8 @@ echo "Restart complete"`,
           httpMaxIdleConns,
           httpMaxIdleConnsPerHost,
           httpIdleConnTimeoutSeconds,
-          dockerPingTimeoutSeconds,
-          dockerClientRetryCount,
-          dockerClientRetryDelaySeconds,
           notificationCooldownSeconds,
           startupDelaySeconds,
-          notificationRatePerSec,
           action,
           externalHostname,
           bootNotification: document.getElementById('bootNotification').checked,
@@ -4938,11 +5236,13 @@ echo "Restart complete"`,
       const search = document.getElementById('jobSearch').value.trim();
       const enabled = document.getElementById('jobFilterEnabled').value;
       const action = document.getElementById('jobFilterAction').value;
+      const hostID = document.getElementById('jobFilterContext')?.value || '';
       const offset = (jobsPage - 1) * jobsPageSize;
       const query = new URLSearchParams({ limit: String(jobsPageSize), offset: String(offset) });
       if (search) query.set('q', search);
       if (enabled) query.set('enabled', enabled);
       if (action) query.set('action', action);
+      if (hostID) query.set('hostID', hostID);
       const tbody = document.getElementById('jobsTbody');
       let res, data;
       try {
@@ -4956,7 +5256,7 @@ echo "Restart complete"`,
       jobsTotalCount = data.total ?? currentJobs.length;
       tbody.innerHTML = '';
       if (!currentJobs.length) {
-        const hasFilters = search || enabled || action;
+        const hasFilters = search || enabled || action || hostID;
         tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--muted);">${hasFilters ? 'No jobs match the current filters' : 'No jobs configured yet'}</td></tr>`;
         renderJobsPagination();
         return;
@@ -5006,9 +5306,17 @@ echo "Restart complete"`,
           // Show migration notice if the old job had more than one filter set
           const multiFilter = [savedName, savedLabel, savedEnv].filter(Boolean).length > 1;
           document.getElementById('jobFilterMigrationNotice').style.display = multiFilter ? '' : 'none';
-          document.getElementById('jobEnabled').value = String(!!job.enabled);
-          document.getElementById('jobStartExited').value = String(!!job.startExited);
-          populateJobDockerHostSelect(job.dockerHostID || '');
+          document.getElementById('jobEnabled').checked = !!job.enabled;
+          document.getElementById('jobStartExited').checked = !!job.startExited;
+          renderJobDockerHostChips(Array.isArray(job.dockerHostIDs) ? job.dockerHostIDs : (job.dockerHostID ? [job.dockerHostID] : []));
+          if (job.healthCheckScript) {
+            document.getElementById('jobHealthCheckScript').value = job.healthCheckScript;
+            setJobHealthCheckTab('script');
+          } else {
+            document.getElementById('jobHealthCheckScript').value = '';
+            setJobHealthCheckTab('docker');
+          }
+          document.getElementById('hcDryRunResult').style.display = 'none';
           const hasLimit = job.retryCount > 0 || job.maxMonitoringDurationMinutes > 0;
           document.getElementById('jobRetryLimitEnabled').checked = hasLimit;
           if (job.maxMonitoringDurationMinutes > 0) {
@@ -5090,24 +5398,8 @@ echo "Restart complete"`,
       if (nextBtn) nextBtn.addEventListener('click', async () => { if (jobsPage < totalPages) { jobsPage += 1; await loadJobs(); } });
     }
 
-    function populateJobDockerHostSelect(selectedID) {
-      const sel = document.getElementById('jobDockerHostID');
-      if (!sel) return;
-      // Collect all non-built-in hosts from the loaded dockerHosts array.
-      const extra = (dockerHosts || []).filter(h => !h.built_in);
-      const wrap = document.getElementById('jobDockerHostWrap');
-      if (wrap) wrap.style.display = extra.length === 0 ? 'none' : '';
-      // Rebuild options: always start with "All Hosts".
-      sel.innerHTML = '<option value="">All Hosts</option>';
-      // Add built-in host
-      sel.innerHTML += '<option value="local">Local Docker (built-in)</option>';
-      extra.forEach(h => {
-        const opt = document.createElement('option');
-        opt.value = h.id;
-        opt.textContent = h.name;
-        sel.appendChild(opt);
-      });
-      sel.value = selectedID || '';
+    function populateJobDockerHostSelect(selectedIDs) {
+      renderJobDockerHostChips(selectedIDs ? (Array.isArray(selectedIDs) ? selectedIDs : [selectedIDs].filter(Boolean)) : []);
     }
 
     let currentJobFilterType = 'name';
@@ -5137,9 +5429,12 @@ echo "Restart complete"`,
       document.getElementById('jobEnvFilter').value = '';
       setJobFilterType('name');
       document.getElementById('jobFilterMigrationNotice').style.display = 'none';
-      document.getElementById('jobEnabled').value = 'true';
-      document.getElementById('jobStartExited').value = 'false';
-      populateJobDockerHostSelect('');
+      document.getElementById('jobEnabled').checked = true;
+      document.getElementById('jobStartExited').checked = false;
+      renderJobDockerHostChips([]);
+      setJobHealthCheckTab('docker');
+      document.getElementById('jobHealthCheckScript').value = '';
+      document.getElementById('hcDryRunResult').style.display = 'none';
       document.getElementById('jobRetryLimitEnabled').checked = false;
       document.getElementById('jobRetryModeCount').checked = true;
       document.getElementById('jobRetryCount').value = '';
@@ -5217,14 +5512,18 @@ echo "Restart complete"`,
 
       if (hasErrors) { statusEl.textContent = 'Please fix highlighted fields.'; return; }
 
+      const healthCheckScript = currentJobHealthCheckMode === 'script'
+        ? (document.getElementById('jobHealthCheckScript').value.trim() || '')
+        : '';
       const payload = {
         name, group, action, script,
         notifications: Array.from(jobSelectedNotifications),
         containerNameFilter, containerLabelFilter, containerEnvVarFilter,
-        enabled: toBool(document.getElementById('jobEnabled').value),
-        startExited: toBool(document.getElementById('jobStartExited').value),
+        enabled: document.getElementById('jobEnabled').checked,
+        startExited: document.getElementById('jobStartExited').checked,
         retryCount, maxMonitoringDurationMinutes, monitorIntervalSeconds, actionTimeoutSeconds, postActionWaitSeconds,
-        dockerHostID: document.getElementById('jobDockerHostID').value || '',
+        dockerHostIDs: Array.from(jobSelectedDockerHosts),
+        healthCheckScript,
       };
 
       const saveBtn = document.getElementById('saveJobBtn');
@@ -5862,7 +6161,6 @@ echo "Restart complete"`,
       card.classList.toggle('editing', mode === 'edit');
       document.getElementById('dockerHostFormTitle').textContent = mode === 'edit' ? 'Edit Docker Host' : 'New Docker Host';
       document.getElementById('saveDockerHostBtn').textContent = mode === 'edit' ? 'Save Changes' : 'Save Host';
-      document.getElementById('applyDockerHostBtn').style.display = mode === 'edit' ? 'inline-block' : 'none';
       document.getElementById('deleteDockerHostBtn').style.display = mode === 'edit' ? 'inline-block' : 'none';
       panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
@@ -5914,6 +6212,17 @@ echo "Restart complete"`,
       document.getElementById('dockerTLSCert').value = '';
       document.getElementById('dockerTLSKey').value = '';
       document.getElementById('dockerTLSSkipVerify').checked = false;
+      document.getElementById('dockerHostEnabled').checked = true;
+      renderDockerHostNotifyChips([]);
+      document.getElementById('dockerHostDownTemplate').value = '';
+      document.getElementById('dockerHostRecoveryTemplate').value = '';
+      document.getElementById('dockerHostMsgBody').style.display = 'none';
+      document.getElementById('dockerHostMsgChevron').style.transform = '';
+      document.getElementById('dockerHostMonitorInterval').value = '';
+      document.getElementById('dockerHostPingTimeout').value = '';
+      document.getElementById('dockerHostConfirmScans').value = '';
+      document.getElementById('dockerHostAdvBody').style.display = 'none';
+      document.getElementById('dockerHostAdvChevron').style.transform = '';
       renderDockerConnTypePicker();
       closeDockerHostForm();
     }
@@ -5922,8 +6231,10 @@ echo "Restart complete"`,
       const res = await fetch('/api/docker-hosts');
       const data = await res.json();
       dockerHosts = data.profiles || [];
-      selectedDockerHostId = data.activeHostID || '';
       renderDockerHosts();
+      populateContextFilter();
+      renderJobDockerHostChips([]);
+      renderDockerHostNotifyChips([]);
     }
 
     async function persistDockerHosts(statusMessage) {
@@ -5931,7 +6242,7 @@ echo "Restart complete"`,
       const res = await fetch('/api/docker-hosts', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ profiles: dockerHosts, activeHostID: selectedDockerHostId })
+        body: JSON.stringify({ profiles: dockerHosts })
       });
       if (!res.ok) {
         const err = await res.json();
@@ -5940,9 +6251,11 @@ echo "Restart complete"`,
       }
       const out = await res.json();
       dockerHosts = out.profiles || [];
-      selectedDockerHostId = out.activeHostID || selectedDockerHostId;
       status.textContent = statusMessage;
       renderDockerHosts();
+      populateContextFilter();
+      renderJobDockerHostChips([]);
+      renderDockerHostNotifyChips([]);
     }
 
     function renderDockerHosts() {
@@ -5950,24 +6263,26 @@ echo "Restart complete"`,
       tbody.innerHTML = '';
       const userHosts = dockerHosts.filter((h) => !h.built_in);
       if (!dockerHosts.length) {
-        tbody.innerHTML = '<tr><td colspan="7">No docker hosts configured</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);">No docker hosts configured</td></tr>';
         return;
       }
       dockerHosts.forEach((host) => {
         const tr = document.createElement('tr');
-        const isActive = host.id === selectedDockerHostId;
         const typeLabel = host.type;
-        const activePill = isActive ? ' <span class="pill" style="font-size:10px;">active</span>' : '';
+        const isDisabled = host.enabled === false;
         const builtInBadge = host.built_in ? ' <span class="default-badge" style="background:#eef2f8;color:#5f6f82;border-color:#c8d6e8;">HOST</span>' : '';
+        const enabledPill = host.built_in
+          ? '<span class="pill">active</span>'
+          : (isDisabled ? '<span class="pill fail">false</span>' : '<span class="pill">true</span>');
         const testBtn = `<button class="btn" style="font-size:12px;padding:5px 10px;" data-host-test-id="${escapeHtml(host.id)}" data-host-test-type="${escapeHtml(host.type)}" data-host-test-endpoint="${escapeHtml(host.endpoint)}">Test</button>`;
-        const applyBtn = host.built_in ? '<span style="color:var(--muted);font-size:12px;">—</span>' : `<button class="btn" style="font-size:12px;padding:5px 10px;" data-host-apply-id="${escapeHtml(host.id)}">Apply</button>`;
-        const editBtn  = host.built_in ? '<span style="color:var(--muted);font-size:12px;">—</span>' : `<button class="btn" style="font-size:12px;padding:5px 10px;" data-host-edit-id="${escapeHtml(host.id)}">Edit</button>`;
-        const delBtn   = host.built_in ? '<span style="color:var(--muted);font-size:12px;">—</span>' : `<button class="btn warn" style="font-size:12px;padding:5px 10px;" data-host-delete-id="${escapeHtml(host.id)}">Delete</button>`;
-        tr.innerHTML = `<td><strong>${escapeHtml(host.name)}</strong>${builtInBadge}${activePill}</td>
+        const editBtn = host.built_in ? '<span style="color:var(--muted);font-size:12px;">—</span>' : `<button class="btn" style="font-size:12px;padding:5px 10px;" data-host-edit-id="${escapeHtml(host.id)}">Edit</button>`;
+        const delBtn  = host.built_in ? '<span style="color:var(--muted);font-size:12px;">—</span>' : `<button class="btn warn" style="font-size:12px;padding:5px 10px;" data-host-delete-id="${escapeHtml(host.id)}">Delete</button>`;
+        if (isDisabled) tr.style.opacity = '0.55';
+        tr.innerHTML = `<td><strong>${escapeHtml(host.name)}</strong>${builtInBadge}</td>
           <td>${escapeHtml(typeLabel)}</td>
           <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--muted);">${escapeHtml(host.endpoint)}</td>
+          <td>${enabledPill}</td>
           <td>${testBtn}</td>
-          <td>${applyBtn}</td>
           <td>${editBtn}</td>
           <td>${delBtn}</td>`;
         tbody.appendChild(tr);
@@ -5989,9 +6304,6 @@ echo "Restart complete"`,
           }
         });
       });
-      tbody.querySelectorAll('button[data-host-apply-id]').forEach((btn) => {
-        btn.addEventListener('click', () => applyDockerHost(btn.getAttribute('data-host-apply-id')));
-      });
       tbody.querySelectorAll('button[data-host-edit-id]').forEach((btn) => {
         btn.addEventListener('click', () => {
           const id = btn.getAttribute('data-host-edit-id');
@@ -6004,6 +6316,13 @@ echo "Restart complete"`,
           document.getElementById('dockerTLSCert').value = host.tls_cert || '';
           document.getElementById('dockerTLSKey').value = host.tls_key || '';
           document.getElementById('dockerTLSSkipVerify').checked = host.tls_skip_verify || false;
+          document.getElementById('dockerHostEnabled').checked = host.enabled !== false;
+          renderDockerHostNotifyChips(Array.isArray(host.notifications) ? host.notifications : []);
+          document.getElementById('dockerHostDownTemplate').value = host.downTemplate || '';
+          document.getElementById('dockerHostRecoveryTemplate').value = host.recoveryTemplate || '';
+          document.getElementById('dockerHostMonitorInterval').value = host.monitorIntervalSeconds > 0 ? String(host.monitorIntervalSeconds) : '';
+          document.getElementById('dockerHostPingTimeout').value = host.pingTimeoutSeconds > 0 ? String(host.pingTimeoutSeconds) : '';
+          document.getElementById('dockerHostConfirmScans').value = host.offlineConfirmSeconds > 0 ? String(host.offlineConfirmSeconds) : '';
           selectedDockerConnType = (host.type === 'socket') ? 'socket' : 'tcp';
           renderDockerConnTypePicker();
           document.getElementById('dockerHostStatus').textContent = '';
@@ -6015,7 +6334,6 @@ echo "Restart complete"`,
           const id = btn.getAttribute('data-host-delete-id');
           dockerHosts = dockerHosts.filter((h) => h.id !== id);
           if (editingDockerHostId === id) resetDockerHostForm();
-          if (selectedDockerHostId === id) selectedDockerHostId = '';
           await persistDockerHosts('Docker host deleted.');
         });
       });
@@ -6104,10 +6422,19 @@ echo "Restart complete"`,
         tls_key:         tls.tlsKey || undefined,
         tls_skip_verify: tls.tlsSkipVerify || undefined,
       };
+      const enabled = document.getElementById('dockerHostEnabled').checked;
+      const notifications = Array.from(dockerHostNotifSelected);
+      const downTemplate = document.getElementById('dockerHostDownTemplate').value.trim();
+      const recoveryTemplate = document.getElementById('dockerHostRecoveryTemplate').value.trim();
+      const monitorIntervalSeconds = parseInt(document.getElementById('dockerHostMonitorInterval').value, 10) || 0;
+      const pingTimeoutSeconds = parseInt(document.getElementById('dockerHostPingTimeout').value, 10) || 0;
+      // Default 1800s — empty field means "use default", so persist 1800 so YAML always has the value.
+      const offlineConfirmSeconds = parseInt(document.getElementById('dockerHostConfirmScans').value, 10) || 1800;
+      const hostMeta = { enabled, notifications, downTemplate, recoveryTemplate, monitorIntervalSeconds, pingTimeoutSeconds, offlineConfirmSeconds };
       if (editingDockerHostId) {
-        dockerHosts = dockerHosts.map((h) => h.id !== editingDockerHostId ? h : { ...h, name, type, endpoint, ...tlsFields });
+        dockerHosts = dockerHosts.map((h) => h.id !== editingDockerHostId ? h : { ...h, name, type, endpoint, ...hostMeta, ...tlsFields });
       } else {
-        dockerHosts.push({ id: `docker-host-${Date.now()}`, name, type, endpoint, ...tlsFields, enabled: true });
+        dockerHosts.push({ id: `docker-host-${Date.now()}`, name, type, endpoint, ...hostMeta, ...tlsFields });
       }
       await persistDockerHosts('Docker host saved.');
       resetDockerHostForm();
@@ -6135,14 +6462,6 @@ echo "Restart complete"`,
         btn.disabled = false;
         btn.textContent = 'Test Connection';
       }
-    }
-
-    function applyDockerHost(hostId) {
-      const status = document.getElementById('dockerHostStatus');
-      const host = dockerHosts.find((h) => h.id === hostId);
-      if (!host) { status.textContent = 'Host not found.'; return; }
-      selectedDockerHostId = hostId;
-      persistDockerHosts(host.type === 'socket' ? 'Socket applied.' : 'TCP host selected as active.');
     }
 
     function bindEvents() {
@@ -6253,6 +6572,15 @@ echo "Restart complete"`,
       document.getElementById('cancelJobEditBtn').addEventListener('click', () => resetJobForm());
       document.getElementById('jobTabStandard').addEventListener('click', () => setJobActionTab('standard'));
       document.getElementById('jobTabScript').addEventListener('click', () => setJobActionTab('script'));
+      document.getElementById('jobHCTabDocker').addEventListener('click', () => setJobHealthCheckTab('docker'));
+      document.getElementById('jobHCTabScript').addEventListener('click', () => setJobHealthCheckTab('script'));
+      document.getElementById('hcDryRunBtn').addEventListener('click', dryRunHCScript);
+      document.getElementById('hcCopyBtn').addEventListener('click', () => {
+        const ta = document.getElementById('jobHealthCheckScript');
+        if (ta?.value) navigator.clipboard.writeText(ta.value).catch(() => {});
+      });
+      document.getElementById('jobHealthCheckScript').addEventListener('input', updateHCValidation);
+      document.getElementById('jobFilterContext').addEventListener('change', () => { jobsPage = 1; loadJobs(); });
       document.getElementById('jobScript').addEventListener('input', updateScriptValidation);
       document.getElementById('dryRunScriptBtn').addEventListener('click', dryRunScript);
 
@@ -6329,14 +6657,10 @@ echo "Restart complete"`,
       document.getElementById('cancelDockerHostBtn').addEventListener('click', () => resetDockerHostForm());
       document.getElementById('saveDockerHostBtn').addEventListener('click', saveDockerHost);
       document.getElementById('testDockerHostBtn').addEventListener('click', testDockerHostConnection);
-      document.getElementById('applyDockerHostBtn').addEventListener('click', () => {
-        if (editingDockerHostId) applyDockerHost(editingDockerHostId);
-      });
       document.getElementById('deleteDockerHostBtn').addEventListener('click', async () => {
         if (!editingDockerHostId) return;
         const id = editingDockerHostId;
         dockerHosts = dockerHosts.filter((h) => h.id !== id);
-        if (selectedDockerHostId === id) selectedDockerHostId = '';
         resetDockerHostForm();
         await persistDockerHosts('Docker host deleted.');
       });

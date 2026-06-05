@@ -20,8 +20,14 @@ type DockerHostProfile struct {
 	TLSCACert     string `yaml:"tls_ca_cert,omitempty"     json:"tls_ca_cert,omitempty"`
 	TLSCert       string `yaml:"tls_cert,omitempty"        json:"tls_cert,omitempty"`
 	TLSKey        string `yaml:"tls_key,omitempty"         json:"tls_key,omitempty"`
-	TLSSkipVerify bool   `yaml:"tls_skip_verify,omitempty" json:"tls_skip_verify,omitempty"`
-	BuiltIn       bool   `yaml:"-"                         json:"built_in,omitempty"`
+	TLSSkipVerify bool     `yaml:"tls_skip_verify,omitempty" json:"tls_skip_verify,omitempty"`
+	Notifications          []string `yaml:"notifications,omitempty"          json:"notifications,omitempty"`
+	DownTemplate           string `yaml:"downTemplate,omitempty"      json:"downTemplate,omitempty"`
+	RecoveryTemplate       string `yaml:"recoveryTemplate,omitempty"  json:"recoveryTemplate,omitempty"`
+	MonitorIntervalSeconds int `yaml:"monitorIntervalSeconds,omitempty" json:"monitorIntervalSeconds,omitempty"`
+	PingTimeoutSeconds     int `yaml:"pingTimeoutSeconds,omitempty"     json:"pingTimeoutSeconds,omitempty"`
+	OfflineConfirmSeconds  int `yaml:"offlineConfirmSeconds,omitempty"  json:"offlineConfirmSeconds,omitempty"`
+	BuiltIn                bool     `yaml:"-"                                json:"built_in,omitempty"`
 }
 
 type DockerHostsFile struct {
