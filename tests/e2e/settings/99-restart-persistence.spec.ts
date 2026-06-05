@@ -5,7 +5,7 @@
  * in this file still work.
  */
 import { test, expect } from '@playwright/test'
-import { gotoSettings } from '../helpers/nav'
+import { gotoApp, gotoSettings } from '../helpers/nav'
 import { restartAndReAuth, BASE_URL } from '../helpers/restart'
 
 // ── Monitoring setting survives restart ───────────────────────────────────────
@@ -44,6 +44,10 @@ test.describe('Restart persistence — General settings', () => {
     const testURL      = 'http://restart-test.local'
     const testHostname = 'restart-host'
     const testTZ       = 'Pacific/Auckland'
+
+    // The preceding restart test invalidates the storageState session cookie.
+    // Re-authenticate before making any API calls.
+    await gotoApp(page)
 
     // Read current settings to use as base for the PUT
     const current = await (await page.request.get(`${BASE_URL}/api/settings`)).json()
