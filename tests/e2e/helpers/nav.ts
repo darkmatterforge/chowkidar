@@ -1,7 +1,7 @@
 import { Page, expect } from '@playwright/test'
 
-const E2E_USER = process.env.E2E_USERNAME
-const E2E_PASS = process.env.E2E_PASSWORD
+const E2E_USER = process.env.E2E_USERNAME ?? 'testadmin'
+const E2E_PASS = process.env.E2E_PASSWORD ?? 'TestPassword1!'
 
 /**
  * Navigate to the app and wait until the app is ready and interactive.
