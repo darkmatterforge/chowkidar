@@ -1,26 +1,29 @@
 import { Page, expect } from '@playwright/test'
 
+const E2E_USER = process.env.E2E_USERNAME
+const E2E_PASS = process.env.E2E_PASSWORD
+
 /**
  * Navigate to the app and wait until the app is ready and interactive.
  *
- * Uses Playwright's built-in auto-wait:
- *  1. waitForResponse — waits for /api/auth/status so auth JS has completed
- *  2. expect().toBeHidden() — auto-retries until #loginPage is hidden
- *
- * Handles both "auth disabled" and "valid session" paths correctly.
- * If the session is invalid, #loginPage becomes visible and toBeHidden times out —
- * the test fails with a clear "expected hidden, received visible" message.
+ * If the session is invalid (e.g. after a container restart), automatically
+ * logs in via the form rather than failing the test with a cookie error.
  */
 export async function gotoApp(page: Page) {
   await Promise.all([
     page.goto('/'),
-    // Wait for the auth check to complete before asserting DOM state.
     page.waitForResponse(
       r => r.url().includes('/api/auth/status'),
       { timeout: 10_000 },
     ),
   ])
-  // Auth check is done. If session is valid (or auth disabled), login page is hidden.
+  if (await page.locator('#loginPage').isVisible()) {
+    await page.locator('#loginUsername').fill(E2E_USER)
+    await page.locator('#loginPassword').fill(E2E_PASS)
+    await page.locator('#loginBtn').click()
+    await page.waitForSelector('#dashboardPage', { timeout: 10_000 })
+    return
+  }
   await expect(page.locator('#loginPage')).toBeHidden({ timeout: 5_000 })
 }
 
