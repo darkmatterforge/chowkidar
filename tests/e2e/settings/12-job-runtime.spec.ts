@@ -518,6 +518,11 @@ test.describe('Job runtime — dual-context same daemon', () => {
 
     const localCount = await countHistoryEntries(page, CONTAINER)
 
+    // Remove local-only job before phase 2 to avoid cross-job interference:
+    // the local-only job would otherwise win the per-container break and prevent
+    // the all-contexts job from firing on the local host.
+    await deleteJobById(page, job.id)
+
     // Now create a job with no dockerHostIDs (all contexts) for the same container
     // and compare — the all-contexts job should produce ~2× the entries
     const allJob = await createJob(page, {
@@ -533,14 +538,12 @@ test.describe('Job runtime — dual-context same daemon', () => {
     await page.waitForTimeout(12_000)
     const allCount = await countHistoryEntries(page, CONTAINER)
 
-    // With 2 hosts pointing at the same daemon, the all-contexts job fires twice
-    // per scan cycle. The local-only job fires once. allCount should be > localCount.
+    // With 2 hosts pointing at the same daemon, the all-contexts job fires on both
+    // hosts so allCount should be > localCount (which had only the local host).
     expect(allCount).toBeGreaterThan(localCount)
     expect(localCount).toBeGreaterThanOrEqual(1)
 
     await deleteJobById(page, allJob.id)
-
-    await deleteJobById(page, job.id)
     await removeSecondHost(page)
   })
 })

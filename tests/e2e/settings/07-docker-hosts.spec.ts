@@ -284,6 +284,9 @@ test.describe('Settings — Docker Hosts tab', () => {
       await editBtn.click()
       await page.locator('#dockerHostEnabled').uncheck()
       await page.locator('#saveDockerHostBtn').click()
+      // Wait for the table to re-render with the disabled pill before checking the API
+      const row = page.locator('#dockerHostsTbody tr').filter({ hasText: 'e2e-disabled-host' })
+      await expect(row.locator('.pill.fail')).toBeVisible()
 
       // Verify via API
       const res  = await page.request.get(`${BASE_URL}/api/docker-hosts`)

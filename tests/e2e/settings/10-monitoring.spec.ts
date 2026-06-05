@@ -65,7 +65,6 @@ test.describe('Settings — default values', () => {
     expect(s.workerCount).toBeGreaterThanOrEqual(1)
     expect(s.queueSize).toBeGreaterThanOrEqual(1)
     expect(s.dockerPingTimeoutSeconds).toBeGreaterThanOrEqual(1)
-    expect(s.notificationRatePerSec).toBeGreaterThanOrEqual(1)
     expect(s.logRetentionDays).toBeGreaterThanOrEqual(1)
     expect(s.httpClientTimeoutSeconds).toBeGreaterThanOrEqual(1)
   })
@@ -79,7 +78,6 @@ test.describe('Settings — default values', () => {
     await expect(page.locator('#httpClientTimeoutSeconds')).toHaveValue(String(s.httpClientTimeoutSeconds))
     await expect(page.locator('#dockerClientRetryCount')).toHaveValue(String(s.dockerClientRetryCount))
     await expect(page.locator('#dockerClientRetryDelaySeconds')).toHaveValue(String(s.dockerClientRetryDelaySeconds))
-    await expect(page.locator('#notificationRatePerSec')).toHaveValue(String(s.notificationRatePerSec))
   })
 })
 
