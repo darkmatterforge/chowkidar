@@ -463,6 +463,11 @@ test.describe('Job runtime — dual-context same daemon', () => {
       dockerHostIDs:        [SECOND_ID],
     })
 
+    // Give the scan loop one full cycle to emit any "container recovered" transition
+    // left over from the previous test (container was in a.unhealthy; first scan after
+    // job/host removal writes a recovered entry). Clearing after that flush means the
+    // 18 s measurement window starts clean.
+    await page.waitForTimeout(8_000)
     await page.request.delete(`${BASE_URL}/api/history`)
     // Wait 3 scan cycles — disabled host must not trigger
     await page.waitForTimeout(18_000)
