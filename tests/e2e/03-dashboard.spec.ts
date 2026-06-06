@@ -31,6 +31,92 @@ test.describe('Dashboard', () => {
     await expect(page.locator('#statDockerVal')).not.toHaveText('–')
   })
 
+  // ── Docker Hosts tile display format ───────────────────────────────────────
+
+  test('Docker Hosts tile shows "1" for single connected host', async ({ page }) => {
+    await page.route('**/api/docker-hosts/status', route =>
+      route.fulfill({
+        json: {
+          hosts: [{ id: 'local', name: 'Local Docker', enabled: true, connected: true, info: '' }],
+        },
+      }),
+    )
+    await page.route('**/api/diagnostics', route =>
+      route.fulfill({
+        json: { dockerReachable: true, socketWritable: true, socketPresent: true, mode: 'socket', details: '' },
+      }),
+    )
+    await goToDashboard(page)
+    await expect(page.locator('#statDockerVal')).toHaveText('1')
+    await expect(page.locator('#statDockerLbl')).toHaveText('Docker Hosts')
+  })
+
+  test('Docker Hosts tile shows "0" for single disconnected host', async ({ page }) => {
+    await page.route('**/api/docker-hosts/status', route =>
+      route.fulfill({
+        json: {
+          hosts: [{ id: 'local', name: 'Local Docker', enabled: true, connected: false, info: '' }],
+        },
+      }),
+    )
+    await page.route('**/api/diagnostics', route =>
+      route.fulfill({
+        json: { dockerReachable: false, socketWritable: false, socketPresent: false, mode: 'socket', details: 'offline' },
+      }),
+    )
+    await goToDashboard(page)
+    await expect(page.locator('#statDockerVal')).toHaveText('0')
+    await expect(page.locator('#statDockerLbl')).toHaveText('Docker Hosts')
+  })
+
+  test('Docker Hosts tile shows "X/Y" format for multiple hosts all connected', async ({ page }) => {
+    await page.route('**/api/docker-hosts/status', route =>
+      route.fulfill({
+        json: {
+          hosts: [
+            { id: 'local', name: 'Local Docker', enabled: true, connected: true, info: '' },
+            { id: 'remote1', name: 'Remote Host', enabled: true, connected: true, info: '' },
+          ],
+        },
+      }),
+    )
+    await goToDashboard(page)
+    await expect(page.locator('#statDockerVal')).toHaveText('2/2')
+    await expect(page.locator('#statDockerLbl')).toHaveText('Docker Hosts')
+  })
+
+  test('Docker Hosts tile shows partial X/Y when some hosts are offline', async ({ page }) => {
+    await page.route('**/api/docker-hosts/status', route =>
+      route.fulfill({
+        json: {
+          hosts: [
+            { id: 'local', name: 'Local Docker', enabled: true, connected: true, info: '' },
+            { id: 'remote1', name: 'Remote Host', enabled: true, connected: false, info: '' },
+          ],
+        },
+      }),
+    )
+    await goToDashboard(page)
+    await expect(page.locator('#statDockerVal')).toHaveText('1/2')
+  })
+
+  test('Docker Hosts tile shows plain count when only one host is enabled among multiple', async ({ page }) => {
+    // Two entries returned but one is disabled — enabledHosts.length === 1, so show just "1" not "1/1"
+    await page.route('**/api/docker-hosts/status', route =>
+      route.fulfill({
+        json: {
+          hosts: [
+            { id: 'local', name: 'Local Docker', enabled: true, connected: true, info: '' },
+            { id: 'remote1', name: 'Remote Host', enabled: false, connected: false, info: '' },
+          ],
+        },
+      }),
+    )
+    await goToDashboard(page)
+    await expect(page.locator('#statDockerVal')).toHaveText('1')
+    await expect(page.locator('#statDockerVal')).not.toHaveText('1/1')
+  })
+
   // ── Basic filters ──────────────────────────────────────────────────────────
 
   test('status filter has all expected options', async ({ page }) => {

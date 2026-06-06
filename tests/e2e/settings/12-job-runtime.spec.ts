@@ -165,10 +165,11 @@ test.describe('Job runtime — health-check script', () => {
   })
 
   test('health-check script detects "unhealthy" container and records history', async ({ page }) => {
-    // The monitor will call the health-check script every 5 s.
-    // Script always exits 1 → chowkidar triggers the restart action.
+    // Wait for any post-action cooldown (= monitorIntervalSeconds = 5 s) left over
+    // from the job-creation test to expire, then start from a clean history slate.
+    await page.waitForTimeout(7_000)
     await page.request.delete(`${BASE_URL}/api/history`)
-    const found = await waitForHistoryEntry(page, CONTAINER)
+    const found = await waitForHistoryEntry(page, CONTAINER, 60_000)
     expect(found).toBe(true)
   })
 

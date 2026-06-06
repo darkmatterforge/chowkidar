@@ -4707,7 +4707,10 @@ echo "Restart complete"`,
           const anyOk = connectedCount > 0;
           dockerCard.className = `db-stat ${allOk ? 'ok' : anyOk ? 'warn' : 'danger'}`;
           document.getElementById('statDockerVal').style.color = `var(--${allOk ? 'ok' : anyOk ? 'warn' : 'danger'})`;
-          document.getElementById('statDockerVal').textContent = `${connectedCount}/${enabledHosts.length}`;
+          // Single host: just show "1"; multiple hosts: show connected/total
+          document.getElementById('statDockerVal').textContent = enabledHosts.length === 1
+            ? `${connectedCount}`
+            : `${connectedCount}/${enabledHosts.length}`;
           dockerLblEl.textContent = 'Docker Hosts';
           document.getElementById('statDockerSub').textContent = '';
           dockerHostsEl.style.maxHeight = '';
@@ -4734,24 +4737,23 @@ echo "Restart complete"`,
           }
           document.getElementById('diagDetails').textContent = `${connectedCount}/${enabledHosts.length} Docker hosts connected`;
         } else {
-          // Single host: current compact display
-          let dockerLabel, dockerSub;
+          // Single local host: show "1" (connected, green) or "0" (offline, red)
+          let dockerSub;
           if (diag.dockerReachable && diag.socketWritable) {
-            dockerLabel = 'Connected';
             dockerCard.className = 'db-stat ok';
             document.getElementById('statDockerVal').style.color = 'var(--ok)';
+            document.getElementById('statDockerVal').textContent = '1';
           } else if (diag.dockerReachable) {
-            dockerLabel = 'Read-only';
             dockerCard.className = 'db-stat warn';
             document.getElementById('statDockerVal').style.color = 'var(--warn)';
+            document.getElementById('statDockerVal').textContent = '1';
           } else {
-            dockerLabel = 'Offline';
             dockerCard.className = 'db-stat danger';
             document.getElementById('statDockerVal').style.color = 'var(--danger)';
+            document.getElementById('statDockerVal').textContent = '0';
           }
           dockerSub = diag.details || '';
-          dockerLblEl.textContent = 'Docker';
-          document.getElementById('statDockerVal').textContent = dockerLabel;
+          dockerLblEl.textContent = 'Docker Hosts';
           document.getElementById('statDockerSub').textContent = dockerSub;
           dockerHostsEl.innerHTML = '';
           document.getElementById('diagDetails').textContent = `${dockerLabel}: ${dockerSub}`;
