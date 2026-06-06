@@ -2277,12 +2277,13 @@
                   <!-- Docker Contexts chips — none selected means all contexts -->
                   <div class="job-notify-section" id="jobDockerHostWrap" style="margin-top:14px;">
                     <div class="job-notify-label">
-                      Docker Contexts
-                      <span class="hint" style="text-transform:none;letter-spacing:0;">&mdash; none selected = all contexts</span>
+                      Docker Contexts <span style="color:var(--danger)">*</span>
+                      <span class="hint" id="jobDockerHostHint" style="text-transform:none;letter-spacing:0;"></span>
                     </div>
                     <div id="jobDockerHostChips" class="notify-chips">
                       <span class="job-notify-empty">No additional Docker contexts configured yet.</span>
                     </div>
+                    <div class="field-error" id="jobDockerHostChipsError"></div>
                   </div>
 
                   <!-- Row 2: Timing fields -->
@@ -2301,6 +2302,11 @@
                     <div class="field">
                       <label>Post-Action Wait (s) <span class="hint" style="text-transform:none;letter-spacing:0;">(0 = off)</span></label>
                       <input type="number" id="jobPostWait" min="0" max="600" style="max-width:120px;" />
+                      <div class="field-error"></div>
+                    </div>
+                    <div class="field">
+                      <label>Stable Scans Required <span class="hint" style="text-transform:none;letter-spacing:0;">(blank = default 3)</span></label>
+                      <input type="number" id="jobStableScans" min="1" max="20" placeholder="3" style="max-width:120px;" />
                       <div class="field-error"></div>
                     </div>
                   </div>
@@ -2524,7 +2530,8 @@
     function notifyTemplatesForProvider(provider) {
       return NOTIFY_PROVIDER_TEMPLATES[provider] || NOTIFY_PROVIDER_TEMPLATES.default;
     }
-    let dockerHosts = [];
+    let dockerHosts = [];           // profile data — used by Settings → Docker Hosts tab and job form
+    let dashboardDockerHosts = [];  // status data — used only by the dashboard host filter
     let editingDockerHostId = null;
     let selectedDockerConnType = 'socket';
     let _hiddenSettings = {};
@@ -2561,7 +2568,7 @@
       'primaryBaseURL', 'displayTimezone', 'serverTimezone',
       'logLevel', 'logRetentionDays'
     ];
-    const jobFields = ['jobName', 'jobGroup', 'jobAction', 'jobNameFilter', 'jobLabelKey', 'jobLabelValue', 'jobEnvFilter', 'jobScript', 'jobRetryCount', 'jobMonitorInterval', 'jobActionTimeout'];
+    const jobFields = ['jobName', 'jobGroup', 'jobAction', 'jobNameFilter', 'jobLabelKey', 'jobLabelValue', 'jobEnvFilter', 'jobScript', 'jobRetryCount', 'jobMonitorInterval', 'jobActionTimeout', 'jobDockerHostChips', 'jobStableScans'];
     const PROVIDER_DEFS = {
       discord:  { label: 'Discord',  badge: 'DC', color: '#5865f2', description: 'Discord channel webhook',    fields: [{ key: 'webhookurl', label: 'Webhook URL', required: true, type: 'text', placeholder: 'https://discord.com/api/webhooks/ID/TOKEN', help: 'Channel Settings → Integrations → Webhooks → Copy URL' }] },
       slack:    { label: 'Slack',    badge: 'SL', color: '#4A154B', description: 'Slack incoming webhook',    fields: [
@@ -3129,10 +3136,15 @@ echo "Restart complete"`,
         ...(dockerHosts || []).filter(h => !h.built_in).map(h => ({ id: h.id, name: h.name, sub: h.type || '' })),
       ];
       if (all.length <= 1) {
+        // Single host — always treat it as selected so dockerHostIDs is saved explicitly.
+        // This prevents a newly added second host from being auto-inherited by existing jobs.
+        jobSelectedDockerHosts = new Set([all[0].id]);
         if (wrap) wrap.style.display = 'none';
         return;
       }
       if (wrap) wrap.style.display = '';
+      const hint = document.getElementById('jobDockerHostHint');
+      if (hint) hint.textContent = '— select at least one';
       host.innerHTML = all.map(h => {
         const sel = jobSelectedDockerHosts.has(h.id) ? ' selected' : '';
         return `<button type="button" class="notify-chip${sel}" data-host-chip-id="${escapeHtml(h.id)}">
@@ -4210,7 +4222,7 @@ echo "Restart complete"`,
     function populateServiceHostFilter() {
       const select = document.getElementById('serviceHostFilter');
       const previous = select.value;
-      const hosts = [{ id: 'local', name: 'Local Docker' }, ...(dockerHosts || []).filter((h) => !h.built_in && h.id !== 'local')];
+      const hosts = [{ id: 'local', name: 'Local Docker' }, ...(dashboardDockerHosts || []).filter((h) => h.id !== 'local')];
       select.innerHTML = '<option value="">All Hosts</option>' + hosts.map((h) => `<option value="${escapeHtml(h.id)}">${escapeHtml(h.name || h.id)}</option>`).join('');
       if (hosts.some((h) => h.id === previous)) select.value = previous;
     }
@@ -4692,16 +4704,16 @@ echo "Restart complete"`,
         const dockerCard = document.getElementById('statDockerCard');
         const dockerHostsEl = document.getElementById('statDockerHosts');
         const dockerLblEl = document.getElementById('statDockerLbl');
-        let dockerHosts = [];
+        dashboardDockerHosts = [];
         if (dockerStatusRes.ok) {
           const dsData = await dockerStatusRes.json();
-          dockerHosts = dsData.hosts || [];
+          dashboardDockerHosts = dsData.hosts || [];
         }
 
-        if (dockerHosts.length > 1) {
+        if (dashboardDockerHosts.length > 1) {
           // Multi-host: show N/M connected + per-host row
-          const enabledHosts   = dockerHosts.filter(h => h.enabled !== false);
-          const disabledCount  = dockerHosts.length - enabledHosts.length;
+          const enabledHosts   = dashboardDockerHosts.filter(h => h.enabled !== false);
+          const disabledCount  = dashboardDockerHosts.length - enabledHosts.length;
           const connectedCount = enabledHosts.filter(h => h.connected).length;
           const allOk = connectedCount === enabledHosts.length;
           const anyOk = connectedCount > 0;
@@ -4715,8 +4727,8 @@ echo "Restart complete"`,
           document.getElementById('statDockerSub').textContent = '';
           dockerHostsEl.style.maxHeight = '';
           dockerHostsEl.style.overflowY = '';
-          if (dockerHosts.length <= 5) {
-            dockerHostsEl.innerHTML = dockerHosts.map(h => {
+          if (dashboardDockerHosts.length <= 5) {
+            dockerHostsEl.innerHTML = dashboardDockerHosts.map(h => {
               const disabled = h.enabled === false;
               const col   = disabled ? 'var(--muted)' : h.connected ? 'var(--ok)' : 'var(--danger)';
               const label = disabled ? 'Disabled' : h.connected ? 'Connected' : 'Offline';
@@ -4756,7 +4768,8 @@ echo "Restart complete"`,
           dockerLblEl.textContent = 'Docker Hosts';
           document.getElementById('statDockerSub').textContent = dockerSub;
           dockerHostsEl.innerHTML = '';
-          document.getElementById('diagDetails').textContent = `${dockerLabel}: ${dockerSub}`;
+          const dockerConnLabel = diag.dockerReachable ? (diag.socketWritable ? 'Connected' : 'Read-only') : 'Offline';
+          document.getElementById('diagDetails').textContent = `Docker (${dockerConnLabel})${dockerSub ? ': ' + dockerSub : ''}`;
         }
 
         // Active jobs count
@@ -5524,7 +5537,10 @@ echo "Restart complete"`,
           document.getElementById('jobFilterMigrationNotice').style.display = multiFilter ? '' : 'none';
           document.getElementById('jobEnabled').checked = !!job.enabled;
           document.getElementById('jobStartExited').checked = !!job.startExited;
-          renderJobDockerHostChips(Array.isArray(job.dockerHostIDs) ? job.dockerHostIDs : (job.dockerHostID ? [job.dockerHostID] : []));
+          const savedHostIDs = Array.isArray(job.dockerHostIDs) && job.dockerHostIDs.length > 0
+            ? job.dockerHostIDs
+            : (job.dockerHostID ? [job.dockerHostID] : ['local']);
+          renderJobDockerHostChips(savedHostIDs);
           if (job.healthCheckScript) {
             document.getElementById('jobHealthCheckScript').value = job.healthCheckScript;
             setJobHealthCheckTab('script');
@@ -5555,6 +5571,7 @@ echo "Restart complete"`,
           document.getElementById('jobMonitorInterval').value = job.monitorIntervalSeconds > 0 ? String(job.monitorIntervalSeconds) : '';
           document.getElementById('jobActionTimeout').value = job.actionTimeoutSeconds > 0 ? String(job.actionTimeoutSeconds) : '';
           document.getElementById('jobPostWait').value = job.postActionWaitSeconds > 0 ? String(job.postActionWaitSeconds) : '';
+          document.getElementById('jobStableScans').value = job.stableScansRequired > 0 ? String(job.stableScansRequired) : '';
           document.getElementById('jobStatus').textContent = '';
           renderJobNotifyChips(Array.isArray(job.notifications) ? job.notifications : []);
           if (job.action === 'run-script') {
@@ -5659,6 +5676,7 @@ echo "Restart complete"`,
       document.getElementById('jobMonitorInterval').value = '';
       document.getElementById('jobActionTimeout').value = '';
       document.getElementById('jobPostWait').value = '0';
+      document.getElementById('jobStableScans').value = '';
       document.getElementById('scriptUpgradeNotice').style.display = 'none';
       setJobActionTab('standard');
       renderJobNotifyChips([]);
@@ -5699,6 +5717,12 @@ echo "Restart complete"`,
         setFieldError('jobScript', 'A bash script is required for the run-script action.');
         hasErrors = true;
       }
+      // Single host: auto-selected above (renderJobDockerHostChips). Multi-host: user must pick.
+      const availableHosts = [{ id: 'local' }, ...(dockerHosts || []).filter(h => !h.built_in)];
+      if (availableHosts.length > 1 && jobSelectedDockerHosts.size === 0) {
+        setFieldError('jobDockerHostChips', 'Select at least one Docker context.');
+        hasErrors = true;
+      }
 
       const retryLimitEnabled = document.getElementById('jobRetryLimitEnabled').checked;
       const retryMode = currentJobRetryMode;
@@ -5707,6 +5731,7 @@ echo "Restart complete"`,
       const monitorIntervalSeconds = parseInt(monitorIntervalRaw, 10);
       const actionTimeoutSeconds = parseInt(actionTimeoutRaw, 10);
       const postActionWaitSeconds = parseInt(document.getElementById('jobPostWait').value, 10) || 0;
+      const stableScansRequired = parseInt(document.getElementById('jobStableScans').value, 10) || 0;
 
       let retryCount = 0;
       let maxMonitoringDurationMinutes = 0;
@@ -5737,7 +5762,7 @@ echo "Restart complete"`,
         containerNameFilter, containerLabelFilter, containerEnvVarFilter,
         enabled: document.getElementById('jobEnabled').checked,
         startExited: document.getElementById('jobStartExited').checked,
-        retryCount, maxMonitoringDurationMinutes, monitorIntervalSeconds, actionTimeoutSeconds, postActionWaitSeconds,
+        retryCount, maxMonitoringDurationMinutes, monitorIntervalSeconds, actionTimeoutSeconds, postActionWaitSeconds, stableScansRequired,
         dockerHostIDs: Array.from(jobSelectedDockerHosts),
         healthCheckScript,
       };
@@ -6461,9 +6486,13 @@ echo "Restart complete"`,
         body: JSON.stringify({ profiles: dockerHosts })
       });
       if (!res.ok) {
-        const err = await res.json();
-        status.textContent = `Save failed: ${err.error || res.status}`;
-        return;
+        const err = await res.json().catch(() => ({}));
+        if (res.status === 409 && err.jobs && err.jobs.length) {
+          status.textContent = `Cannot delete: referenced by job${err.jobs.length > 1 ? 's' : ''}: ${err.jobs.join(', ')}. Update or remove those jobs first.`;
+        } else {
+          status.textContent = `Save failed: ${err.error || res.status}`;
+        }
+        return false;
       }
       const out = await res.json();
       dockerHosts = out.profiles || [];
@@ -6472,6 +6501,7 @@ echo "Restart complete"`,
       populateContextFilter();
       renderJobDockerHostChips([]);
       renderDockerHostNotifyChips([]);
+      return true;
     }
 
     function renderDockerHosts() {
@@ -6548,9 +6578,14 @@ echo "Restart complete"`,
       tbody.querySelectorAll('button[data-host-delete-id]').forEach((btn) => {
         btn.addEventListener('click', async () => {
           const id = btn.getAttribute('data-host-delete-id');
+          const snapshot = dockerHosts.slice();
           dockerHosts = dockerHosts.filter((h) => h.id !== id);
           if (editingDockerHostId === id) resetDockerHostForm();
-          await persistDockerHosts('Docker host deleted.');
+          const ok = await persistDockerHosts('Docker host deleted.');
+          if (!ok) {
+            dockerHosts = snapshot;
+            renderDockerHosts();
+          }
         });
       });
     }
@@ -6877,9 +6912,15 @@ echo "Restart complete"`,
       document.getElementById('deleteDockerHostBtn').addEventListener('click', async () => {
         if (!editingDockerHostId) return;
         const id = editingDockerHostId;
+        const snapshot = dockerHosts.slice();
         dockerHosts = dockerHosts.filter((h) => h.id !== id);
         resetDockerHostForm();
-        await persistDockerHosts('Docker host deleted.');
+        const ok = await persistDockerHosts('Docker host deleted.');
+        if (!ok) {
+          // Restore the in-memory list so it stays in sync with the server.
+          dockerHosts = snapshot;
+          renderDockerHosts();
+        }
       });
     }
 

@@ -30,6 +30,7 @@ type Job struct {
 	MonitorIntervalSeconds       int       `yaml:"monitorIntervalSeconds,omitempty" json:"monitorIntervalSeconds,omitempty"`
 	ActionTimeoutSeconds         int       `yaml:"actionTimeoutSeconds,omitempty" json:"actionTimeoutSeconds,omitempty"`
 	PostActionWaitSeconds        int       `yaml:"postActionWaitSeconds,omitempty" json:"postActionWaitSeconds,omitempty"`
+	StableScansRequired          int       `yaml:"stableScansRequired,omitempty" json:"stableScansRequired,omitempty"`
 	DockerHostID                 string    `yaml:"dockerHostID,omitempty" json:"-"` // deprecated: migrated to DockerHostIDs
 	DockerHostIDs                []string  `yaml:"dockerHostIDs,omitempty" json:"dockerHostIDs,omitempty"`
 	HealthCheckScript            string    `yaml:"healthCheckScript,omitempty" json:"healthCheckScript,omitempty"`
