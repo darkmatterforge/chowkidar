@@ -1525,10 +1525,11 @@ func (a *app) scanOnce() {
 		}
 	}
 
-	// Record health pulses for each host.
-	a.recordHealthPulses(ctx, a.docker, allJobs, dueJobIDs, problematic)
+	// Record health pulses for each host, scoped to jobs that apply to that host
+	// so a job pinned to host X does not produce a healthy pulse on host Y.
+	a.recordHealthPulses(ctx, a.docker, jobsForHost(allJobs, "local"), dueJobIDs, problematic)
 	for _, h := range a.getExtraClients() {
-		a.recordHealthPulses(ctx, h.client, allJobs, dueJobIDs, problematic)
+		a.recordHealthPulses(ctx, h.client, jobsForHost(allJobs, h.profile.ID), dueJobIDs, problematic)
 	}
 
 	logInfof("monitor: scan complete unhealthyQueued=%d exitedQueued=%d hosts=%d",
