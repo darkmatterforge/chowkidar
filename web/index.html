@@ -68,7 +68,7 @@
         radial-gradient(circle at 100% 15%, color-mix(in srgb, var(--accent) 8%, transparent) 0, transparent 30%),
         var(--bg);
     }
-    .wrap { max-width: 1300px; margin: 0 auto; padding: 22px; }
+    .wrap { width: 100%; padding: 22px; box-sizing: border-box; }
     .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
     .topbar-logo { height: 52px; width: auto; display: block; }
     .topbar-logo-dark { display: none; }
@@ -101,29 +101,34 @@
 
     /* ── Dashboard stats bar ───────────────────────────────────── */
     .db-stats-bar {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 10px;
-      margin-bottom: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: stretch;
+      gap: 8px;
+      margin-bottom: 14px;
     }
     .db-stat {
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 14px 16px;
+      border-radius: 10px;
+      padding: 10px 14px;
       display: flex;
       flex-direction: column;
+      align-items: center;
+      justify-content: center;
       gap: 2px;
       box-shadow: 0 1px 4px rgba(18,38,63,.06);
       position: relative;
       overflow: hidden;
+      flex: 1 1 110px;
+      text-align: center;
     }
     .db-stat::before {
       content: '';
       position: absolute;
       top: 0; left: 0; right: 0;
       height: 3px;
-      border-radius: 14px 14px 0 0;
+      border-radius: 10px 10px 0 0;
     }
     .db-stat.ok::before    { background: var(--ok); }
     .db-stat.danger::before { background: var(--danger); }
@@ -132,7 +137,7 @@
     .db-stat.purple::before { background: #7e6dd1; }
     .db-stat.neutral::before { background: #a0b4cc; }
     .db-stat-val {
-      font-size: 28px;
+      font-size: 32px;
       font-weight: 800;
       line-height: 1;
       color: var(--text);
@@ -142,12 +147,12 @@
     .db-stat-val.warn   { color: var(--warn); }
     .db-stat-val.blue   { color: #2f8fdd; }
     .db-stat-lbl {
-      font-size: 11px;
+      font-size: 10px;
       text-transform: uppercase;
       letter-spacing: .8px;
       color: var(--muted);
       font-weight: 600;
-      margin-top: 4px;
+      margin-top: 3px;
     }
     .db-stat-sub {
       font-size: 11px;
@@ -326,7 +331,7 @@
 
     .dashboard-layout {
       display: grid;
-      grid-template-columns: minmax(320px, 420px) 1fr;
+      grid-template-columns: minmax(340px, 480px) 1fr;
       gap: 12px;
       min-height: 560px;
       align-items: stretch;
@@ -339,18 +344,27 @@
       font-size: 11px;
       text-transform: uppercase;
       color: var(--muted);
-      margin: 14px 0 8px;
+      margin: 14px 0 6px;
       letter-spacing: 1px;
       font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      user-select: none;
+      padding: 2px 0;
     }
+    .group-title:hover { color: var(--text); }
+    .group-chevron { font-size: 9px; transition: transform 180ms; flex-shrink: 0; }
+    .group-title.collapsed .group-chevron { transform: rotate(-90deg); }
     .service-row {
       width: 100%;
       border: 1px solid var(--line);
-      border-radius: 10px;
+      border-radius: 8px;
       background: var(--panel);
       color: var(--text);
-      padding: 10px;
-      margin-bottom: 6px;
+      padding: 7px 9px;
+      margin-bottom: 4px;
       cursor: pointer;
       text-align: left;
       transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
@@ -507,9 +521,9 @@
     .svc-grid-job-badge { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
     /* Heartbeat visualization bar */
-    .heartbeat-bar { display: flex; gap: 3px; align-items: stretch; margin: 6px 0 4px; overflow: hidden; }
-    .hb-block { flex: 1; height: 34px; border-radius: 4px; background: #dce6f0; cursor: default; transition: transform 80ms; min-width: 0; }
-    .hb-block:hover { transform: scaleY(1.12); }
+    .heartbeat-bar { display: flex; gap: 2px; align-items: stretch; margin: 4px 0 3px; overflow: hidden; }
+    .hb-block { flex: 1; height: 20px; border-radius: 3px; background: #dce6f0; cursor: default; transition: transform 80ms; min-width: 0; }
+    .hb-block:hover { transform: scaleY(1.15); }
     .hb-block.ok        { background: var(--accent); }
     .hb-block.recovered { background: var(--ok); }
     .hb-block.fail      { background: var(--danger); }
@@ -598,7 +612,6 @@
       display: grid;
       grid-template-columns: 260px 1fr;
       gap: 14px;
-      min-height: 560px;
     }
     @media (max-width: 1000px) {
       .settings-layout { grid-template-columns: 1fr; }
@@ -1204,10 +1217,10 @@
           <div class="db-stat-lbl">Active Jobs</div>
         </div>
         <div class="db-stat neutral" id="statDockerCard">
-          <div class="db-stat-val" id="statDockerVal" style="font-size:16px;font-weight:700;margin-top:4px;">–</div>
-          <div class="db-stat-lbl" id="statDockerLbl">Docker</div>
+          <div class="db-stat-val" id="statDockerVal" style="font-size:26px;font-weight:800;">–</div>
+          <div class="db-stat-lbl" id="statDockerLbl">Docker Hosts</div>
           <div class="db-stat-sub" id="statDockerSub"></div>
-          <div id="statDockerHosts" style="margin-top:7px;display:flex;flex-direction:column;gap:4px;"></div>
+          <div id="statDockerHosts" style="display:none;"></div>
         </div>
       </div>
 
@@ -1232,10 +1245,10 @@
       </div>
 
       <!-- Toolbar -->
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
-        <button class="btn primary" id="refreshBtn" type="button">↻ Refresh</button>
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
         <span id="statLastScan" style="font-size:12px;color:var(--muted);"></span>
         <div style="flex:1;"></div>
+        <button class="btn primary" id="refreshBtn" type="button">↻ Refresh</button>
       </div>
       <div class="error-banner" id="loadError"></div>
 
@@ -1266,6 +1279,7 @@
               <option value="none">none</option>
               <option value="run-script">run-script</option>
             </select>
+            <select id="serviceHostFilter"><option value="">All Hosts</option></select>
           </div>
           <!-- Advanced filters (hidden by default) -->
           <div class="db-filter-adv" id="advFilters" style="display:none;">
@@ -2508,6 +2522,7 @@
     let retriesExhaustedIDs = new Set();
     let selectedServiceName = '';
     let currentDashLayout = localStorage.getItem('dashLayout') || 'cards';
+    let collapsedGroups = new Set(JSON.parse(localStorage.getItem('collapsedServiceGroups') || '[]'));
     let pendingDashLayout = currentDashLayout; // tracks picker selection before Save
     let currentJobs = [];
     let jobSelectedNotifications = new Set();
@@ -4062,6 +4077,14 @@ echo "Restart complete"`,
       }
     }
 
+    function populateServiceHostFilter() {
+      const select = document.getElementById('serviceHostFilter');
+      const previous = select.value;
+      const hosts = [{ id: 'local', name: 'Local Docker' }, ...(dockerHosts || []).filter((h) => !h.built_in && h.id !== 'local')];
+      select.innerHTML = '<option value="">All Hosts</option>' + hosts.map((h) => `<option value="${escapeHtml(h.id)}">${escapeHtml(h.name || h.id)}</option>`).join('');
+      if (hosts.some((h) => h.id === previous)) select.value = previous;
+    }
+
     function matchesText(haystack, needle) {
       return String(haystack || '').toLowerCase().includes(String(needle || '').toLowerCase());
     }
@@ -4107,6 +4130,7 @@ echo "Restart complete"`,
       document.getElementById('serviceVariableFilter').value = '';
       document.getElementById('serviceJobFilter').value = '';
       document.getElementById('serviceJobActionFilter').value = '';
+      document.getElementById('serviceHostFilter').value = '';
       selectedServiceName = '';
       renderDashboardView();
     }
@@ -4121,6 +4145,7 @@ echo "Restart complete"`,
       const variableFilter = document.getElementById('serviceVariableFilter').value.trim().toLowerCase();
       const jobFilter = document.getElementById('serviceJobFilter').value.trim().toLowerCase();
       const jobActionFilter = document.getElementById('serviceJobActionFilter').value;
+      const hostFilter = document.getElementById('serviceHostFilter').value;
 
       return services.filter((service) => {
         if (!service.checkEligible) return false;
@@ -4139,6 +4164,19 @@ echo "Restart complete"`,
         if (variableFilter && !matchesText(envText, variableFilter)) return false;
         if (jobFilter && !matchesText(jobsText, jobFilter)) return false;
         if (jobActionFilter && !(service.matchedJobs || []).some((r) => String(r.action || '').toLowerCase() === jobActionFilter)) return false;
+        if (hostFilter) {
+          const jobs = service.matchedJobs || [];
+          if (jobs.length === 0) {
+            // global-filter service — only visible on local host
+            if (hostFilter !== 'local') return false;
+          } else {
+            const matchesHost = jobs.some((r) => {
+              const ids = r.dockerHostIDs;
+              return !ids || ids.length === 0 || ids.includes(hostFilter);
+            });
+            if (!matchesHost) return false;
+          }
+        }
 
         if (search) {
           const fullText = `${service.name} ${service.state} ${service.status} ${labelsText} ${envText} ${jobsText}`.toLowerCase();
@@ -4190,34 +4228,48 @@ echo "Restart complete"`,
       container.className = 'service-list';
       let html = '';
       keys.forEach((key) => {
-        html += `<div class="group-title">${escapeHtml(key)}</div>`;
-        grouped[key].forEach((service) => {
-          const st = statusForService(service);
-          const isActive = service.name === selectedServiceName ? ' active' : '';
-          const firstJob = (service.matchedJobs || [])[0];
-          const checkSummary = service.checkEligible
-            ? (firstJob ? `${firstJob.name} · ${firstJob.action || service.checkAction || 'restart'}` : `global · ${service.checkAction || 'restart'}`)
-            : 'not monitored';
-          const encodedName = encodeURIComponent(service.name);
-          const hasHistory = _barEntriesByName.has(service.name);
-          const upPct = uptimeForService(service.name, st);
-          const uptimeBadgeText = (hasHistory || st === 'up' || st === 'down') ? `${upPct}%` : 'N/A';
-          const uptimeBadgeStyle = st === 'up'
-            ? 'background:#e7f8ef;color:#147a47;'
-            : (st === 'down' ? 'background:#ffecef;color:#b33141;' : 'background:#fff6e7;color:#986d0e;');
-          html += `<button class="service-row status-${st}${isActive}" data-service-name="${encodedName}">`;
-          html += `<div class="service-meta">`;
-          html += `<div class="service-top-row">`;
-          html += `<span class="service-name">${escapeHtml(service.name)}</span>`;
-          html += `<span class="service-badge" style="${uptimeBadgeStyle}">${escapeHtml(uptimeBadgeText)}</span>`;
-          html += `</div>`;
-          html += `<div class="mini-bars">${sampleBarsForService(service.name)}</div>`;
-          html += `<div class="hint" style="font-size:10px;">${escapeHtml(checkSummary)}</div>`;
-          html += `</div>`;
-          html += '</button>';
-        });
+        const isCollapsed = collapsedGroups.has(key);
+        html += `<div class="group-title${isCollapsed ? ' collapsed' : ''}" data-group="${escapeHtml(key)}">`;
+        html += `<span>${escapeHtml(key)} <span style="font-weight:400;opacity:.6;">(${grouped[key].length})</span></span>`;
+        html += `<span class="group-chevron">&#9660;</span></div>`;
+        if (!isCollapsed) {
+          grouped[key].forEach((service) => {
+            const st = statusForService(service);
+            const isActive = service.name === selectedServiceName ? ' active' : '';
+            const firstJob = (service.matchedJobs || [])[0];
+            const checkSummary = service.checkEligible
+              ? (firstJob ? `${firstJob.name} · ${firstJob.action || service.checkAction || 'restart'}` : `global · ${service.checkAction || 'restart'}`)
+              : 'not monitored';
+            const encodedName = encodeURIComponent(service.name);
+            const hasHistory = _barEntriesByName.has(service.name);
+            const upPct = uptimeForService(service.name, st);
+            const uptimeBadgeText = (hasHistory || st === 'up' || st === 'down') ? `${upPct}%` : 'N/A';
+            const uptimeBadgeStyle = st === 'up'
+              ? 'background:#e7f8ef;color:#147a47;'
+              : (st === 'down' ? 'background:#ffecef;color:#b33141;' : 'background:#fff6e7;color:#986d0e;');
+            html += `<button class="service-row status-${st}${isActive}" data-service-name="${encodedName}">`;
+            html += `<div class="service-meta">`;
+            html += `<div class="service-top-row">`;
+            html += `<span class="service-name">${escapeHtml(service.name)}</span>`;
+            html += `<span class="service-badge" style="${uptimeBadgeStyle}">${escapeHtml(uptimeBadgeText)}</span>`;
+            html += `</div>`;
+            html += `<div class="mini-bars">${sampleBarsForService(service.name)}</div>`;
+            html += `<div class="hint" style="font-size:10px;">${escapeHtml(checkSummary)}</div>`;
+            html += `</div>`;
+            html += '</button>';
+          });
+        }
       });
       container.innerHTML = html;
+      container.querySelectorAll('.group-title[data-group]').forEach((title) => {
+        title.addEventListener('click', () => {
+          const key = title.getAttribute('data-group');
+          if (collapsedGroups.has(key)) collapsedGroups.delete(key);
+          else collapsedGroups.add(key);
+          localStorage.setItem('collapsedServiceGroups', JSON.stringify([...collapsedGroups]));
+          renderServiceGroups(applyServiceFilters(dashboardServices));
+        });
+      });
       container.querySelectorAll('button[data-service-name]').forEach((btn) => {
         btn.addEventListener('click', () => {
           selectedServiceName = decodeURIComponent(btn.getAttribute('data-service-name') || '');
@@ -4230,7 +4282,9 @@ echo "Restart complete"`,
       container.className = 'service-list layout-table';
       let html = '<table class="svc-table"><thead><tr><th></th><th>Container</th><th>Uptime</th><th>Last Event</th><th>Job</th></tr></thead><tbody>';
       keys.forEach((key) => {
-        html += `<tr class="group-title-row"><td colspan="5">${escapeHtml(key)}</td></tr>`;
+        const isCollapsedT = collapsedGroups.has(key);
+        html += `<tr class="group-title-row" data-group="${escapeHtml(key)}" style="cursor:pointer;user-select:none;"><td colspan="5" style="display:flex;justify-content:space-between;align-items:center;">${escapeHtml(key)}<span class="group-chevron" style="font-size:9px;${isCollapsedT ? 'transform:rotate(-90deg);display:inline-block;' : ''}">&#9660;</span></td></tr>`;
+        if (isCollapsedT) return;
         grouped[key].forEach((service) => {
           const st = statusForService(service);
           const isActive = service.name === selectedServiceName ? ' active' : '';
@@ -4258,6 +4312,15 @@ echo "Restart complete"`,
       });
       html += '</tbody></table>';
       container.innerHTML = html;
+      container.querySelectorAll('tr.group-title-row[data-group]').forEach((row) => {
+        row.addEventListener('click', () => {
+          const key = row.getAttribute('data-group');
+          if (collapsedGroups.has(key)) collapsedGroups.delete(key);
+          else collapsedGroups.add(key);
+          localStorage.setItem('collapsedServiceGroups', JSON.stringify([...collapsedGroups]));
+          renderServiceGroups(applyServiceFilters(dashboardServices));
+        });
+      });
       container.querySelectorAll('tr[data-service-name]').forEach((row) => {
         row.addEventListener('click', () => {
           selectedServiceName = decodeURIComponent(row.getAttribute('data-service-name') || '');
@@ -4270,7 +4333,10 @@ echo "Restart complete"`,
       container.className = 'service-list layout-grid';
       let html = '<div class="svc-grid">';
       keys.forEach((key) => {
-        html += `<div class="svc-grid-section-label">${escapeHtml(key)}</div>`;
+        const isCollapsed = collapsedGroups.has(key);
+        html += `<div class="svc-grid-section-label group-title${isCollapsed ? ' collapsed' : ''}" data-group="${escapeHtml(key)}" style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;text-transform:uppercase;letter-spacing:.8px;">`;
+        html += `<span>${escapeHtml(key)}</span><span class="group-chevron" style="font-size:9px;">&#9660;</span></div>`;
+        if (isCollapsed) return;
         grouped[key].forEach((service) => {
           const st = statusForService(service);
           const isActive = service.name === selectedServiceName ? ' active' : '';
@@ -4295,6 +4361,15 @@ echo "Restart complete"`,
       });
       html += '</div>';
       container.innerHTML = html;
+      container.querySelectorAll('.group-title[data-group]').forEach((title) => {
+        title.addEventListener('click', () => {
+          const key = title.getAttribute('data-group');
+          if (collapsedGroups.has(key)) collapsedGroups.delete(key);
+          else collapsedGroups.add(key);
+          localStorage.setItem('collapsedServiceGroups', JSON.stringify([...collapsedGroups]));
+          renderServiceGroups(applyServiceFilters(dashboardServices));
+        });
+      });
       container.querySelectorAll('button[data-service-name]').forEach((btn) => {
         btn.addEventListener('click', () => {
           selectedServiceName = decodeURIComponent(btn.getAttribute('data-service-name') || '');
@@ -4585,6 +4660,7 @@ echo "Restart complete"`,
         const services = normalizeServices(containers);
         dashboardServices = services;
         populateServiceTagFilter(services);
+        populateServiceHostFilter();
         updateQuickStats(services, shutdownCount, health);
         renderDashboardView(true);
       } catch (err) {
@@ -6501,6 +6577,7 @@ echo "Restart complete"`,
         'serviceVariableFilter',
         'serviceJobFilter',
         'serviceJobActionFilter',
+        'serviceHostFilter',
       ].forEach((id) => {
         const el = document.getElementById(id);
         if (!el) return;

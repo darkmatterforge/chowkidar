@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Dashboard group collapse/expand** — service group headers are now clickable; a ▼ chevron toggles the group open or collapsed. Collapsed state is persisted to `localStorage` across page reloads. Group headers show a count badge `(N)`.
+- **Dashboard Docker host filter** — a new "All Hosts" dropdown in the primary filter bar lets you narrow the service list to containers relevant to a specific Docker host. Services matched by jobs pinned to a host are shown for that host; all-contexts jobs appear under every host.
+- **`dockerHostIDs` in matched-jobs API response** — the `/api/containers` response now includes `dockerHostIDs` on each matched-job summary entry, enabling client-side host filtering without extra round-trips.
+
 - **Multi-context job rules** — each job can now be pinned to one or more Docker contexts via a chip-select UI. Jobs with no context selected run on every host (existing behaviour). Context filter dropdown added to the job list.
 - **Per-job health-check script** — jobs now have a `Health Check` section with a `Docker Status` / `Bash Script` toggle. When set to script mode, a custom bash script runs against each matching container; exit 0 = healthy, non-zero = unhealthy (triggers the job action). Dry-run and template picker included, identical to the action script experience.
 - **Per-Docker-host monitoring settings** — each extra Docker host gains a collapsible `Monitoring Settings` panel with three per-host fields:
@@ -22,6 +26,12 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Dashboard layout is now full-width** — removed the 1300 px `max-width` cap so the UI fills the available viewport on wide monitors.
+- **Stats bar redesign** — tiles are now flex-based (auto-sizing), centred, with a larger 32 px count value. Refresh button moved to the right of its own toolbar row. Docker Hosts tile shows only the `N/N` count — per-host rows removed from the tile.
+- **Heartbeat bars made compact** — bar height reduced from 34 px to 20 px; gap tightened to 2 px.
+- **Settings page no longer has a fixed minimum height** — the layout now shrinks to content so sparse tabs (Security) don't show empty space at the bottom.
+- **Service cards more compact** — padding reduced (`7px 9px`) and margin between cards narrowed (`4px`) to show more containers without scrolling.
+
 - **Docker host form inputs replaced with checkboxes** — `Enabled` dropdown in Docker host form, Job form (`Enabled` and `Start Exited`), are now checkboxes matching the Notifications tab style.
 - **"Apply" button removed** — the Docker Hosts "Apply" button and `activeHostID` concept are removed. Use per-job Docker Context selection instead.
 - **`Docker Client Retry Count` removed from Monitoring UI** — no longer user-configurable; backend retains a hardcoded default of 3. Advanced users can still set `dockerClientRetryCount` in `config.yaml`.
@@ -33,6 +43,8 @@ All notable changes to this project will be documented in this file.
 - **Message template dropdowns** — Offline Message and Back Online Message now have a collapsible `Message Templates` section in the Docker host form, with a `Templates:` dropdown picker and full-width text inputs.
 
 ### Fixed
+
+- **`recordHealthPulses` wrong-host scoping** — health pulses were written using the full unfiltered job list, causing containers matched by jobs pinned to host X to receive a "healthy" pulse on host Y. Fixed by passing `jobsForHost(allJobs, hostID)` for each host independently.
 
 - **`offlineConfirmSeconds` not persisting** — blank form field was sending `0`, which `omitempty` dropped from YAML; JS now defaults to `1800` so the value is always written.
 - **Double cooldown / double scan** — jobs with no `dockerHostIDs` were scanned once per configured host, producing duplicate history entries. Resolved by pinning jobs to specific contexts; documented and covered by dual-context runtime tests.

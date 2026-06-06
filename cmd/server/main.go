@@ -1899,10 +1899,11 @@ func matchedJobsSummary(name string, labels map[string]string, envPairs []string
 			continue
 		}
 		matches = append(matches, map[string]any{
-			"id":     r.ID,
-			"name":   r.Name,
-			"group":  r.Group,
-			"action": r.Action,
+			"id":           r.ID,
+			"name":         r.Name,
+			"group":        r.Group,
+			"action":       r.Action,
+			"dockerHostIDs": r.DockerHostIDs,
 		})
 	}
 	return matches

@@ -101,12 +101,14 @@ test.describe('Dashboard', () => {
     await page.locator('#serviceSearchInput').fill('test')
     await page.locator('#serviceStatusFilter').selectOption('up')
     await page.locator('#serviceJobActionFilter').selectOption('stop')
+    await page.locator('#serviceHostFilter').selectOption('local')
 
     await page.locator('#clearServiceFiltersBtn').click()
 
     await expect(page.locator('#serviceSearchInput')).toHaveValue('')
     await expect(page.locator('#serviceStatusFilter')).toHaveValue('')
     await expect(page.locator('#serviceJobActionFilter')).toHaveValue('')
+    await expect(page.locator('#serviceHostFilter')).toHaveValue('')
   })
 
   // ── Advanced filters ───────────────────────────────────────────────────────
@@ -314,5 +316,61 @@ test.describe('Dashboard', () => {
     await expect(page.locator('#detailRestartBtn')).toBeAttached()
     await expect(page.locator('#detailStopBtn')).toBeAttached()
     await expect(page.locator('#detailStartBtn')).toBeAttached()
+  })
+
+  // ── Host filter ────────────────────────────────────────────────────────────
+
+  test('host filter select is present with All Hosts default', async ({ page }) => {
+    await goToDashboard(page)
+    const select = page.locator('#serviceHostFilter')
+    await expect(select).toBeVisible()
+    await expect(select).toHaveValue('')
+    const firstOpt = select.locator('option').first()
+    await expect(firstOpt).toHaveText('All Hosts')
+  })
+
+  test('host filter includes Local Docker option', async ({ page }) => {
+    await goToDashboard(page)
+    const opts = page.locator('#serviceHostFilter option')
+    await expect(opts).toContainText(['All Hosts', 'Local Docker'])
+  })
+
+  test('selecting local host filter applies the value', async ({ page }) => {
+    await goToDashboard(page)
+    await page.locator('#serviceHostFilter').selectOption('local')
+    await expect(page.locator('#serviceHostFilter')).toHaveValue('local')
+  })
+
+  // ── Group collapse ─────────────────────────────────────────────────────────
+
+  test('clicking a group title collapses and expands its services', async ({ page }) => {
+    await goToDashboard(page)
+    const groupTitle = page.locator('#serviceGroups .group-title[data-group]').first()
+    if (await groupTitle.count() === 0) {
+      test.skip(true, 'No service groups rendered — skipping collapse test')
+      return
+    }
+    const groupKey = await groupTitle.getAttribute('data-group')
+    const services = page.locator(`#serviceGroups button[data-service-name]`)
+    const countBefore = await services.count()
+
+    // Collapse
+    await groupTitle.click()
+    await expect(groupTitle).toHaveClass(/collapsed/)
+
+    const countAfter = await services.count()
+    expect(countAfter).toBeLessThan(countBefore)
+
+    // Expand
+    await groupTitle.click()
+    await expect(groupTitle).not.toHaveClass(/collapsed/)
+    expect(await services.count()).toBe(countBefore)
+
+    // Clean up persisted collapse state
+    await page.evaluate((key) => {
+      const stored: string[] = JSON.parse(localStorage.getItem('collapsedServiceGroups') || '[]')
+      const updated = stored.filter((k: string) => k !== key)
+      localStorage.setItem('collapsedServiceGroups', JSON.stringify(updated))
+    }, groupKey)
   })
 })
