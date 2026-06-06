@@ -978,11 +978,17 @@ docker restart "$1"`)
     })
 
     test('context filter returns only jobs matching the selected host', async ({ page }) => {
-      // Create an unfiltered job (no dockerHostIDs = all contexts)
-      await openJobsTab(page)
-      await openAddForm(page)
-      await page.locator('#jobNameFilter').fill('all-contexts-container')
-      await saveJob(page, 'e2e-all-contexts-job')
+      // Create an unfiltered job via API (no dockerHostIDs = matches all contexts).
+      // UI validation now requires selecting at least one host when multiple hosts exist,
+      // so use the API directly for a job intentionally scoped to all contexts.
+      await page.request.post(`${BASE_URL}/api/jobs`, {
+        data: {
+          name: 'e2e-all-contexts-job',
+          action: 'restart',
+          enabled: true,
+          containerNameFilter: 'all-contexts-container',
+        },
+      })
 
       // Filter by local context — both jobs should appear (pinned to local + all-contexts)
       await page.locator('#jobFilterContext').selectOption('local')

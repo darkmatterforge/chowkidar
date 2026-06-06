@@ -3127,7 +3127,11 @@ echo "Restart complete"`,
     }
 
     function renderJobDockerHostChips(selectedIDs) {
-      jobSelectedDockerHosts = new Set((selectedIDs || []).filter(Boolean));
+      // null = background refresh (loadDockerHosts) — preserve the current selection.
+      // []   = explicit reset (resetJobForm / edit open) — apply the provided list.
+      if (selectedIDs !== null) {
+        jobSelectedDockerHosts = new Set((selectedIDs || []).filter(Boolean));
+      }
       const host = document.getElementById('jobDockerHostChips');
       const wrap = document.getElementById('jobDockerHostWrap');
       if (!host) return;
@@ -6474,7 +6478,7 @@ echo "Restart complete"`,
       dockerHosts = data.profiles || [];
       renderDockerHosts();
       populateContextFilter();
-      renderJobDockerHostChips([]);
+      renderJobDockerHostChips(null);
       renderDockerHostNotifyChips([]);
     }
 
@@ -6499,7 +6503,7 @@ echo "Restart complete"`,
       status.textContent = statusMessage;
       renderDockerHosts();
       populateContextFilter();
-      renderJobDockerHostChips([]);
+      renderJobDockerHostChips(null);
       renderDockerHostNotifyChips([]);
       return true;
     }
