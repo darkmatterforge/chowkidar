@@ -72,6 +72,100 @@ test.describe('Settings — General tab', () => {
     await page.locator('#saveSettingsBtn').click()
   })
 
+  test('log level change is reflected in the settings API response', async ({ page }) => {
+    await openGeneralTab(page)
+
+    await page.locator('#logLevel').selectOption('warn')
+    const [saveRes] = await Promise.all([
+      page.waitForResponse(r => r.url().includes('/api/settings') && r.request().method() !== 'GET'),
+      page.locator('#saveSettingsBtn').click(),
+    ])
+    expect(saveRes.status()).toBeLessThan(500)
+
+    // The GET /api/settings response must now carry logLevel: "warn"
+    const settingsRes = await page.request.get('/api/settings')
+    expect(settingsRes.ok()).toBe(true)
+    const settings = await settingsRes.json()
+    expect(settings.logLevel).toBe('warn')
+
+    // Restore
+    await page.locator('#logLevel').selectOption('info')
+    await page.locator('#saveSettingsBtn').click()
+  })
+
+  test('all valid log level options are present in the dropdown', async ({ page }) => {
+    await openGeneralTab(page)
+    const opts = page.locator('#logLevel option')
+    await expect(opts).toContainText(['debug', 'info', 'warn', 'error'])
+  })
+
+  // ── Log level env-override notes ────────────────────────────────────────────
+
+  test('GET /api/settings always includes an envOverrides field', async ({ page }) => {
+    await page.goto('/')
+    const res = await page.request.get('/api/settings')
+    expect(res.ok()).toBe(true)
+    const body = await res.json()
+    expect(body).toHaveProperty('envOverrides')
+    expect(typeof body.envOverrides).toBe('object')
+  })
+
+  test('persist note is shown and env note is hidden when LOG_LEVEL env var is not set', async ({ page }) => {
+    // Intercept the real GET response and strip any envOverrides.logLevel so we
+    // simulate a clean environment regardless of what the test server has set.
+    await page.route('**/api/settings', async (route, request) => {
+      if (request.method() === 'GET') {
+        const real = await route.fetch()
+        const body = await real.json()
+        body.envOverrides = {}
+        await route.fulfill({ json: body })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await openGeneralTab(page)
+
+    await expect(page.locator('#logLevelPersistNote')).toBeVisible()
+    await expect(page.locator('#logLevelEnvNote')).toBeHidden()
+  })
+
+  test('env override note is shown and persist note is hidden when LOG_LEVEL env var is set', async ({ page }) => {
+    await page.route('**/api/settings', async (route, request) => {
+      if (request.method() === 'GET') {
+        const real = await route.fetch()
+        const body = await real.json()
+        body.envOverrides = { logLevel: 'debug' }
+        await route.fulfill({ json: body })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await openGeneralTab(page)
+
+    await expect(page.locator('#logLevelEnvNote')).toBeVisible()
+    await expect(page.locator('#logLevelPersistNote')).toBeHidden()
+  })
+
+  test('env override note displays the env var value', async ({ page }) => {
+    await page.route('**/api/settings', async (route, request) => {
+      if (request.method() === 'GET') {
+        const real = await route.fetch()
+        const body = await real.json()
+        body.envOverrides = { logLevel: 'warn' }
+        await route.fulfill({ json: body })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await openGeneralTab(page)
+
+    await expect(page.locator('#logLevelEnvNote')).toBeVisible()
+    await expect(page.locator('#logLevelEnvVal')).toHaveText('warn')
+  })
+
   test('dashboard auto-refresh field renders with a numeric value', async ({ page }) => {
     await openGeneralTab(page)
     const input = page.locator('#dashboardRefreshSeconds')

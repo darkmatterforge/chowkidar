@@ -451,6 +451,7 @@ test.describe('Job runtime — dual-context same daemon', () => {
   })
 
   test('job pinned to second host does NOT fire when second host is disabled', async ({ page }) => {
+    test.setTimeout(70_000)
     await addSecondHost(page, false) // disabled
 
     const job = await createJob(page, {
@@ -463,11 +464,10 @@ test.describe('Job runtime — dual-context same daemon', () => {
       dockerHostIDs:        [SECOND_ID],
     })
 
-    // Give the scan loop one full cycle to emit any "container recovered" transition
+    // Give the scan loop two full cycles to flush any "container recovered" transition
     // left over from the previous test (container was in a.unhealthy; first scan after
-    // job/host removal writes a recovered entry). Clearing after that flush means the
-    // 18 s measurement window starts clean.
-    await page.waitForTimeout(8_000)
+    // job/host removal writes a recovered entry). Two cycles cover slow CI runners.
+    await page.waitForTimeout(14_000)
     await page.request.delete(`${BASE_URL}/api/history`)
     // Wait 3 scan cycles — disabled host must not trigger
     await page.waitForTimeout(18_000)

@@ -282,9 +282,11 @@ func pruneOldLogs(logsDir string, retentionDays int) {
 }
 
 func applyLogConfig(logsDir string, cfg config.Config) {
-	if cfg.LogLevel != "" {
-		configuredLogLevel = parseLogLevel(cfg.LogLevel)
+	level := cfg.LogLevel
+	if level == "" {
+		level = "info" // safe default if neither env var nor config.yaml specifies a level
 	}
+	configuredLogLevel = parseLogLevel(level)
 	if cfg.LogToFile {
 		if globalLogWriter == nil {
 			globalLogWriter = &rotatingLogWriter{dir: logsDir}
@@ -550,7 +552,10 @@ func main() {
 	logsDir := filepath.Join(cfg.ConfigDir, "logs")
 	logInfof("boot: config directories ensured dataDir=%s logsDir=%s", filepath.Join(cfg.ConfigDir, "data"), logsDir)
 	applyLogConfig(logsDir, cfg)
-	logInfof("boot: log config applied logLevel=%s logToFile=%t logRetentionDays=%d", cfg.LogLevel, cfg.LogToFile, cfg.LogRetentionDays)
+	// Log at the now-active level so the line is always visible.
+	// Source: LOG_LEVEL env var takes priority over config.yaml logLevel.
+	logInfof("boot: log config applied effectiveLogLevel=%s configLogLevel=%s logToFile=%t logRetentionDays=%d",
+		logLevelLabel(configuredLogLevel), cfg.LogLevel, cfg.LogToFile, cfg.LogRetentionDays)
 	if err := ensureConfigFile(cfg); err != nil {
 		log.Fatalf("failed to initialize config file: %v", err)
 	}
@@ -821,12 +826,14 @@ func (a *app) monitorLoop(stop <-chan struct{}) {
 			logInfof("monitor: startup delay elapsed, beginning monitor")
 		}
 	}
-	_ = a.sendStartupNotificationIfReady()
+	if err := a.sendStartupNotificationIfReady(); err != nil {
+		logWarnf("monitor: startup notification failed: %v", err)
+	}
 	for {
-		logDebugf("monitor: scan cycle start")
+		logInfof("monitor: scan cycle start")
 		a.scanOnce()
 		sleep := a.timeUntilNextJobDue()
-		logDebugf("monitor: next scan in %s", sleep.Round(time.Second))
+		logInfof("monitor: next scan in %s", sleep.Round(time.Second))
 		select {
 		case <-stop:
 			logInfof("monitor: stop signal received, exiting loop")
@@ -958,7 +965,7 @@ func (a *app) processUnhealthyContainers(ctx context.Context, docker dockerClien
 	filtered := make([]containertypes.Summary, 0, len(containers))
 	for _, c := range containers {
 		name := containerName(c)
-		logInfof("monitor: evaluating unhealthy container=%s id=%.12s state=%s status=%s", name, c.ID, c.State, c.Status)
+		logInfof("monitor: evaluating unhealthy container=%s id=%.12s state=%s status=%s host=%s", name, c.ID, c.State, c.Status, hostID)
 		if a.isSelfContainer(c) {
 			logDebugf("monitor: skip self container=%s id=%.12s", name, c.ID)
 			continue
@@ -988,8 +995,8 @@ func (a *app) processUnhealthyContainers(ctx context.Context, docker dockerClien
 			jobID: jobID, jobName: jobName,
 		}
 		applyMatchedJobSettings(&job, matchedJob)
-		logInfof("monitor: queueing unhealthy container=%s action=%s jobID=%s jobName=%s retryCount=%d postWait=%ds",
-			name, selectedAction, jobID, jobName, job.retryCount, job.postActionWaitSeconds)
+		logInfof("monitor: queueing unhealthy container=%s action=%s jobID=%s jobName=%s retryCount=%d postWait=%ds host=%s",
+			name, selectedAction, jobID, jobName, job.retryCount, job.postActionWaitSeconds, hostID)
 		a.enqueueJob(job)
 		if a.shouldNotify(name) {
 			if err := a.sendJobNotifications("unhealthy detected", notifData{
@@ -1014,7 +1021,7 @@ func (a *app) processRestartingContainers(ctx context.Context, docker dockerClie
 		restartingContainers, err = docker.RestartingContainers(ctx)
 		return err
 	}); err != nil {
-		logErrorf("failed to query restarting containers: %v", err)
+		logErrorf("failed to query restarting containers host=%s: %v", hostID, err)
 	}
 	for _, c := range restartingContainers {
 		name := containerName(c)
@@ -1027,7 +1034,7 @@ func (a *app) processRestartingContainers(ctx context.Context, docker dockerClie
 		if !inCycle {
 			continue
 		}
-		logInfof("monitor: evaluating stuck-restarting container=%s id=%.12s", name, c.ID)
+		logInfof("monitor: evaluating stuck-restarting container=%s id=%.12s host=%s", name, c.ID, hostID)
 		selectedAction, jobScript, jobNotifications, jobID, jobName, matchedJob, matched := a.selectActionForContainer(ctx, docker, c, cfg, jobs)
 		if !matched {
 			continue
@@ -1063,7 +1070,7 @@ func (a *app) processCrashedContainer(ctx context.Context, docker dockerClient, 
 	reason := fmt.Sprintf("crash (exit %d)", exitCode)
 	selectedAction, jobScript, jobNotifications, jobID, jobName, matchedJob, matched := a.selectActionForContainer(ctx, docker, c, cfg, jobs)
 	if !matched {
-		logDebugf("monitor: crashed container=%s exitCode=%d — no job match, skipping", name, exitCode)
+		logDebugf("monitor: crashed container=%s exitCode=%d host=%s — no job match, skipping", name, exitCode, hostID)
 		return false
 	}
 	if !dueJobIDs[jobID] {
@@ -1085,7 +1092,7 @@ func (a *app) processCrashedContainer(ctx context.Context, docker dockerClient, 
 		jobID: jobID, jobName: jobName,
 	}
 	applyMatchedJobSettings(&job, matchedJob)
-	logInfof("monitor: queueing crashed container=%s exitCode=%d action=%s jobID=%s", name, exitCode, selectedAction, jobID)
+	logInfof("monitor: queueing crashed container=%s exitCode=%d action=%s jobID=%s host=%s", name, exitCode, selectedAction, jobID, hostID)
 	a.enqueueJob(job)
 	return true
 }
@@ -1108,7 +1115,7 @@ func (a *app) processExitedContainers(ctx context.Context, docker dockerClient, 
 		logErrorf("failed to query exited containers: %v", err)
 		return exitedFiltered
 	}
-	logInfof("monitor: scan fetched exited=%d", len(exited))
+	logDebugf("monitor: scan fetched exited=%d host=%s", len(exited), hostID)
 	// Deduplicate by name: if multiple stopped containers share a name (old instances),
 	// keep only the newest one to avoid duplicate processing and history entries.
 	seen := make(map[string]bool, len(exited))
@@ -1251,6 +1258,28 @@ func (a *app) recordHealthPulses(ctx context.Context, docker dockerClient, jobs 
 	}
 }
 
+// healthCheckMode identifies how a job determines container health.
+// Add a new constant here (and a matching case in jobHealthCheckMode + scanHost)
+// to introduce additional health-check strategies in the future.
+type healthCheckMode string
+
+const (
+	// healthCheckNative uses Docker's built-in health status (default).
+	healthCheckNative healthCheckMode = "native"
+	// healthCheckScript runs a user-defined bash script; exit 0 = healthy, non-zero = unhealthy.
+	healthCheckScript healthCheckMode = "script"
+)
+
+// jobHealthCheckMode returns the health-check mode for a job.
+func jobHealthCheckMode(j config.Job) healthCheckMode {
+	switch {
+	case j.HealthCheckScript != "":
+		return healthCheckScript
+	default:
+		return healthCheckNative
+	}
+}
+
 // jobsForHost returns jobs that apply to the given hostID — jobs with empty
 // DockerHostIDs match every host; jobs with a non-empty slice match only if
 // hostID appears in that slice.
@@ -1284,16 +1313,16 @@ func (a *app) scanHost(ctx context.Context, hostID string, docker dockerClient, 
 		}
 	}
 
-	// Split jobs by health-check mode: native Docker status vs bash script.
-	var nativeJobs, scriptJobs []config.Job
+	// Group jobs by health-check mode for extensible dispatch.
+	// To add a new health-check type: add a constant above, add a case in
+	// jobHealthCheckMode, and add a case in the switch below.
+	jobsByMode := make(map[healthCheckMode][]config.Job, 2)
 	for _, j := range jobs {
-		if j.HealthCheckScript != "" {
-			scriptJobs = append(scriptJobs, j)
-		} else {
-			nativeJobs = append(nativeJobs, j)
-		}
+		m := jobHealthCheckMode(j)
+		jobsByMode[m] = append(jobsByMode[m], j)
 	}
 
+	// Native health checks require fetching Docker's unhealthy container list first.
 	var unhealthyCtrs []containertypes.Summary
 	if err := a.retryDocker(ctx, func() error {
 		var err error
@@ -1305,16 +1334,22 @@ func (a *app) scanHost(ctx context.Context, hostID string, docker dockerClient, 
 	}
 
 	logInfof("monitor: scan start host=%s unhealthy=%d totalJobs=%d dueJobs=%d scriptHealthJobs=%d",
-		hostID, len(unhealthyCtrs), len(jobs), len(dueForHost), len(scriptJobs))
+		hostID, len(unhealthyCtrs), len(jobs), len(dueForHost), len(jobsByMode[healthCheckScript]))
 
-	filtered = a.processUnhealthyContainers(ctx, docker, hostID, unhealthyCtrs, cfg, nativeJobs, dueForHost)
+	filtered = a.processUnhealthyContainers(ctx, docker, hostID, unhealthyCtrs, cfg, jobsByMode[healthCheckNative], dueForHost)
 	restarting = a.processRestartingContainers(ctx, docker, hostID, cfg, jobs, dueForHost, &filtered)
 	exitedFiltered = a.processExitedContainers(ctx, docker, hostID, cfg, jobs, dueJobs, dueForHost)
 	starting = a.fetchStartingContainers(ctx, docker)
 
-	if len(scriptJobs) > 0 {
-		scriptUnhealthy := a.processScriptHealthJobs(ctx, docker, hostID, cfg, scriptJobs, dueForHost)
-		filtered = append(filtered, scriptUnhealthy...)
+	// Dispatch non-native health-check modes — add new cases here as new modes are introduced.
+	for mode, modeJobs := range jobsByMode {
+		switch mode {
+		case healthCheckNative:
+			// Already handled above via processUnhealthyContainers.
+		case healthCheckScript:
+			unhealthy := a.processScriptHealthJobs(ctx, docker, hostID, cfg, modeJobs, dueForHost)
+			filtered = append(filtered, unhealthy...)
+		}
 	}
 	return
 }
@@ -1899,11 +1934,12 @@ func matchedJobsSummary(name string, labels map[string]string, envPairs []string
 			continue
 		}
 		matches = append(matches, map[string]any{
-			"id":           r.ID,
-			"name":         r.Name,
-			"group":        r.Group,
-			"action":       r.Action,
-			"dockerHostIDs": r.DockerHostIDs,
+			"id":                    r.ID,
+			"name":                  r.Name,
+			"group":                 r.Group,
+			"action":                r.Action,
+			"dockerHostIDs":         r.DockerHostIDs,
+			"monitorIntervalSeconds": r.MonitorIntervalSeconds,
 		})
 	}
 	return matches
@@ -2132,13 +2168,21 @@ func (a *app) handleSettingsPUT(w http.ResponseWriter, r *http.Request) {
 func (a *app) handleSettings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
+		// Return the effective runtime config so the UI always shows the values
+		// that are actually active — including any env-var overrides. On restart
+		// env vars win again (envOr), so the UI correctly reflects that too.
 		cfg := a.getConfig()
-		fileCfg, err := config.LoadFileConfig(cfg.ConfigDir)
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
-			return
+		// Marshal the flat settings struct then inject envOverrides alongside it
+		// so existing JS field reads (s.logLevel, s.workerCount, …) are unchanged.
+		cfgBytes, _ := json.Marshal(config.ToFileConfig(cfg))
+		var cfgMap map[string]any
+		_ = json.Unmarshal(cfgBytes, &cfgMap)
+		envOverrides := map[string]string{}
+		if v := strings.TrimSpace(os.Getenv("LOG_LEVEL")); v != "" {
+			envOverrides["logLevel"] = v
 		}
-		writeJSON(w, http.StatusOK, fileCfg)
+		cfgMap["envOverrides"] = envOverrides
+		writeJSON(w, http.StatusOK, cfgMap)
 	case http.MethodPut:
 		a.handleSettingsPUT(w, r)
 	default:
@@ -2366,7 +2410,9 @@ func (a *app) handleNotificationByID(w http.ResponseWriter, r *http.Request) {
 			Until string `json:"until"` // RFC3339 OR "midnight" | "1h" | "24h" | "month-end"
 			TZ    string `json:"tz"`    // browser-detected IANA zone (fallback when DisplayTimezone unset)
 		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			logDebugf("notif: suspend — could not decode request body: %v (using defaults)", err)
+		}
 		var until time.Time
 		// Store the browser timezone for future auto-suspends, then resolve.
 		a.recordClientTimezone(body.TZ)
@@ -2416,7 +2462,9 @@ func (a *app) handleNotificationByID(w http.ResponseWriter, r *http.Request) {
 		a.notifications = profiles
 		configDir := a.cfg.ConfigDir
 		a.mu.Unlock()
-		_ = config.SaveNotificationProfiles(configDir, profiles)
+		if err := config.SaveNotificationProfiles(configDir, profiles); err != nil {
+			logWarnf("notif: dismiss-error — failed to persist profiles: %v", err)
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"dismissed": true})
 
 	default:
@@ -4253,7 +4301,9 @@ func hasAnyJobFilters(jobs []config.Job) bool {
 func writeJSON(w http.ResponseWriter, code int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(payload)
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		logDebugf("writeJSON: encode error: %v", err)
+	}
 }
 
 // isSecureRequest returns true when the connection is HTTPS, either directly
@@ -4521,7 +4571,9 @@ func (a *app) handleAuthDisable(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.authCfg != nil {
 		a.authCfg.Enabled = false
-		_ = config.SaveAuthConfig(a.cfg.ConfigDir, a.authCfg)
+		if err := config.SaveAuthConfig(a.cfg.ConfigDir, a.authCfg); err != nil {
+			logWarnf("auth: disable — failed to persist auth config: %v", err)
+		}
 	}
 	a.sessionMu.Lock()
 	defer a.sessionMu.Unlock()

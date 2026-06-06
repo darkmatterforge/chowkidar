@@ -67,8 +67,11 @@
         radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--accent) 12%, transparent) 0, transparent 35%),
         radial-gradient(circle at 100% 15%, color-mix(in srgb, var(--accent) 8%, transparent) 0, transparent 30%),
         var(--bg);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
     }
-    .wrap { width: 100%; padding: 22px; box-sizing: border-box; }
+    .wrap { width: 100%; padding: 22px; box-sizing: border-box; flex: 1; display: flex; flex-direction: column; }
     .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
     .topbar-logo { height: 52px; width: auto; display: block; }
     .topbar-logo-dark { display: none; }
@@ -326,6 +329,7 @@
     .status-chip.down      { background: #ffecef; color: #b33141; }
     .status-chip.unknown   { background: #fff6e7; color: #986d0e; }
     .status-chip.pause     { background: #edf2f7; color: #4b5d70; }
+    .status-chip.shutdown  { background: #dce3ea; color: #3a4d5e; }
     .status-chip.action-ok { background: #e8f4fd; color: #1a5f8a; }
     .status-chip.healthy   { background: #e7f8ef; color: #147a47; }
 
@@ -379,6 +383,7 @@
     .service-row.status-down { border-left: 4px solid var(--danger); }
     .service-row.status-unknown,
     .service-row.status-pause { border-left: 4px solid var(--warn); }
+    .service-row.status-shutdown { border-left: 4px solid #7a8fa6; }
     .service-meta { display: flex; flex-direction: column; gap: 4px; }
     .service-top-row { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
     .service-name { font-size: 13px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
@@ -422,6 +427,7 @@
     .mini-bar.fail      { background: #ef6878; }
     .mini-bar.skip      { background: #e8bf61; }
     /* No history yet — bars stay neutral grey (default .mini-bar colour) */
+    .mini-bar.shutdown-gap { background: #b0c4d4; }
 
     /* ── Layout picker (settings) ── */
     .layout-picker { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
@@ -476,6 +482,7 @@
     .svc-tbl-dot.up   { background: var(--ok); }
     .svc-tbl-dot.down { background: var(--danger); }
     .svc-tbl-dot.unknown, .svc-tbl-dot.pause { background: var(--warn); }
+    .svc-tbl-dot.shutdown { background: #7a8fa6; }
     .svc-tbl-name { font-weight: 600; white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
     .svc-tbl-event { color: var(--muted); font-size: 11px; white-space: nowrap; max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
     .svc-tbl-job { font-size: 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; color: var(--muted); white-space: nowrap; }
@@ -495,6 +502,7 @@
     .svc-grid-tile.up   { background: linear-gradient(145deg,#edfaf3,var(--panel)); border-color: #7dcca0; }
     .svc-grid-tile.down { background: linear-gradient(145deg,#fff0f2,var(--panel)); border-color: #e89099; }
     .svc-grid-tile.unknown, .svc-grid-tile.pause { background: linear-gradient(145deg,#fff8e7,var(--panel)); border-color: #d9b84a; }
+    .svc-grid-tile.shutdown { background: linear-gradient(145deg,#edf2f7,var(--panel)); border-color: #9ab0c4; }
     .svc-grid-tile.active { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); transform: translateY(-1px); }
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme="light"]) .svc-grid-tile.up   { background: linear-gradient(145deg,#0d2618,var(--panel)); border-color: #235c3a; }
@@ -543,7 +551,8 @@
     .svc-status-badge.up    { background: var(--ok);     color: #03260e; }
     .svc-status-badge.down  { background: var(--danger);  color: #2a050a; }
     .svc-status-badge.unknown,
-    .svc-status-badge.pause { background: var(--warn);    color: #2b1e00; }
+    .svc-status-badge.pause    { background: var(--warn);  color: #2b1e00; }
+    .svc-status-badge.shutdown { background: #8a9fb0; color: #fff; }
 
     .detail-grid {
       display: grid;
@@ -608,10 +617,13 @@
       margin: 0;
     }
 
+    #settingsPage.active { flex: 1; display: flex; flex-direction: column; }
     .settings-layout {
       display: grid;
       grid-template-columns: 260px 1fr;
       gap: 14px;
+      flex: 1;
+      align-items: stretch;
     }
     @media (max-width: 1000px) {
       .settings-layout { grid-template-columns: 1fr; }
@@ -1267,6 +1279,7 @@
               <option value="">All Status</option>
               <option value="up">Up</option>
               <option value="down">Down</option>
+              <option value="shutdown">Shutdown</option>
               <option value="unknown">Unknown</option>
               <option value="pause">Pause</option>
             </select>
@@ -1346,7 +1359,7 @@
           </div>
         </aside>
 
-        <article class="card" style="display:flex;flex-direction:column;">
+        <article class="card" style="display:flex;flex-direction:column;min-height:440px;">
           <section class="tab-panel active" id="tab-general">
             <h2 class="section-title">General</h2>
             <div class="form-grid">
@@ -1482,6 +1495,12 @@
                     <option value="error">error</option>
                   </select>
                   <div class="field-error" id="logLevelError"></div>
+                  <div id="logLevelEnvNote" style="display:none;margin-top:4px;font-size:11px;color:var(--muted);line-height:1.4;">
+                    <strong style="color:var(--warn);">⚠ LOG_LEVEL env var is set.</strong> Changes apply immediately but revert to <code id="logLevelEnvVal" style="background:color-mix(in srgb,var(--warn) 12%,var(--panel));padding:1px 4px;border-radius:3px;font-size:11px;"></code> on restart.
+                  </div>
+                  <div id="logLevelPersistNote" style="display:none;margin-top:4px;font-size:11px;color:var(--muted);line-height:1.4;">
+                    Changes apply immediately and persist across restarts.
+                  </div>
                 </div>
                 <div class="field" style="display:flex;flex-direction:column;gap:6px;">
                   <label>Write logs to file</label>
@@ -2194,7 +2213,8 @@
                           <span style="font-size:12px;color:var(--muted);">Templates:</span>
                           <select id="hcTemplateSelect" style="font-size:12px;padding:3px 8px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--text);" onchange="applyHCTemplate(this.value);this.value=''">
                             <option value="">Insert example…</option>
-                            <option value="hc-http">HTTP endpoint check</option>
+                            <option value="hc-http-exec">HTTP check (inside container)</option>
+                            <option value="hc-http-host">HTTP check (from host)</option>
                             <option value="hc-custom">Custom script</option>
                           </select>
                         </div>
@@ -2674,19 +2694,81 @@
     // The version is embedded in each script as  # chowkidar-template: <key>@<version>
     // so we can detect jobs using an outdated copy and offer an upgrade.
     const HC_TEMPLATES = {
-      'hc-http': `#!/bin/bash
-# chowkidar-template: hc-http@1
-# Health check: HTTP endpoint — exit 0 = healthy, non-zero = unhealthy
+      'hc-http-exec': `#!/bin/bash
+# chowkidar-template: hc-http-exec@1
+# Health check: HTTP endpoint checked from INSIDE the container.
+# Requires curl installed in the target container; port does not need to be exposed.
 # $1 = container ID, $2 = container name
-set -e
+# Exit 0 = healthy, non-zero = unhealthy (action fires).
 
 if [ "$DRY_RUN" = "1" ]; then
   echo "[DRY RUN] Would check HTTP health of $2 ($1)"
   exit 0
 fi
 
-# Adjust port and path to match your service
-docker exec "$1" curl -sf http://localhost:8080/health >/dev/null 2>&1`,
+# Map each container name to its health-check URL.
+# Add a line per container; the * arm is the fallback.
+case "$2" in
+  my-api)       URL="http://localhost:3000/health" ;;
+  my-frontend)  URL="http://localhost:8080/healthz" ;;
+  *)            URL="http://localhost:8080/health" ;;
+esac
+
+# -s = silent, -o /dev/null = discard body, -w = write HTTP status code to stdout
+HTTP_CODE=$(docker exec "$1" curl -s -o /dev/null -w "%{http_code}" "$URL" 2>/dev/null || echo "000")
+
+case "$HTTP_CODE" in
+  200|204)
+    echo "healthy: $2 returned $HTTP_CODE"
+    exit 0
+    ;;
+  000)
+    echo "unhealthy: $2 curl failed (container may not have curl, or service not running)"
+    exit 1
+    ;;
+  *)
+    echo "unhealthy: $2 returned HTTP $HTTP_CODE"
+    exit 1
+    ;;
+esac`,
+
+      'hc-http-host': `#!/bin/bash
+# chowkidar-template: hc-http-host@1
+# Health check: HTTP endpoint checked from the HOST (chowkidar side).
+# Simpler — no curl needed inside the container — but the port must be published.
+# $1 = container ID, $2 = container name
+# Exit 0 = healthy, non-zero = unhealthy (action fires).
+
+if [ "$DRY_RUN" = "1" ]; then
+  echo "[DRY RUN] Would check HTTP health of $2 ($1)"
+  exit 0
+fi
+
+# Map each container name to its published host:port URL.
+# Add a line per container; the * arm is the fallback.
+case "$2" in
+  my-api)       URL="http://localhost:3000/health" ;;
+  my-frontend)  URL="http://localhost:8080/healthz" ;;
+  *)            URL="http://localhost:8080/health" ;;
+esac
+
+# -s = silent, -o /dev/null = discard body, -w = write HTTP status code to stdout
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL" 2>/dev/null || echo "000")
+
+case "$HTTP_CODE" in
+  200|204)
+    echo "healthy: $2 returned $HTTP_CODE"
+    exit 0
+    ;;
+  000)
+    echo "unhealthy: $2 curl failed (port not published, or service not running)"
+    exit 1
+    ;;
+  *)
+    echo "unhealthy: $2 returned HTTP $HTTP_CODE"
+    exit 1
+    ;;
+esac`,
 
       'hc-custom': `#!/bin/bash
 # Health check script — exit 0 = healthy, non-zero = unhealthy
@@ -3887,7 +3969,11 @@ echo "Restart complete"`,
       const state = String(service.state || '').toLowerCase();
       const status = String(service.status || '').toLowerCase();
       if (state.includes('paused') || status.includes('paused')) return 'pause';
-      if (state.includes('exited') || state.includes('dead')) return 'down';
+      if (state.includes('exited') || state.includes('dead')) {
+        const m = status.match(/exited \((\d+)\)/);
+        if (m && parseInt(m[1], 10) === 0) return 'shutdown';
+        return 'down';
+      }
       if (status.includes('unhealthy') || status.includes('error') || status.includes('dead')) return 'down';
       if (state.includes('running') || status.includes('healthy') || status.includes('up')) return 'up';
       return 'unknown';
@@ -3937,8 +4023,41 @@ echo "Restart complete"`,
       return 'skip';
     }
 
-    function sampleBarsForService(name, count = 25) {
-      const samples = (_barEntriesByName.get(name) || []).slice(0, count).reverse();
+    function shutdownGreySlots(allEntries, count, hintMs) {
+      if (!allEntries.length) return count;
+      // Use job's monitorIntervalSeconds if provided, otherwise measure from recent entries
+      let avgMs = hintMs || 0;
+      if (!avgMs) {
+        const recent = allEntries.slice(0, 6);
+        if (recent.length >= 2) {
+          const diffs = [];
+          for (let i = 0; i < recent.length - 1; i++) {
+            const d = new Date(recent[i].timestamp).getTime() - new Date(recent[i + 1].timestamp).getTime();
+            if (d > 0) diffs.push(d);
+          }
+          if (diffs.length) avgMs = diffs.reduce((a, b) => a + b, 0) / diffs.length;
+        }
+        if (!avgMs) avgMs = 60_000;
+      }
+      const elapsed = Date.now() - new Date(allEntries[0].timestamp).getTime();
+      return Math.min(count, Math.max(0, Math.floor(elapsed / avgMs)));
+    }
+
+    function sampleBarsForService(name, count = 25, currentStatus, intervalMs) {
+      const allEntries = _barEntriesByName.get(name) || [];
+      const samples = allEntries.slice(0, count).reverse();
+      if (currentStatus === 'shutdown' && allEntries.length > 0) {
+        const grey = shutdownGreySlots(allEntries, count, intervalMs);
+        const keep = Math.max(0, count - grey);
+        const history = keep > 0 ? samples.slice(-keep) : []; // fix: slice(-0) === slice(0) in JS
+        const leftPad = Array(Math.max(0, count - history.length - grey)).fill(null);
+        const rightGrey = Array(grey).fill(null);
+        return [...leftPad, ...history, ...rightGrey].map((s, i) => {
+          const cls = barClass(s);
+          const isGrey = i >= leftPad.length + history.length;
+          return `<span class="mini-bar${cls ? ' ' + cls : ''}${isGrey ? ' shutdown-gap' : ''}"></span>`;
+        }).join('');
+      }
       const padded = Array(Math.max(0, count - samples.length)).fill(null);
       return [...padded, ...samples].map((s) => {
         const cls = barClass(s);
@@ -3946,10 +4065,21 @@ echo "Restart complete"`,
       }).join('');
     }
 
-    function sampleSparkBarsForGrid(name, count = 10) {
-      const samples = (_barEntriesByName.get(name) || []).slice(0, count).reverse();
-      const padded = Array(Math.max(0, count - samples.length)).fill(null);
-      const bars = [...padded, ...samples].map((s) => {
+    function sampleSparkBarsForGrid(name, count = 10, currentStatus, intervalMs) {
+      const allEntries = _barEntriesByName.get(name) || [];
+      const samples = allEntries.slice(0, count).reverse();
+      let ordered;
+      if (currentStatus === 'shutdown' && allEntries.length > 0) {
+        const grey = shutdownGreySlots(allEntries, count, intervalMs);
+        const keep = Math.max(0, count - grey);
+        const history = keep > 0 ? samples.slice(-keep) : [];
+        const leftPad = Array(Math.max(0, count - history.length - grey)).fill(null);
+        ordered = [...leftPad, ...history, ...Array(grey).fill(null)];
+      } else {
+        const padded = Array(Math.max(0, count - samples.length)).fill(null);
+        ordered = [...padded, ...samples];
+      }
+      const bars = ordered.map((s) => {
         const cls = sparkClass(s);
         return `<span class="svc-grid-spark-bar${cls ? ' ' + cls : ''}"></span>`;
       }).join('');
@@ -4253,7 +4383,8 @@ echo "Restart complete"`,
             html += `<span class="service-name">${escapeHtml(service.name)}</span>`;
             html += `<span class="service-badge" style="${uptimeBadgeStyle}">${escapeHtml(uptimeBadgeText)}</span>`;
             html += `</div>`;
-            html += `<div class="mini-bars">${sampleBarsForService(service.name)}</div>`;
+            const jobIntervalMs = ((service.matchedJobs || [])[0]?.monitorIntervalSeconds || 0) * 1000;
+            html += `<div class="mini-bars">${sampleBarsForService(service.name, 25, st, jobIntervalMs)}</div>`;
             html += `<div class="hint" style="font-size:10px;">${escapeHtml(checkSummary)}</div>`;
             html += `</div>`;
             html += '</button>';
@@ -4294,7 +4425,9 @@ echo "Restart complete"`,
           const uptimeBadgeText = (hasHistory || st === 'up' || st === 'down') ? `${upPct}%` : 'N/A';
           const uptimeBadgeStyle = st === 'up'
             ? 'background:#e7f8ef;color:#147a47;'
-            : (st === 'down' ? 'background:#ffecef;color:#b33141;' : 'background:#fff6e7;color:#986d0e;');
+            : st === 'down' ? 'background:#ffecef;color:#b33141;'
+            : st === 'shutdown' ? 'background:#dce3ea;color:#3a4d5e;'
+            : 'background:#fff6e7;color:#986d0e;';
           const lastEntry = (_historyEntriesByName.get(service.name) || []).slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
           const lastEvent = lastEntry ? `${lastEntry.event || lastEntry.action || ''} ${timeAgo(lastEntry.createdAt)}`.trim() : '—';
           const firstJob = (service.matchedJobs || [])[0];
@@ -4354,7 +4487,8 @@ echo "Restart complete"`,
           html += `<button class="svc-grid-tile ${st}${isActive}" data-service-name="${encodedName}" title="${escapeHtml(service.name)}">`;
           html += `<div class="svc-grid-name">${escapeHtml(service.name)}</div>`;
           html += `<div class="svc-grid-pct ${st}">${escapeHtml(uptimeBadgeText)}</div>`;
-          html += sampleSparkBarsForGrid(service.name);
+          const gridIntervalMs = ((service.matchedJobs || [])[0]?.monitorIntervalSeconds || 0) * 1000;
+          html += sampleSparkBarsForGrid(service.name, 10, st, gridIntervalMs);
           if (jobBadgeG) html += `<div class="svc-grid-job-badge">${escapeHtml(jobBadgeG)} · ${escapeHtml(actionBadgeG)}</div>`;
           html += '</button>';
         });
@@ -4427,7 +4561,7 @@ echo "Restart complete"`,
           ${group ? `<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:3px;">${escapeHtml(group)}</div>` : ''}
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <h3 class="service-detail-title" style="margin:0;">${escapeHtml(service.name)}</h3>
-            <span class="svc-status-badge ${st}">${st.toUpperCase()}</span>
+            <span class="svc-status-badge ${st}">${st === 'shutdown' ? 'SHUTDOWN' : st.toUpperCase()}</span>
           </div>
           <div style="font-size:12px;color:var(--muted);margin-top:5px;display:flex;gap:10px;flex-wrap:wrap;">
             <span>State: <strong>${escapeHtml(service.state || '—')}</strong></span>
@@ -4983,6 +5117,10 @@ echo "Restart complete"`,
       updateDisplayTimezoneWarn();
       document.getElementById('dashboardRefreshSeconds').value = s.dashboardRefreshSeconds ?? 30;
       document.getElementById('logLevel').value = s.logLevel || 'info';
+      const logLevelEnvVal = s.envOverrides?.logLevel;
+      document.getElementById('logLevelEnvNote').style.display   = logLevelEnvVal ? '' : 'none';
+      document.getElementById('logLevelPersistNote').style.display = logLevelEnvVal ? 'none' : '';
+      if (logLevelEnvVal) document.getElementById('logLevelEnvVal').textContent = logLevelEnvVal;
       const logToFile = s.logToFile ?? true;
       document.getElementById('logToFile').checked = logToFile;
       document.getElementById('logRetentionDays').value = s.logRetentionDays ?? 7;

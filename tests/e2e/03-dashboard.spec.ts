@@ -36,7 +36,7 @@ test.describe('Dashboard', () => {
   test('status filter has all expected options', async ({ page }) => {
     await goToDashboard(page)
     const opts = page.locator('#serviceStatusFilter option')
-    await expect(opts).toContainText(['All Status', 'Up', 'Down', 'Unknown', 'Pause'])
+    await expect(opts).toContainText(['All Status', 'Up', 'Down', 'Shutdown', 'Unknown', 'Pause'])
   })
 
   test('job action filter has all expected options', async ({ page }) => {
@@ -372,5 +372,50 @@ test.describe('Dashboard', () => {
       const updated = stored.filter((k: string) => k !== key)
       localStorage.setItem('collapsedServiceGroups', JSON.stringify(updated))
     }, groupKey)
+  })
+})
+
+// ── Page isolation — dashboard and settings must never render simultaneously ──
+
+test.describe('Page isolation', () => {
+  test('only dashboard is visible on initial load', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.locator('#themeToggleBtn')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('#dashboardPage')).toBeVisible()
+    await expect(page.locator('#settingsPage')).toBeHidden()
+  })
+
+  test('switching to Settings hides dashboard and shows settings', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.locator('#themeToggleBtn')).toBeVisible({ timeout: 10_000 })
+    await page.locator('[data-page="settings"]').click()
+    await expect(page.locator('#settingsPage')).toBeVisible()
+    await expect(page.locator('#dashboardPage')).toBeHidden()
+  })
+
+  test('switching back to Dashboard hides settings and shows dashboard', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.locator('#themeToggleBtn')).toBeVisible({ timeout: 10_000 })
+    await page.locator('[data-page="settings"]').click()
+    await expect(page.locator('#settingsPage')).toBeVisible()
+    await page.locator('[data-page="dashboard"]').click()
+    await expect(page.locator('#dashboardPage')).toBeVisible()
+    await expect(page.locator('#settingsPage')).toBeHidden()
+  })
+
+  test('exactly one page is visible at any time', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.locator('#themeToggleBtn')).toBeVisible({ timeout: 10_000 })
+
+    const countVisible = () =>
+      page.locator('.page').evaluateAll(els =>
+        els.filter(el => window.getComputedStyle(el).display !== 'none').length,
+      )
+
+    expect(await countVisible()).toBe(1)
+    await page.locator('[data-page="settings"]').click()
+    expect(await countVisible()).toBe(1)
+    await page.locator('[data-page="dashboard"]').click()
+    expect(await countVisible()).toBe(1)
   })
 })
