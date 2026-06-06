@@ -10,33 +10,33 @@ async function openMonitoringTab(page: Page) {
 test.describe('Settings — Monitoring tab', () => {
   test('monitoring tab renders all key inputs', async ({ page }) => {
     await openMonitoringTab(page)
-    await expect(page.locator('#dockerPingTimeoutSeconds')).toBeVisible()
     await expect(page.locator('#httpClientTimeoutSeconds')).toBeVisible()
+    await expect(page.locator('#httpMaxIdleConns')).toBeVisible()
   })
 
-  test('docker ping timeout change saves and persists', async ({ page }) => {
+  test('http client timeout change saves and persists', async ({ page }) => {
     await openMonitoringTab(page)
 
-    const input = page.locator('#dockerPingTimeoutSeconds')
+    const input = page.locator('#httpClientTimeoutSeconds')
     const original = await input.inputValue()
 
-    await input.fill('10')
+    await input.fill('20')
     await page.locator('#saveSettingsBtn').click()
     await expect(page.locator('#settingsStatus')).toBeVisible()
 
     await gotoSettings(page, 'monitoring')
-    await expect(page.locator('#dockerPingTimeoutSeconds')).toHaveValue('10')
+    await expect(page.locator('#httpClientTimeoutSeconds')).toHaveValue('20')
 
     // Restore original value
-    await page.locator('#dockerPingTimeoutSeconds').fill(original)
+    await page.locator('#httpClientTimeoutSeconds').fill(original)
     await page.locator('#saveSettingsBtn').click()
   })
 
-  test('saving from General tab preserves workerCount and dockerPingTimeout', async ({ page }) => {
+  test('saving from General tab preserves workerCount and httpClientTimeout', async ({ page }) => {
     const before = await page.request.get(`${BASE_URL}/api/settings`)
     const beforeJson = await before.json()
     const workersBefore = beforeJson.workerCount
-    const pingBefore = beforeJson.dockerPingTimeoutSeconds
+    const timeoutBefore = beforeJson.httpClientTimeoutSeconds
 
     await gotoSettings(page)
     const [res] = await Promise.all([
@@ -48,7 +48,7 @@ test.describe('Settings — Monitoring tab', () => {
     const after = await page.request.get(`${BASE_URL}/api/settings`)
     const afterJson = await after.json()
     expect(afterJson.workerCount).toBe(workersBefore)
-    expect(afterJson.dockerPingTimeoutSeconds).toBe(pingBefore)
+    expect(afterJson.httpClientTimeoutSeconds).toBe(timeoutBefore)
     expect(afterJson.workerCount).toBeGreaterThan(0)
   })
 })
@@ -64,7 +64,6 @@ test.describe('Settings — default values', () => {
     expect(s.actionTimeoutSeconds).toBeGreaterThanOrEqual(1)
     expect(s.workerCount).toBeGreaterThanOrEqual(1)
     expect(s.queueSize).toBeGreaterThanOrEqual(1)
-    expect(s.dockerPingTimeoutSeconds).toBeGreaterThanOrEqual(1)
     expect(s.logRetentionDays).toBeGreaterThanOrEqual(1)
     expect(s.httpClientTimeoutSeconds).toBeGreaterThanOrEqual(1)
   })
@@ -74,10 +73,10 @@ test.describe('Settings — default values', () => {
     const s = await res.json()
 
     await gotoSettings(page, 'monitoring')
-    await expect(page.locator('#dockerPingTimeoutSeconds')).toHaveValue(String(s.dockerPingTimeoutSeconds))
     await expect(page.locator('#httpClientTimeoutSeconds')).toHaveValue(String(s.httpClientTimeoutSeconds))
-    await expect(page.locator('#dockerClientRetryCount')).toHaveValue(String(s.dockerClientRetryCount))
-    await expect(page.locator('#dockerClientRetryDelaySeconds')).toHaveValue(String(s.dockerClientRetryDelaySeconds))
+    await expect(page.locator('#httpMaxIdleConns')).toHaveValue(String(s.httpMaxIdleConns))
+    await expect(page.locator('#httpMaxIdleConnsPerHost')).toHaveValue(String(s.httpMaxIdleConnsPerHost))
+    await expect(page.locator('#httpIdleConnTimeoutSeconds')).toHaveValue(String(s.httpIdleConnTimeoutSeconds))
   })
 })
 
@@ -87,9 +86,9 @@ test.describe('Settings — persist through page reload', () => {
   test('changed setting survives a page reload', async ({ page }) => {
     await gotoSettings(page, 'monitoring')
 
-    const input = page.locator('#dockerPingTimeoutSeconds')
+    const input = page.locator('#httpClientTimeoutSeconds')
     const original = await input.inputValue()
-    const newValue = original === '7' ? '8' : '7'
+    const newValue = original === '20' ? '25' : '20'
 
     await input.fill(newValue)
     const [res] = await Promise.all([
@@ -102,10 +101,10 @@ test.describe('Settings — persist through page reload', () => {
     await page.reload()
     await expect(page.locator('#themeToggleBtn')).toBeVisible()
     await gotoSettings(page, 'monitoring')
-    await expect(page.locator('#dockerPingTimeoutSeconds')).toHaveValue(newValue)
+    await expect(page.locator('#httpClientTimeoutSeconds')).toHaveValue(newValue)
 
     // Restore
-    await page.locator('#dockerPingTimeoutSeconds').fill(original)
+    await page.locator('#httpClientTimeoutSeconds').fill(original)
     await page.locator('#saveSettingsBtn').click()
   })
 })

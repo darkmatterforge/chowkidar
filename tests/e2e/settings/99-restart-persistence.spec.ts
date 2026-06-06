@@ -14,12 +14,12 @@ import { restartAndReAuth, BASE_URL } from '../helpers/restart'
 // ── Monitoring setting survives restart ───────────────────────────────────────
 
 test.describe('Restart persistence — Monitoring', () => {
-  test('dockerPingTimeoutSeconds survives container restart', async ({ page }) => {
+  test('httpClientTimeoutSeconds survives container restart', async ({ page }) => {
     await gotoSettings(page, 'monitoring')
 
-    const input = page.locator('#dockerPingTimeoutSeconds')
+    const input = page.locator('#httpClientTimeoutSeconds')
     const original = await input.inputValue()
-    const newValue = original === '9' ? '8' : '9'
+    const newValue = original === '20' ? '25' : '20'
 
     await input.fill(newValue)
     const [res] = await Promise.all([
@@ -31,11 +31,11 @@ test.describe('Restart persistence — Monitoring', () => {
     await restartAndReAuth(page)
 
     const s = await (await page.request.get(`${BASE_URL}/api/settings`)).json()
-    expect(String(s.dockerPingTimeoutSeconds)).toBe(newValue)
+    expect(String(s.httpClientTimeoutSeconds)).toBe(newValue)
 
     // Restore
     await page.request.put(`${BASE_URL}/api/settings`, {
-      data: { ...s, dockerPingTimeoutSeconds: Number(original) },
+      data: { ...s, httpClientTimeoutSeconds: Number(original) },
     })
   })
 })
@@ -119,6 +119,39 @@ test.describe('Restart persistence — Docker host fields', () => {
     await page.request.put(`${BASE_URL}/api/docker-hosts`, {
       data: { profiles: current.profiles.filter((p: Record<string, unknown>) => !p.built_in && p.id !== 'local') },
     })
+  })
+
+  test('monitoring fields show correct values in edit form after restart', async ({ page }) => {
+    await gotoApp(page)
+
+    // Create host via UI to exercise the full save path
+    await gotoSettings(page, 'dockerHosts')
+    await page.locator('#openAddDockerHostBtn').click()
+    await page.locator('#dockerHostName').fill('e2e-ui-restart-host')
+    await page.locator('#dockerHostEndpoint').fill('/var/run/docker.sock')
+    await page.locator('#dockerHostAdvHeader').click()
+    await page.locator('#dockerHostMonitorInterval').fill('90')
+    await page.locator('#dockerHostPingTimeout').fill('7')
+    await page.locator('#dockerHostConfirmScans').fill('600')
+    await page.locator('#saveDockerHostBtn').click()
+    await expect(page.locator('#dockerHostsTbody')).toContainText('e2e-ui-restart-host')
+
+    await restartAndReAuth(page)
+
+    // Re-open the edit form and verify values are still populated
+    await gotoSettings(page, 'dockerHosts')
+    const editBtn = page.locator('#dockerHostsTbody tr')
+      .filter({ hasText: 'e2e-ui-restart-host' })
+      .getByRole('button', { name: /edit/i })
+    await editBtn.click()
+    await page.locator('#dockerHostAdvHeader').click()
+    await expect(page.locator('#dockerHostMonitorInterval')).toHaveValue('90')
+    await expect(page.locator('#dockerHostPingTimeout')).toHaveValue('7')
+    await expect(page.locator('#dockerHostConfirmScans')).toHaveValue('600')
+
+    // Clean up
+    await page.locator('#deleteDockerHostBtn').click()
+    await expect(page.locator('#dockerHostsTbody')).not.toContainText('e2e-ui-restart-host')
   })
 
   test('downTemplate and recoveryTemplate survive restart', async ({ page }) => {

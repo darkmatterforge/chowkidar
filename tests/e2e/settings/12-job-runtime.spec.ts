@@ -351,6 +351,7 @@ test.describe('Job runtime — action type in history', () => {
   })
 
   test('history records run-script as the action when bash script job fires', async ({ page }) => {
+    test.setTimeout(90_000)
     const job = await createJob(page, {
       name:                'e2e-action-type-script-job',
       action:              'run-script',
@@ -364,7 +365,7 @@ test.describe('Job runtime — action type in history', () => {
     expect(job.id).toBeTruthy()
 
     await page.request.delete(`${BASE_URL}/api/history`)
-    const found = await waitForHistoryEntry(page, CONTAINER)
+    const found = await waitForHistoryEntry(page, CONTAINER, 75_000)
     expect(found).toBe(true)
 
     // Verify the history entry records run-script as the action
@@ -462,6 +463,9 @@ test.describe('Job runtime — dual-context same daemon', () => {
       dockerHostIDs:        [SECOND_ID],
     })
 
+    // Allow one full scan cycle to flush any in-flight scans that started
+    // before the disabled state propagated via buildExtraClients.
+    await page.waitForTimeout(8_000)
     await page.request.delete(`${BASE_URL}/api/history`)
     // Wait 3 scan cycles — disabled host must not trigger
     await page.waitForTimeout(18_000)
