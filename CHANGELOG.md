@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-07
+
 ### Added
 
 - **Dashboard group collapse/expand** — service group headers are now clickable; a ▼ chevron toggles the group open or collapsed. Collapsed state is persisted to `localStorage` across page reloads. Group headers show a count badge `(N)`.
@@ -186,6 +188,8 @@ All notable changes to this project will be documented in this file.
 - Unraid Community Applications template
 - AGPL-3.0 license
 
+[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/darkmatterforge/chowkidar/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/darkmatterforge/chowkidar/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/darkmatterforge/chowkidar/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/darkmatterforge/chowkidar/compare/v0.1.0...v0.1.1
