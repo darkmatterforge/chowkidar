@@ -31,7 +31,6 @@ type Config struct {
 	DockerClientRetryDelaySeconds int
 	DockerSocketPath              string
 	ExternalHostname              string
-	NotificationRatePerSec        int
 	NotificationCooldownSeconds   int
 	StartupDelaySeconds           int
 	StartExited                   bool
@@ -70,7 +69,6 @@ type FileConfig struct {
 	DockerClientRetryDelaySeconds int      `yaml:"dockerClientRetryDelaySeconds" json:"dockerClientRetryDelaySeconds"`
 	DockerSocketPath              string   `yaml:"dockerSocketPath"              json:"dockerSocketPath"`
 	ExternalHostname              string   `yaml:"externalHostname"              json:"externalHostname"`
-	NotificationRatePerSec        int      `yaml:"notificationRatePerSec"        json:"notificationRatePerSec"`
 	NotificationCooldownSeconds   int      `yaml:"notificationCooldownSeconds"   json:"notificationCooldownSeconds"`
 	StartupDelaySeconds           int      `yaml:"startupDelaySeconds"           json:"startupDelaySeconds"`
 	StartExited                   bool     `yaml:"startExited"                   json:"startExited"`
@@ -108,7 +106,6 @@ func Load() (Config, error) {
 		ContainerEnvVarFilter:         envOr("CONTAINER_ENV_VAR", fileCfg.ContainerEnvVarFilter),
 		DockerSocketPath:              envOr("DOCKER_SOCKET_PATH", fileCfg.DockerSocketPath),
 		ExternalHostname:              envOr("EXTERNAL_HOSTNAME", fileCfg.ExternalHostname),
-		NotificationRatePerSec:        envOrInt("NOTIFICATION_RATE_PER_SEC", fileCfg.NotificationRatePerSec),
 		NotificationCooldownSeconds:   envOrInt("NOTIFICATION_COOLDOWN_SECONDS", fileCfg.NotificationCooldownSeconds),
 		StartupDelaySeconds:           envOrInt("STARTUP_DELAY_SECONDS", fileCfg.StartupDelaySeconds),
 		HttpClientTimeoutSeconds:      envOrInt("HTTP_CLIENT_TIMEOUT_SECONDS", fileCfg.HttpClientTimeoutSeconds),
@@ -182,9 +179,6 @@ func applyConfigDefaults(cfg *Config) {
 	if cfg.DockerSocketPath == "" {
 		cfg.DockerSocketPath = "/var/run/docker.sock"
 	}
-	if cfg.NotificationRatePerSec < 1 {
-		cfg.NotificationRatePerSec = 5
-	}
 }
 
 // LoadFileConfig reads config.yaml from configDir, merging over built-in defaults.
@@ -245,7 +239,6 @@ func ToFileConfig(cfg Config) FileConfig {
 		DockerClientRetryDelaySeconds: cfg.DockerClientRetryDelaySeconds,
 		DockerSocketPath:              cfg.DockerSocketPath,
 		ExternalHostname:              cfg.ExternalHostname,
-		NotificationRatePerSec:        cfg.NotificationRatePerSec,
 		NotificationCooldownSeconds:   cfg.NotificationCooldownSeconds,
 		StartupDelaySeconds:           cfg.StartupDelaySeconds,
 		StartExited:                   cfg.StartExited,
@@ -284,7 +277,6 @@ func defaultFileConfig() FileConfig {
 		DockerClientRetryDelaySeconds: 2,
 		DockerSocketPath:              "/var/run/docker.sock",
 		ExternalHostname:              "",
-		NotificationRatePerSec:        5,
 		NotificationCooldownSeconds:   3600,
 		StartExited:                   false,
 		RunScriptPath:                 "",

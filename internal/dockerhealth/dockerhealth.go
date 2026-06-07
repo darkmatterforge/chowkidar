@@ -103,6 +103,12 @@ func (c *Client) StartingContainers(ctx context.Context) ([]containertypes.Summa
 	return c.cli.ContainerList(ctx, containertypes.ListOptions{Filters: args})
 }
 
+func (c *Client) RunningContainers(ctx context.Context) ([]containertypes.Summary, error) {
+	args := filters.NewArgs()
+	args.Add("status", "running")
+	return c.cli.ContainerList(ctx, containertypes.ListOptions{Filters: args})
+}
+
 func (c *Client) AllContainers(ctx context.Context) ([]containertypes.Summary, error) {
 	return c.cli.ContainerList(ctx, containertypes.ListOptions{All: true})
 }

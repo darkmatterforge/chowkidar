@@ -35,7 +35,6 @@ func newBellTestServer(t *testing.T) (*app, *httptest.Server) {
 		DockerClientRetryCount:        1,
 		DockerClientRetryDelaySeconds: 2,
 		ActionTimeoutSeconds:          20,
-		NotificationRatePerSec:        5,
 	}
 	if err := config.SaveFileConfig(configDir, config.ToFileConfig(cfg)); err != nil {
 		t.Fatalf("SaveFileConfig: %v", err)
@@ -55,9 +54,7 @@ func newBellTestServer(t *testing.T) (*app, *httptest.Server) {
 		notifications:        []config.NotificationProfile{},
 		scripts:              []config.ScriptEntry{},
 		lastNotified:         make(map[string]time.Time),
-		actionCycle:          make(map[string]int),
-		retriesExhausted:     make(map[string]bool),
-		postActionDeadline:   make(map[string]time.Time),
+		cState:               make(map[string]*containerActionState),
 		activeJobs:           make(map[string]bool),
 		lastJobScan:          make(map[string]time.Time),
 		lastJobNotifications: make(map[string][]string),

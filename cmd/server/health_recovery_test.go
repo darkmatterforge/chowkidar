@@ -34,9 +34,7 @@ func newRecoveryApp(t *testing.T, fake *fakeDockerClient, jobs []config.Job) (*a
 		notifier:             notify.New(""),
 		jobs:                 jobs,
 		lastNotified:         make(map[string]time.Time),
-		actionCycle:          make(map[string]int),
-		retriesExhausted:     make(map[string]bool),
-		postActionDeadline:   make(map[string]time.Time),
+		cState:               make(map[string]*containerActionState),
 		activeJobs:           make(map[string]bool),
 		lastJobScan:          make(map[string]time.Time),
 		lastJobNotifications: make(map[string][]string),
@@ -79,11 +77,9 @@ func TestHealthRecovery_SuccessfulRestartWritesHistoryEntry(t *testing.T) {
 		cfg:                config.Config{ActionTimeoutSeconds: 5},
 		docker:             fake,
 		notifier:           notify.New(""),
-		lastNotified:       make(map[string]time.Time),
-		actionCycle:        make(map[string]int),
-		retriesExhausted:   make(map[string]bool),
-		postActionDeadline: make(map[string]time.Time),
-		activeJobs:         make(map[string]bool),
+		lastNotified:         make(map[string]time.Time),
+		cState:               make(map[string]*containerActionState),
+		activeJobs:           make(map[string]bool),
 		lastJobNotifications: make(map[string][]string),
 	}
 	dir := t.TempDir()
@@ -138,10 +134,13 @@ func TestHealthRecovery_RecoveredContainerClearsActionCycle(t *testing.T) {
 
 	// Verify an action cycle was opened for this container
 	a.mu.RLock()
-	cycle := a.actionCycle["db"]
+	var cycle int
+	if s := a.cState["db"]; s != nil {
+		cycle = s.cycle
+	}
 	a.mu.RUnlock()
 	if cycle == 0 {
-		t.Fatal("expected actionCycle to be incremented after restart")
+		t.Fatal("expected cState.cycle to be incremented after restart")
 	}
 
 	// Container recovers — remove from unhealthy list
@@ -156,10 +155,13 @@ func TestHealthRecovery_RecoveredContainerClearsActionCycle(t *testing.T) {
 	pool2.Stop()
 
 	a.mu.RLock()
-	cycleAfter := a.actionCycle["db"]
+	var cycleAfter int
+	if s := a.cState["db"]; s != nil {
+		cycleAfter = s.cycle
+	}
 	a.mu.RUnlock()
 	if cycleAfter != 0 {
-		t.Fatalf("expected actionCycle cleared after recovery, got %d", cycleAfter)
+		t.Fatalf("expected cState cleared after recovery, got cycle=%d", cycleAfter)
 	}
 }
 

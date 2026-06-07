@@ -15,18 +15,22 @@ Chowkidar watches your containers for `unhealthy` health events and exited state
 
 ## Features
 
-- **Container monitoring** — polls Docker for `unhealthy` and exited containers
+- **Container monitoring** — polls Docker for `unhealthy` and exited containers; supports Docker-native health checks and custom bash health-check scripts per job
 - **Configurable actions** — `restart`, `start`, `stop`, `none`, `run-script` per job
-- **Per-job overrides** — individual retry count, monitoring interval, and action timeout
+- **Per-job health-check script** — define a bash script that determines container health (exit 0 = healthy, non-zero = unhealthy); dry-run and template picker included
+- **Per-job overrides** — individual retry count, monitoring interval, action timeout, and post-action wait
+- **Multi-context job rules** — pin each job to one or more Docker contexts; jobs with no context run on all hosts
 - **Multi-provider notifications** — Discord, Slack, Telegram, ntfy, Gotify, Pushover, SMTP/email, raw Apprise URLs
 - **Notification templates** — customise message content per provider per lifecycle event
 - **Jobs system** — define targeted monitoring rules with container name/label/env var filters
 - **Bash script action** — run a custom inline script per job with built-in templates, dry-run execution, and automatic template upgrade detection
-- **Multi-Docker-host** — monitor containers across multiple Docker hosts or sockets
+- **Multi-Docker-host** — monitor containers across multiple Docker hosts or sockets; each host individually enabled/disabled with its own monitoring interval, ping timeout, and offline confirm window
+- **Per-host offline notifications** — configure notification agents and custom message templates per Docker host; notifies once on down, once on recovery (no spam)
 - **Web UI** — dashboard, jobs, notification profiles, action history, settings
 - **Authentication** — optional username/password protection with bcrypt hashing
 - **Encryption** — notification credentials encrypted at rest via `CHOWKIDAR_SECRET_KEY`
-- **3 dashboard layouts** — Card List, Compact Table, Status Grid
+- **3 dashboard layouts** — Card List, Compact Table, Status Grid; service groups are collapsible with state persisted across reloads
+- **Dashboard filters** — filter by status, tag, job action, Docker host, container name, label, env var, and job name; advanced filters panel for power users
 - **Notification bell** — persistent system alerts (boot, failed recovery, paused monitoring) with per-alert dismiss and mark-all-read
 - **Version check** — settings sidebar shows running version; background check surfaces a bell alert when a newer release is available
 - **Light/dark/auto theme**
@@ -86,7 +90,7 @@ Most settings are configured through the **web UI** (Settings page) and persiste
 
 ### Docker connectivity
 
-Chowkidar connects to Docker via the mounted socket by default. Additional Docker hosts (remote or multi-host) are added through **Settings → Docker Hosts** in the web UI.
+Chowkidar connects to Docker via the mounted socket by default. Additional Docker hosts are added through **Settings → Docker Hosts** in the web UI. Each host can be individually enabled/disabled and has its own monitor interval, ping timeout, and offline notification settings.
 
 | Variable | Default | Description |
 |---|---|---|

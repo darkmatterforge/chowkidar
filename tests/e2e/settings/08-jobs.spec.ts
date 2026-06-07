@@ -12,6 +12,16 @@ async function openAddForm(page: Page) {
 
 async function saveJob(page: Page, name: string) {
   await page.locator('#jobName').fill(name)
+  // populateContextFilter() adds option[value="local"] only after loadDockerHosts() completes.
+  // Wait for it so the chip visibility check below sees stable state, not a mid-load snapshot.
+  await expect(page.locator('#jobFilterContext option[value="local"]')).toBeAttached()
+  const hostWrap = page.locator('#jobDockerHostWrap')
+  if (await hostWrap.isVisible()) {
+    const localChip = page.locator('#jobDockerHostChips button[data-host-chip-id="local"]')
+    if (!await localChip.evaluate((el: Element) => el.classList.contains('selected'))) {
+      await localChip.click()
+    }
+  }
   const [res] = await Promise.all([
     page.waitForResponse(r => r.url().includes('/api/job') && r.request().method() !== 'GET'),
     page.locator('#saveJobBtn').click(),
@@ -648,6 +658,79 @@ docker restart "$1"`)
     await expect(opts).toContainText(['all actions', 'restart', 'start', 'stop', 'none', 'run-script'])
   })
 
+  test('job context filter is present with "all contexts" option', async ({ page }) => {
+    await openJobsTab(page)
+    const sel = page.locator('#jobFilterContext')
+    await expect(sel).toBeVisible()
+    await expect(sel.locator('option').first()).toHaveText('all contexts')
+  })
+
+  // ── Enabled and Start Exited checkboxes ───────────────────────────────────
+
+  test.describe.serial('Enabled / Start Exited checkboxes', () => {
+    test('Enabled checkbox is checked by default on new job form', async ({ page }) => {
+      await openJobsTab(page)
+      await openAddForm(page)
+      await expect(page.locator('#jobEnabled')).toBeChecked()
+      await page.locator('#closeJobFormBtn').click()
+    })
+
+    test('Start Exited checkbox is unchecked by default', async ({ page }) => {
+      await openJobsTab(page)
+      await openAddForm(page)
+      await expect(page.locator('#jobStartExited')).not.toBeChecked()
+      await page.locator('#closeJobFormBtn').click()
+    })
+
+    test('creating a disabled job saves enabled=false and persists via API', async ({ page }) => {
+      const BASE_URL = process.env.BASE_URL ?? 'http://localhost:8080'
+      await openJobsTab(page)
+      await deleteJob(page, 'e2e-disabled-job') // idempotent: remove leftovers from a prior failed run
+      await openAddForm(page)
+      await page.locator('#jobEnabled').uncheck()
+      await expect(page.locator('#jobEnabled')).not.toBeChecked()
+      await page.locator('#jobNameFilter').fill('checkbox-test-container')
+      await saveJob(page, 'e2e-disabled-job')
+
+      const res  = await page.request.get(`${BASE_URL}/api/jobs`)
+      const data = await res.json() as { jobs: Array<{ name: string; enabled: boolean }> }
+      const job  = data.jobs.find(j => j.name === 'e2e-disabled-job')
+      expect(job?.enabled).toBe(false)
+    })
+
+    test('editing a disabled job restores Enabled checkbox as unchecked', async ({ page }) => {
+      await openJobsTab(page)
+      const editBtn = page.locator('#jobsTbody tr')
+        .filter({ hasText: 'e2e-disabled-job' })
+        .getByRole('button', { name: /edit/i })
+      await editBtn.click()
+      await expect(page.locator('#jobEnabled')).not.toBeChecked()
+      await page.locator('#cancelJobEditBtn').click()
+    })
+
+    test('creating a job with startExited saves startExited=true', async ({ page }) => {
+      const BASE_URL = process.env.BASE_URL ?? 'http://localhost:8080'
+      await openJobsTab(page)
+      await deleteJob(page, 'e2e-start-exited-job') // idempotent: remove leftovers from a prior failed run
+      await openAddForm(page)
+      await page.locator('#jobStartExited').check()
+      await expect(page.locator('#jobStartExited')).toBeChecked()
+      await page.locator('#jobNameFilter').fill('exited-test-container')
+      await saveJob(page, 'e2e-start-exited-job')
+
+      const res  = await page.request.get(`${BASE_URL}/api/jobs`)
+      const data = await res.json() as { jobs: Array<{ name: string; startExited: boolean }> }
+      const job  = data.jobs.find(j => j.name === 'e2e-start-exited-job')
+      expect(job?.startExited).toBe(true)
+    })
+
+    test('clean up checkbox test jobs', async ({ page }) => {
+      await openJobsTab(page)
+      await deleteJob(page, 'e2e-disabled-job')
+      await deleteJob(page, 'e2e-start-exited-job')
+    })
+  })
+
   // ── Bash script action tab ─────────────────────────────────────────────────
 
   test('Bash Script tab is present and shows a code editor', async ({ page }) => {
@@ -659,5 +742,326 @@ docker restart "$1"`)
     // Switch back to Standard Action
     await page.locator('#jobTabStandard').click()
     await expect(page.locator('#jobTabStandardContent')).toBeVisible()
+  })
+
+  // ── Health Check tab ───────────────────────────────────────────────────────
+
+  test.describe.serial('Health Check tab', () => {
+    test('Health Check section is present with Docker Status and Bash Script tabs', async ({ page }) => {
+      await openJobsTab(page)
+      await openAddForm(page)
+      await expect(page.locator('#jobHCTabDocker')).toBeVisible()
+      await expect(page.locator('#jobHCTabScript')).toBeVisible()
+      await page.locator('#closeJobFormBtn').click()
+    })
+
+    test('Docker Status tab is active by default', async ({ page }) => {
+      await openJobsTab(page)
+      await openAddForm(page)
+      await expect(page.locator('#jobHCTabDocker')).toHaveClass(/active/)
+      await expect(page.locator('#jobHCTabScript')).not.toHaveClass(/active/)
+      await expect(page.locator('#jobHCDockerContent')).toBeVisible()
+      await expect(page.locator('#jobHCScriptContent')).toBeHidden()
+      await page.locator('#closeJobFormBtn').click()
+    })
+
+    test('switching to Bash Script tab shows the health check editor', async ({ page }) => {
+      await openJobsTab(page)
+      await openAddForm(page)
+      await page.locator('#jobHCTabScript').click()
+      await expect(page.locator('#jobHCTabScript')).toHaveClass(/active/)
+      await expect(page.locator('#jobHCScriptContent')).toBeVisible()
+      await expect(page.locator('#jobHCDockerContent')).toBeHidden()
+      await expect(page.locator('#jobHealthCheckScript')).toBeVisible()
+      await expect(page.locator('#hcDryRunBtn')).toBeVisible()
+      await page.locator('#closeJobFormBtn').click()
+    })
+
+    test('health check template picker inserts a script', async ({ page }) => {
+      await openJobsTab(page)
+      await openAddForm(page)
+      await page.locator('#jobHCTabScript').click()
+      await expect(page.locator('#jobHCScriptContent')).toBeVisible()
+      await page.locator('#hcTemplateSelect').selectOption('hc-http-exec')
+      const script = await page.locator('#jobHealthCheckScript').inputValue()
+      expect(script).toContain('#!/bin/bash')
+      expect(script).toContain('curl')
+      await page.locator('#closeJobFormBtn').click()
+    })
+
+    test('health check dry run button runs the script and shows output', async ({ page }) => {
+      await openJobsTab(page)
+      await openAddForm(page)
+      await page.locator('#jobHCTabScript').click()
+      await expect(page.locator('#jobHCScriptContent')).toBeVisible()
+      await page.locator('#jobHealthCheckScript').fill('#!/bin/sh\necho "hc-dry-run-ok"')
+      await expect(page.locator('#jobHealthCheckScript')).toHaveValue(/hc-dry-run-ok/)
+      const [res] = await Promise.all([
+        page.waitForResponse(r => r.url().includes('/api/scripts/dry-run')),
+        page.locator('#hcDryRunBtn').click(),
+      ])
+      expect(res.status()).toBeLessThan(500)
+      await expect(page.locator('#hcDryRunResult')).toBeVisible()
+      await expect(page.locator('#hcDryRunOutput')).toContainText('hc-dry-run-ok')
+      await page.locator('#closeJobFormBtn').click()
+    })
+
+    test('saving a job with health check script persists healthCheckScript', async ({ page }) => {
+      const BASE_URL = process.env.BASE_URL ?? 'http://localhost:8080'
+      await openJobsTab(page)
+      await openAddForm(page)
+      await page.locator('#jobHCTabScript').click()
+      await expect(page.locator('#jobHCScriptContent')).toBeVisible()
+      await page.locator('#jobHealthCheckScript').fill('#!/bin/sh\ndocker exec "$1" curl -sf http://localhost/health')
+      await expect(page.locator('#jobHealthCheckScript')).toHaveValue(/curl/)
+      await page.locator('#jobNameFilter').fill('hc-script-container')
+      await saveJob(page, 'e2e-hc-script-job')
+
+      // Verify via API that healthCheckScript was saved
+      const res = await page.request.get(`${BASE_URL}/api/jobs`)
+      const data = await res.json()
+      const job = (data.jobs as Array<{ name: string; healthCheckScript?: string }>)
+        .find(j => j.name === 'e2e-hc-script-job')
+      expect(job?.healthCheckScript).toContain('curl')
+    })
+
+    test('editing a job with health check script restores tab and content', async ({ page }) => {
+      await openJobsTab(page)
+      const editBtn = page.locator('#jobsTbody tr')
+        .filter({ hasText: 'e2e-hc-script-job' })
+        .getByRole('button', { name: /edit/i })
+      await editBtn.click()
+      await expect(page.locator('#jobFormPanel')).toBeVisible()
+      // Health Check tab should switch to Script
+      await expect(page.locator('#jobHCTabScript')).toHaveClass(/active/)
+      await expect(page.locator('#jobHCScriptContent')).toBeVisible()
+      const script = await page.locator('#jobHealthCheckScript').inputValue()
+      expect(script).toContain('curl')
+      await page.locator('#cancelJobEditBtn').click()
+    })
+
+    test('saving with Docker Status tab clears healthCheckScript', async ({ page }) => {
+      const BASE_URL = process.env.BASE_URL ?? 'http://localhost:8080'
+      await openJobsTab(page)
+      const editBtn = page.locator('#jobsTbody tr')
+        .filter({ hasText: 'e2e-hc-script-job' })
+        .getByRole('button', { name: /edit/i })
+      await editBtn.click()
+      // Switch back to Docker Status (clears script on save)
+      await page.locator('#jobHCTabDocker').click()
+      await expect(page.locator('#jobHCTabDocker')).toHaveClass(/active/)
+      const [res] = await Promise.all([
+        page.waitForResponse(r => r.url().includes('/api/job') && r.request().method() !== 'GET'),
+        page.locator('#saveJobBtn').click(),
+      ])
+      expect(res.status()).toBeLessThan(500)
+
+      const apiRes = await page.request.get(`${BASE_URL}/api/jobs`)
+      const data = await apiRes.json()
+      const job = (data.jobs as Array<{ name: string; healthCheckScript?: string }>)
+        .find(j => j.name === 'e2e-hc-script-job')
+      expect(job?.healthCheckScript ?? '').toBe('')
+    })
+
+    test('clean up health check script job', async ({ page }) => {
+      await openJobsTab(page)
+      await deleteJob(page, 'e2e-hc-script-job')
+    })
+  })
+
+  // ── Docker contexts (multi-host) ───────────────────────────────────────────
+
+  test.describe.serial('Docker contexts', () => {
+    const BASE_URL = process.env.BASE_URL ?? 'http://localhost:8080'
+
+    // ── Chip count scales with number of configured hosts ─────────────────────
+
+    test('with no extra hosts, Docker contexts section is hidden', async ({ page }) => {
+      // Verify baseline: only built-in Local Docker → section hidden
+      await openJobsTab(page)
+      await openAddForm(page)
+      await expect(page.locator('#jobDockerHostWrap')).toBeHidden()
+      await page.locator('#closeJobFormBtn').click()
+    })
+
+    test('adding one extra host shows 2 chips (Local + 1 extra)', async ({ page }) => {
+      await gotoSettings(page, 'dockerHosts')
+      await page.locator('#openAddDockerHostBtn').click()
+      await page.locator('#dockerHostName').fill('e2e-extra-context')
+      await page.locator('#dockerHostEndpoint').fill('/var/run/docker.sock')
+      await page.locator('#saveDockerHostBtn').click()
+      await expect(page.locator('#dockerHostsTbody')).toContainText('e2e-extra-context')
+
+      await openJobsTab(page)
+      await openAddForm(page)
+      await expect(page.locator('#jobDockerHostWrap')).toBeVisible()
+      const count = await page.locator('#jobDockerHostChips button[data-host-chip-id]').count()
+      expect(count).toBe(2) // Local Docker + e2e-extra-context
+      await page.locator('#closeJobFormBtn').click()
+    })
+
+    test('adding a second extra host shows 3 chips', async ({ page }) => {
+      await gotoSettings(page, 'dockerHosts')
+      await page.locator('#openAddDockerHostBtn').click()
+      await page.locator('#dockerHostName').fill('e2e-extra-context-2')
+      await page.locator('#dockerHostEndpoint').fill('/var/run/docker.sock')
+      await page.locator('#saveDockerHostBtn').click()
+      await expect(page.locator('#dockerHostsTbody')).toContainText('e2e-extra-context-2')
+
+      await openJobsTab(page)
+      await openAddForm(page)
+      const count = await page.locator('#jobDockerHostChips button[data-host-chip-id]').count()
+      expect(count).toBe(3) // Local Docker + e2e-extra-context + e2e-extra-context-2
+      await page.locator('#closeJobFormBtn').click()
+    })
+
+    test('each chip shows the host name as its label', async ({ page }) => {
+      await openJobsTab(page)
+      await openAddForm(page)
+      await expect(page.locator('#jobDockerHostChips')).toContainText('e2e-extra-context')
+      await expect(page.locator('#jobDockerHostChips')).toContainText('e2e-extra-context-2')
+      await page.locator('#closeJobFormBtn').click()
+    })
+
+    test('removing a host reduces chip count back to 2', async ({ page }) => {
+      await gotoSettings(page, 'dockerHosts')
+      const editBtn = page.locator('#dockerHostsTbody tr')
+        .filter({ hasText: 'e2e-extra-context-2' })
+        .getByRole('button', { name: /edit/i })
+      await editBtn.click()
+      await page.locator('#deleteDockerHostBtn').click()
+      await expect(page.locator('#dockerHostsTbody')).not.toContainText('e2e-extra-context-2')
+
+      await openJobsTab(page)
+      await openAddForm(page)
+      const count = await page.locator('#jobDockerHostChips button[data-host-chip-id]').count()
+      expect(count).toBe(2)
+      await page.locator('#closeJobFormBtn').click()
+    })
+
+    test('Docker contexts chips section appears when multiple contexts exist', async ({ page }) => {
+      await openJobsTab(page)
+      await openAddForm(page)
+      await expect(page.locator('#jobDockerHostWrap')).toBeVisible()
+      await expect(page.locator('#jobDockerHostChips')).toBeVisible()
+      await page.locator('#closeJobFormBtn').click()
+    })
+
+    test('can select a context chip — chip gets selected class', async ({ page }) => {
+      await openJobsTab(page)
+      await openAddForm(page)
+      const chip = page.locator('#jobDockerHostChips button[data-host-chip-id="local"]')
+      await expect(chip).toBeVisible()
+      await chip.click()
+      await expect(chip).toHaveClass(/selected/)
+      // Deselect
+      await chip.click()
+      await expect(chip).not.toHaveClass(/selected/)
+      await page.locator('#closeJobFormBtn').click()
+    })
+
+    test('saving a job with selected contexts persists dockerHostIDs', async ({ page }) => {
+      await openJobsTab(page)
+      await openAddForm(page)
+      // Select Local Docker chip
+      const chip = page.locator('#jobDockerHostChips button[data-host-chip-id="local"]')
+      await chip.click()
+      await expect(chip).toHaveClass(/selected/)
+      await page.locator('#jobNameFilter').fill('context-test-container')
+      await saveJob(page, 'e2e-context-pinned-job')
+
+      const res = await page.request.get(`${BASE_URL}/api/jobs`)
+      const data = await res.json()
+      const job = (data.jobs as Array<{ name: string; dockerHostIDs?: string[] }>)
+        .find(j => j.name === 'e2e-context-pinned-job')
+      expect(job?.dockerHostIDs).toEqual(['local'])
+    })
+
+    test('editing a job restores its selected context chips', async ({ page }) => {
+      await openJobsTab(page)
+      const editBtn = page.locator('#jobsTbody tr')
+        .filter({ hasText: 'e2e-context-pinned-job' })
+        .getByRole('button', { name: /edit/i })
+      await editBtn.click()
+      await expect(page.locator('#jobFormPanel')).toBeVisible()
+      const chip = page.locator('#jobDockerHostChips button[data-host-chip-id="local"]')
+      await expect(chip).toHaveClass(/selected/)
+      await page.locator('#cancelJobEditBtn').click()
+    })
+
+    test('context filter returns only jobs matching the selected host', async ({ page }) => {
+      // Create an unfiltered job via API (no dockerHostIDs = matches all contexts).
+      // UI validation now requires selecting at least one host when multiple hosts exist,
+      // so use the API directly for a job intentionally scoped to all contexts.
+      await page.request.post(`${BASE_URL}/api/jobs`, {
+        data: {
+          name: 'e2e-all-contexts-job',
+          action: 'restart',
+          enabled: true,
+          containerNameFilter: 'all-contexts-container',
+        },
+      })
+      await openJobsTab(page)
+
+      // Wait for jobs to load — confirms loadJobs + loadDockerHosts (populateContextFilter) have both run
+      await expect(page.locator('#jobsTbody')).toContainText('e2e-context-pinned-job')
+      await expect(page.locator('#jobFilterContext option[value="local"]')).toBeAttached()
+
+      // Filter by local context — both jobs should appear (pinned to local + all-contexts)
+      await page.locator('#jobFilterContext').selectOption('local')
+      await expect(page.locator('#jobsTbody')).toContainText('e2e-context-pinned-job')
+      await expect(page.locator('#jobsTbody')).toContainText('e2e-all-contexts-job')
+
+      // Filter by the extra context — only the all-contexts job should appear
+      // (e2e-context-pinned-job is pinned to local only)
+      const extraId = await page.locator('#jobFilterContext option').filter({ hasText: 'e2e-extra-context' }).getAttribute('value')
+      if (extraId) {
+        await page.locator('#jobFilterContext').selectOption(extraId)
+        await expect(page.locator('#jobsTbody')).not.toContainText('e2e-context-pinned-job')
+        await expect(page.locator('#jobsTbody')).toContainText('e2e-all-contexts-job')
+      }
+
+      // Reset filter
+      await page.locator('#jobFilterContext').selectOption('')
+    })
+
+    test('job created via API with old dockerHostID field is migrated to dockerHostIDs', async ({ page }) => {
+      // The API no longer accepts dockerHostID (json:"-") but we can verify
+      // that a job created with dockerHostIDs round-trips correctly.
+      const res = await page.request.post(`${BASE_URL}/api/jobs`, {
+        data: {
+          name: 'e2e-migration-test-job',
+          action: 'restart',
+          enabled: true,
+          containerNameFilter: 'migration-container',
+          dockerHostIDs: ['local'],
+        },
+      })
+      expect(res.status()).toBeLessThan(500)
+      const job = await res.json()
+      expect(job.dockerHostIDs).toEqual(['local'])
+      // Verify it appears in context filter
+      await openJobsTab(page)
+      await expect(page.locator('#jobsTbody')).toContainText('e2e-migration-test-job')
+      await expect(page.locator('#jobFilterContext option[value="local"]')).toBeAttached()
+      await page.locator('#jobFilterContext').selectOption('local')
+      await expect(page.locator('#jobsTbody')).toContainText('e2e-migration-test-job')
+      await page.locator('#jobFilterContext').selectOption('')
+      await deleteJob(page, 'e2e-migration-test-job')
+    })
+
+    test('clean up docker context test jobs and extra host', async ({ page }) => {
+      await openJobsTab(page)
+      await deleteJob(page, 'e2e-context-pinned-job')
+      await deleteJob(page, 'e2e-all-contexts-job')
+      // Remove the extra docker context
+      await gotoSettings(page, 'dockerHosts')
+      const editBtn = page.locator('#dockerHostsTbody tr')
+        .filter({ hasText: 'e2e-extra-context' })
+        .getByRole('button', { name: /edit/i })
+      await editBtn.click()
+      await page.locator('#deleteDockerHostBtn').click()
+      await expect(page.locator('#dockerHostsTbody')).not.toContainText('e2e-extra-context')
+    })
   })
 })

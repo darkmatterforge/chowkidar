@@ -31,12 +31,98 @@ test.describe('Dashboard', () => {
     await expect(page.locator('#statDockerVal')).not.toHaveText('–')
   })
 
+  // ── Docker Hosts tile display format ───────────────────────────────────────
+
+  test('Docker Hosts tile shows "1" for single connected host', async ({ page }) => {
+    await page.route('**/api/docker-hosts/status', route =>
+      route.fulfill({
+        json: {
+          hosts: [{ id: 'local', name: 'Local Docker', enabled: true, connected: true, info: '' }],
+        },
+      }),
+    )
+    await page.route('**/api/diagnostics', route =>
+      route.fulfill({
+        json: { dockerReachable: true, socketWritable: true, socketPresent: true, mode: 'socket', details: '' },
+      }),
+    )
+    await goToDashboard(page)
+    await expect(page.locator('#statDockerVal')).toHaveText('1')
+    await expect(page.locator('#statDockerLbl')).toHaveText('Docker Hosts')
+  })
+
+  test('Docker Hosts tile shows "0" for single disconnected host', async ({ page }) => {
+    await page.route('**/api/docker-hosts/status', route =>
+      route.fulfill({
+        json: {
+          hosts: [{ id: 'local', name: 'Local Docker', enabled: true, connected: false, info: '' }],
+        },
+      }),
+    )
+    await page.route('**/api/diagnostics', route =>
+      route.fulfill({
+        json: { dockerReachable: false, socketWritable: false, socketPresent: false, mode: 'socket', details: 'offline' },
+      }),
+    )
+    await goToDashboard(page)
+    await expect(page.locator('#statDockerVal')).toHaveText('0')
+    await expect(page.locator('#statDockerLbl')).toHaveText('Docker Hosts')
+  })
+
+  test('Docker Hosts tile shows "X/Y" format for multiple hosts all connected', async ({ page }) => {
+    await page.route('**/api/docker-hosts/status', route =>
+      route.fulfill({
+        json: {
+          hosts: [
+            { id: 'local', name: 'Local Docker', enabled: true, connected: true, info: '' },
+            { id: 'remote1', name: 'Remote Host', enabled: true, connected: true, info: '' },
+          ],
+        },
+      }),
+    )
+    await goToDashboard(page)
+    await expect(page.locator('#statDockerVal')).toHaveText('2/2')
+    await expect(page.locator('#statDockerLbl')).toHaveText('Docker Hosts')
+  })
+
+  test('Docker Hosts tile shows partial X/Y when some hosts are offline', async ({ page }) => {
+    await page.route('**/api/docker-hosts/status', route =>
+      route.fulfill({
+        json: {
+          hosts: [
+            { id: 'local', name: 'Local Docker', enabled: true, connected: true, info: '' },
+            { id: 'remote1', name: 'Remote Host', enabled: true, connected: false, info: '' },
+          ],
+        },
+      }),
+    )
+    await goToDashboard(page)
+    await expect(page.locator('#statDockerVal')).toHaveText('1/2')
+  })
+
+  test('Docker Hosts tile shows plain count when only one host is enabled among multiple', async ({ page }) => {
+    // Two entries returned but one is disabled — enabledHosts.length === 1, so show just "1" not "1/1"
+    await page.route('**/api/docker-hosts/status', route =>
+      route.fulfill({
+        json: {
+          hosts: [
+            { id: 'local', name: 'Local Docker', enabled: true, connected: true, info: '' },
+            { id: 'remote1', name: 'Remote Host', enabled: false, connected: false, info: '' },
+          ],
+        },
+      }),
+    )
+    await goToDashboard(page)
+    await expect(page.locator('#statDockerVal')).toHaveText('1')
+    await expect(page.locator('#statDockerVal')).not.toHaveText('1/1')
+  })
+
   // ── Basic filters ──────────────────────────────────────────────────────────
 
   test('status filter has all expected options', async ({ page }) => {
     await goToDashboard(page)
     const opts = page.locator('#serviceStatusFilter option')
-    await expect(opts).toContainText(['All Status', 'Up', 'Down', 'Unknown', 'Pause'])
+    await expect(opts).toContainText(['All Status', 'Up', 'Down', 'Shutdown', 'Unknown', 'Pause'])
   })
 
   test('job action filter has all expected options', async ({ page }) => {
@@ -101,12 +187,14 @@ test.describe('Dashboard', () => {
     await page.locator('#serviceSearchInput').fill('test')
     await page.locator('#serviceStatusFilter').selectOption('up')
     await page.locator('#serviceJobActionFilter').selectOption('stop')
+    await page.locator('#serviceHostFilter').selectOption('local')
 
     await page.locator('#clearServiceFiltersBtn').click()
 
     await expect(page.locator('#serviceSearchInput')).toHaveValue('')
     await expect(page.locator('#serviceStatusFilter')).toHaveValue('')
     await expect(page.locator('#serviceJobActionFilter')).toHaveValue('')
+    await expect(page.locator('#serviceHostFilter')).toHaveValue('')
   })
 
   // ── Advanced filters ───────────────────────────────────────────────────────
@@ -314,5 +402,106 @@ test.describe('Dashboard', () => {
     await expect(page.locator('#detailRestartBtn')).toBeAttached()
     await expect(page.locator('#detailStopBtn')).toBeAttached()
     await expect(page.locator('#detailStartBtn')).toBeAttached()
+  })
+
+  // ── Host filter ────────────────────────────────────────────────────────────
+
+  test('host filter select is present with All Hosts default', async ({ page }) => {
+    await goToDashboard(page)
+    const select = page.locator('#serviceHostFilter')
+    await expect(select).toBeVisible()
+    await expect(select).toHaveValue('')
+    const firstOpt = select.locator('option').first()
+    await expect(firstOpt).toHaveText('All Hosts')
+  })
+
+  test('host filter includes Local Docker option', async ({ page }) => {
+    await goToDashboard(page)
+    const opts = page.locator('#serviceHostFilter option')
+    await expect(opts).toContainText(['All Hosts', 'Local Docker'])
+  })
+
+  test('selecting local host filter applies the value', async ({ page }) => {
+    await goToDashboard(page)
+    await page.locator('#serviceHostFilter').selectOption('local')
+    await expect(page.locator('#serviceHostFilter')).toHaveValue('local')
+  })
+
+  // ── Group collapse ─────────────────────────────────────────────────────────
+
+  test('clicking a group title collapses and expands its services', async ({ page }) => {
+    await goToDashboard(page)
+    const groupTitle = page.locator('#serviceGroups .group-title[data-group]').first()
+    if (await groupTitle.count() === 0) {
+      test.skip(true, 'No service groups rendered — skipping collapse test')
+      return
+    }
+    const groupKey = await groupTitle.getAttribute('data-group')
+    const services = page.locator(`#serviceGroups button[data-service-name]`)
+    const countBefore = await services.count()
+
+    // Collapse
+    await groupTitle.click()
+    await expect(groupTitle).toHaveClass(/collapsed/)
+
+    const countAfter = await services.count()
+    expect(countAfter).toBeLessThan(countBefore)
+
+    // Expand
+    await groupTitle.click()
+    await expect(groupTitle).not.toHaveClass(/collapsed/)
+    expect(await services.count()).toBe(countBefore)
+
+    // Clean up persisted collapse state
+    await page.evaluate((key) => {
+      const stored: string[] = JSON.parse(localStorage.getItem('collapsedServiceGroups') || '[]')
+      const updated = stored.filter((k: string) => k !== key)
+      localStorage.setItem('collapsedServiceGroups', JSON.stringify(updated))
+    }, groupKey)
+  })
+})
+
+// ── Page isolation — dashboard and settings must never render simultaneously ──
+
+test.describe('Page isolation', () => {
+  test('only dashboard is visible on initial load', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.locator('#themeToggleBtn')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('#dashboardPage')).toBeVisible()
+    await expect(page.locator('#settingsPage')).toBeHidden()
+  })
+
+  test('switching to Settings hides dashboard and shows settings', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.locator('#themeToggleBtn')).toBeVisible({ timeout: 10_000 })
+    await page.locator('[data-page="settings"]').click()
+    await expect(page.locator('#settingsPage')).toBeVisible()
+    await expect(page.locator('#dashboardPage')).toBeHidden()
+  })
+
+  test('switching back to Dashboard hides settings and shows dashboard', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.locator('#themeToggleBtn')).toBeVisible({ timeout: 10_000 })
+    await page.locator('[data-page="settings"]').click()
+    await expect(page.locator('#settingsPage')).toBeVisible()
+    await page.locator('[data-page="dashboard"]').click()
+    await expect(page.locator('#dashboardPage')).toBeVisible()
+    await expect(page.locator('#settingsPage')).toBeHidden()
+  })
+
+  test('exactly one page is visible at any time', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.locator('#themeToggleBtn')).toBeVisible({ timeout: 10_000 })
+
+    const countVisible = () =>
+      page.locator('.page').evaluateAll(els =>
+        els.filter(el => window.getComputedStyle(el).display !== 'none').length,
+      )
+
+    expect(await countVisible()).toBe(1)
+    await page.locator('[data-page="settings"]').click()
+    expect(await countVisible()).toBe(1)
+    await page.locator('[data-page="dashboard"]').click()
+    expect(await countVisible()).toBe(1)
   })
 })

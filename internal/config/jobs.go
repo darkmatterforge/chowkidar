@@ -30,12 +30,15 @@ type Job struct {
 	MonitorIntervalSeconds       int       `yaml:"monitorIntervalSeconds,omitempty" json:"monitorIntervalSeconds,omitempty"`
 	ActionTimeoutSeconds         int       `yaml:"actionTimeoutSeconds,omitempty" json:"actionTimeoutSeconds,omitempty"`
 	PostActionWaitSeconds        int       `yaml:"postActionWaitSeconds,omitempty" json:"postActionWaitSeconds,omitempty"`
-	DockerHostID                 string    `yaml:"dockerHostID,omitempty" json:"dockerHostID,omitempty"`
+	StableScansRequired          int       `yaml:"stableScansRequired,omitempty" json:"stableScansRequired,omitempty"`
+	DockerHostID                 string    `yaml:"dockerHostID,omitempty" json:"-"` // deprecated: migrated to DockerHostIDs
+	DockerHostIDs                []string  `yaml:"dockerHostIDs,omitempty" json:"dockerHostIDs,omitempty"`
+	HealthCheckScript            string    `yaml:"healthCheckScript,omitempty" json:"healthCheckScript,omitempty"`
 	CreatedAt                    time.Time `yaml:"createdAt" json:"createdAt"`
 	UpdatedAt                    time.Time `yaml:"updatedAt" json:"updatedAt"`
 }
 
-const jobsConfigVersion = 1
+const jobsConfigVersion = 2
 
 // JobsFile is the on-disk structure of jobs.yaml.
 type JobsFile struct {
@@ -147,6 +150,16 @@ func migrateJobs(fileVersion int, jobs []Job) (migrated bool, result []Job) {
 			}
 		}
 	}
+	if fileVersion < 2 {
+		// v1→v2: migrate single DockerHostID string to DockerHostIDs slice.
+		for i, j := range jobs {
+			if j.DockerHostID != "" && len(j.DockerHostIDs) == 0 {
+				jobs[i].DockerHostIDs = []string{j.DockerHostID}
+				migrated = true
+			}
+			jobs[i].DockerHostID = ""
+		}
+	}
 	return migrated, jobs
 }
 
@@ -218,6 +231,18 @@ func normalizeJob(in Job) (Job, error) {
 	in.ContainerNameFilter = strings.TrimSpace(in.ContainerNameFilter)
 	in.ContainerLabelFilter = strings.TrimSpace(in.ContainerLabelFilter)
 	in.ContainerEnvVarFilter = strings.TrimSpace(in.ContainerEnvVarFilter)
+	in.HealthCheckScript = strings.TrimSpace(in.HealthCheckScript)
+	in.DockerHostID = "" // always clear deprecated field
+	dedupedHosts := make([]string, 0, len(in.DockerHostIDs))
+	seenHosts := make(map[string]bool)
+	for _, id := range in.DockerHostIDs {
+		id = strings.TrimSpace(id)
+		if id != "" && !seenHosts[id] {
+			seenHosts[id] = true
+			dedupedHosts = append(dedupedHosts, id)
+		}
+	}
+	in.DockerHostIDs = dedupedHosts
 
 	if in.Name == "" {
 		return Job{}, fmt.Errorf("job name is required")

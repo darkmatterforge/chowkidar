@@ -35,6 +35,7 @@ type fakeDockerClient struct {
 	restarting  []containertypes.Summary
 	starting    []containertypes.Summary
 	all         []containertypes.Summary
+	running     []containertypes.Summary
 	restartIDs  []string
 	startIDs    []string
 	stopIDs     []string
@@ -75,6 +76,13 @@ func (f *fakeDockerClient) AllContainers(_ context.Context) ([]containertypes.Su
 	defer f.mu.Unlock()
 	out := make([]containertypes.Summary, len(f.all))
 	copy(out, f.all)
+	return out, nil
+}
+func (f *fakeDockerClient) RunningContainers(_ context.Context) ([]containertypes.Summary, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]containertypes.Summary, len(f.running))
+	copy(out, f.running)
 	return out, nil
 }
 func (f *fakeDockerClient) RestartContainer(_ context.Context, id string, _ int) error {
@@ -183,11 +191,9 @@ func TestRetryHistoryLogging(t *testing.T) {
 		docker:             fake,
 		history:            historyStore,
 		notifier:           notify.New(""),
-		lastNotified:       make(map[string]time.Time),
-		actionCycle:        make(map[string]int),
-		retriesExhausted:   make(map[string]bool),
-		activeJobs:         make(map[string]bool),
-		postActionDeadline: make(map[string]time.Time),
+		lastNotified: make(map[string]time.Time),
+		cState:       make(map[string]*containerActionState),
+		activeJobs:   make(map[string]bool),
 	}
 	// jobID must be non-empty so resolveJobSettings returns per-job retryCount (not the hardcoded fallback of 1).
 	job := actionJob{app: a, container: containertypes.Summary{ID: "c1", Names: []string{"demo"}}, reason: "unhealthy", action: "restart", jobID: "test-job", retryCount: 3}
@@ -223,11 +229,9 @@ func TestRetriesExhaustedAfterMaxCycles(t *testing.T) {
 		docker:             fake,
 		history:            historyStore,
 		notifier:           notify.New(""),
-		lastNotified:       make(map[string]time.Time),
-		actionCycle:        make(map[string]int),
-		retriesExhausted:   make(map[string]bool),
-		activeJobs:         make(map[string]bool),
-		postActionDeadline: make(map[string]time.Time),
+		lastNotified: make(map[string]time.Time),
+		cState:       make(map[string]*containerActionState),
+		activeJobs:   make(map[string]bool),
 	}
 	job := actionJob{app: a, container: containertypes.Summary{ID: "c1", Names: []string{"demo"}}, reason: "unhealthy", action: "restart"}
 
@@ -571,9 +575,7 @@ func newScanOnceApp(t *testing.T, fake *fakeDockerClient, jobs []config.Job) (*a
 		notifier:             notify.New(""),
 		jobs:                 jobs,
 		lastNotified:         make(map[string]time.Time),
-		actionCycle:          make(map[string]int),
-		retriesExhausted:     make(map[string]bool),
-		postActionDeadline:   make(map[string]time.Time),
+		cState:               make(map[string]*containerActionState),
 		activeJobs:           make(map[string]bool),
 		lastJobScan:          make(map[string]time.Time),
 		lastJobNotifications: make(map[string][]string),
@@ -672,14 +674,18 @@ func TestScanOnceStartingContainerBlocksRecovery(t *testing.T) {
 	a, pool := newScanOnceApp(t, fake, catchAll)
 
 	// Simulate an in-progress restart: cycle=2, deadline already expired.
-	a.actionCycle["app-one"] = 2
-	a.postActionDeadline["app-one"] = time.Now().Add(-1 * time.Second)
+	a.mu.Lock()
+	a.cState["app-one"] = &containerActionState{cycle: 2, deadline: time.Now().Add(-1 * time.Second)}
+	a.mu.Unlock()
 
 	a.scanOnce()
 	pool.Stop()
 
 	a.mu.RLock()
-	cycle := a.actionCycle["app-one"]
+	var cycle int
+	if s := a.cState["app-one"]; s != nil {
+		cycle = s.cycle
+	}
 	a.mu.RUnlock()
 
 	if cycle != 2 {
@@ -799,26 +805,29 @@ t.Fatal("expected error when docker stop fails, got nil")
 }
 
 func TestIncrementActionCycleConcurrent(t *testing.T) {
-a := &app{
-cfg:         config.Config{},
-actionCycle: make(map[string]int),
-}
-var wg sync.WaitGroup
-const goroutines = 50
-for i := 0; i < goroutines; i++ {
-wg.Add(1)
-go func() {
-defer wg.Done()
-a.incrementActionCycle("concurrent-container")
-}()
-}
-wg.Wait()
-a.mu.RLock()
-got := a.actionCycle["concurrent-container"]
-a.mu.RUnlock()
-if got != goroutines {
-t.Fatalf("expected actionCycle=%d after %d concurrent increments, got %d", goroutines, goroutines, got)
-}
+	a := &app{
+		cfg:    config.Config{},
+		cState: make(map[string]*containerActionState),
+	}
+	var wg sync.WaitGroup
+	const goroutines = 50
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			a.incrementActionCycle("concurrent-container")
+		}()
+	}
+	wg.Wait()
+	a.mu.RLock()
+	var got int
+	if s := a.cState["concurrent-container"]; s != nil {
+		got = s.cycle
+	}
+	a.mu.RUnlock()
+	if got != goroutines {
+		t.Fatalf("expected cycle=%d after %d concurrent increments, got %d", goroutines, goroutines, got)
+	}
 }
 
 func TestCancelDryRunCleanupSafety(t *testing.T) {

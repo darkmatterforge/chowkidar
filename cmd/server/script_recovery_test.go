@@ -63,9 +63,7 @@ func TestScriptRecovery_OutputStoredInHistoryEntry(t *testing.T) {
 		history:              store,
 		notifier:             notify.New(""),
 		lastNotified:         make(map[string]time.Time),
-		actionCycle:          make(map[string]int),
-		retriesExhausted:     make(map[string]bool),
-		postActionDeadline:   make(map[string]time.Time),
+		cState:               make(map[string]*containerActionState),
 		activeJobs:           make(map[string]bool),
 		lastJobNotifications: make(map[string][]string),
 	}

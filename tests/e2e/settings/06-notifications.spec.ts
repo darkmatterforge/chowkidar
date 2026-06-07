@@ -529,11 +529,12 @@ test.describe('Settings — Notifications tab', () => {
       const editBtn = page.locator('#notifyTbody tr')
         .filter({ hasText: profileName })
         .getByRole('button', { name: /edit/i })
+        .first()
       await editBtn.click()
       await expect(page.locator('#notifyFormPanel')).toBeVisible()
 
       const [res] = await Promise.all([
-        page.waitForResponse(r => r.url().includes('/api/test-notification')),
+        page.waitForResponse(r => r.url().includes('/api/test-notification'), { timeout: 45_000 }),
         page.locator('#testNotifyProfilesBtn').click(),
       ])
       expect(res.status()).toBeLessThan(500)
@@ -572,6 +573,7 @@ test.describe('Settings — Notifications tab', () => {
         })
 
         test(`send real ${name} test notification`, async ({ page }) => {
+          test.setTimeout(60_000)
           await openNotificationsTab(page)
           await liveTestProfile(page, `live-${name.toLowerCase()}`)
         })
