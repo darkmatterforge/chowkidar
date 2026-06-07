@@ -312,11 +312,21 @@ test.describe('Restart persistence — Log level', () => {
     const today   = new Date().toISOString().slice(0, 10)
     const logPath = `/config/logs/app-${today}.log`
 
-    // logToFile defaults to true, so the file already holds [INFO] entries from
-    // the entire run (boot lines, monitor scans, earlier restarts/tests — including
-    // the preceding "debug" test). Only content appended AFTER this point reflects
-    // the warn-level config we're about to apply, so capture the current size first
-    // and diff against it below rather than scanning the whole day's file.
+    await page.request.put(`${BASE_URL}/api/settings`, {
+      data: { ...current, logLevel: 'warn', logToFile: true },
+    })
+
+    // The PUT above persists logLevel=warn, but the *running* process keeps
+    // logging at its current (old) level until it restarts and re-reads that
+    // config from disk — e.g. it still emits "[INFO] api: settings update
+    // requested ..." for this very request. So the baseline must be captured
+    // AFTER restartAndReAuth, once the fresh process has booted under the
+    // persisted warn config (its own [INFO] boot lines are suppressed by
+    // shouldLog). Only content appended from that point on is governed by the
+    // new warn level — diff against it rather than scanning the whole day's
+    // accumulated file.
+    await restartAndReAuth(page)
+
     let baselineSize = 0
     try {
       const { stdout } = await execAsync(`docker exec ${CONTAINER} sh -c "wc -c < ${logPath} 2>/dev/null || echo 0"`)
@@ -325,18 +335,12 @@ test.describe('Restart persistence — Log level', () => {
       baselineSize = 0
     }
 
-    await page.request.put(`${BASE_URL}/api/settings`, {
-      data: { ...current, logLevel: 'warn', logToFile: true },
-    })
-
-    await restartAndReAuth(page)
-
     // These requests would produce [DEBUG] and [INFO] lines at lower levels
     await page.request.get(`${BASE_URL}/api/diagnostics`)
     await page.request.get(`${BASE_URL}/api/settings`)
 
     // Read only the bytes appended since the baseline — i.e. what was logged
-    // under the new warn-level config (including this restart's own boot line).
+    // under the new warn-level config.
     let newContent = ''
     try {
       const { stdout } = await execAsync(`docker exec ${CONTAINER} tail -c +${baselineSize + 1} ${logPath}`)

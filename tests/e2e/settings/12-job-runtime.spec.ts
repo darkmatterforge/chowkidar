@@ -174,11 +174,18 @@ test.describe('Job runtime — health-check script', () => {
   })
 
   test('health-check script detects "unhealthy" container and records history', async ({ page }) => {
+    // This deep into the suite, several other jobs' actions are competing for
+    // the worker pool (workerCount=2), so a queued restart can sit behind
+    // others and the start→success→history-write cycle takes much longer than
+    // its nominal ~10s. Give it real headroom rather than chasing the exact
+    // worst-case queue depth.
+    test.setTimeout(120_000)
+
     // Wait for any post-action cooldown (= monitorIntervalSeconds = 5 s) left over
     // from the job-creation test to expire, then start from a clean history slate.
     await page.waitForTimeout(7_000)
     await page.request.delete(`${BASE_URL}/api/history`)
-    const found = await waitForHistoryEntry(page, CONTAINER, 60_000)
+    const found = await waitForHistoryEntry(page, CONTAINER, 100_000)
     expect(found).toBe(true)
   })
 
