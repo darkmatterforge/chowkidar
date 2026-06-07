@@ -309,6 +309,21 @@ test.describe('Restart persistence — Log level', () => {
     await gotoApp(page)
 
     const current = await (await page.request.get(`${BASE_URL}/api/settings`)).json()
+    const today   = new Date().toISOString().slice(0, 10)
+    const logPath = `/config/logs/app-${today}.log`
+
+    // logToFile defaults to true, so the file already holds [INFO] entries from
+    // the entire run (boot lines, monitor scans, earlier restarts/tests — including
+    // the preceding "debug" test). Only content appended AFTER this point reflects
+    // the warn-level config we're about to apply, so capture the current size first
+    // and diff against it below rather than scanning the whole day's file.
+    let baselineSize = 0
+    try {
+      const { stdout } = await execAsync(`docker exec ${CONTAINER} sh -c "wc -c < ${logPath} 2>/dev/null || echo 0"`)
+      baselineSize = parseInt(stdout.trim(), 10) || 0
+    } catch {
+      baselineSize = 0
+    }
 
     await page.request.put(`${BASE_URL}/api/settings`, {
       data: { ...current, logLevel: 'warn', logToFile: true },
@@ -320,18 +335,18 @@ test.describe('Restart persistence — Log level', () => {
     await page.request.get(`${BASE_URL}/api/diagnostics`)
     await page.request.get(`${BASE_URL}/api/settings`)
 
-    const today = new Date().toISOString().slice(0, 10)
-    // Log file may not exist if no warn+ messages were emitted — that itself proves filtering works.
-    let logContent = ''
+    // Read only the bytes appended since the baseline — i.e. what was logged
+    // under the new warn-level config (including this restart's own boot line).
+    let newContent = ''
     try {
-      const { stdout } = await execAsync(`docker exec ${CONTAINER} cat /config/logs/app-${today}.log`)
-      logContent = stdout
+      const { stdout } = await execAsync(`docker exec ${CONTAINER} tail -c +${baselineSize + 1} ${logPath}`)
+      newContent = stdout
     } catch {
-      // File doesn't exist — no messages were written, which is correct for warn level
+      // File missing or truncated (e.g. rotated to a new day) — no new messages, which is correct for warn level
     }
 
-    expect(logContent).not.toContain('[DEBUG]')
-    expect(logContent).not.toContain('[INFO]')
+    expect(newContent).not.toContain('[DEBUG]')
+    expect(newContent).not.toContain('[INFO]')
 
     // Restore
     const restored = await (await page.request.get(`${BASE_URL}/api/settings`)).json()
