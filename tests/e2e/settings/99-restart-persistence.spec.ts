@@ -8,8 +8,12 @@
  * restart may have invalidated the storageState session cookie.
  */
 import { test, expect } from '@playwright/test'
+import { exec } from 'child_process'
+import { promisify } from 'util'
 import { gotoApp, gotoSettings } from '../helpers/nav'
-import { restartAndReAuth, BASE_URL } from '../helpers/restart'
+import { restartAndReAuth, BASE_URL, CONTAINER } from '../helpers/restart'
+
+const execAsync = promisify(exec)
 
 // ── Monitoring setting survives restart ───────────────────────────────────────
 
@@ -252,5 +256,87 @@ test.describe('Restart persistence — Job dockerHostIDs', () => {
 
     // Clean up
     await page.request.delete(`${BASE_URL}/api/jobs/${created.id}`)
+  })
+})
+
+// ── Log level survives restart ────────────────────────────────────────────────
+
+test.describe('Restart persistence — Log level', () => {
+  test('log level without env override persists after restart', async ({ page }) => {
+    await gotoApp(page)
+
+    const current = await (await page.request.get(`${BASE_URL}/api/settings`)).json()
+    const original = current.logLevel || 'info'
+
+    await page.request.put(`${BASE_URL}/api/settings`, { data: { ...current, logLevel: 'warn' } })
+
+    await restartAndReAuth(page)
+
+    const after = await (await page.request.get(`${BASE_URL}/api/settings`)).json()
+    expect(after.logLevel).toBe('warn')
+
+    // Restore
+    await page.request.put(`${BASE_URL}/api/settings`, { data: { ...after, logLevel: original } })
+  })
+
+  test('debug messages written to log file when level is debug', async ({ page }) => {
+    await gotoApp(page)
+
+    const current = await (await page.request.get(`${BASE_URL}/api/settings`)).json()
+
+    await page.request.put(`${BASE_URL}/api/settings`, {
+      data: { ...current, logLevel: 'debug', logToFile: true },
+    })
+
+    await restartAndReAuth(page)
+
+    // GET /api/diagnostics always emits a [DEBUG] log line
+    await page.request.get(`${BASE_URL}/api/diagnostics`)
+
+    const today = new Date().toISOString().slice(0, 10)
+    const { stdout } = await execAsync(`docker exec ${CONTAINER} cat /config/logs/app-${today}.log`)
+
+    expect(stdout).toContain('[DEBUG]')
+
+    // Restore
+    const restored = await (await page.request.get(`${BASE_URL}/api/settings`)).json()
+    await page.request.put(`${BASE_URL}/api/settings`, {
+      data: { ...restored, logLevel: current.logLevel || 'info', logToFile: current.logToFile ?? false },
+    })
+  })
+
+  test('info and debug messages absent from log file when level is warn', async ({ page }) => {
+    await gotoApp(page)
+
+    const current = await (await page.request.get(`${BASE_URL}/api/settings`)).json()
+
+    await page.request.put(`${BASE_URL}/api/settings`, {
+      data: { ...current, logLevel: 'warn', logToFile: true },
+    })
+
+    await restartAndReAuth(page)
+
+    // These requests would produce [DEBUG] and [INFO] lines at lower levels
+    await page.request.get(`${BASE_URL}/api/diagnostics`)
+    await page.request.get(`${BASE_URL}/api/settings`)
+
+    const today = new Date().toISOString().slice(0, 10)
+    // Log file may not exist if no warn+ messages were emitted — that itself proves filtering works.
+    let logContent = ''
+    try {
+      const { stdout } = await execAsync(`docker exec ${CONTAINER} cat /config/logs/app-${today}.log`)
+      logContent = stdout
+    } catch {
+      // File doesn't exist — no messages were written, which is correct for warn level
+    }
+
+    expect(logContent).not.toContain('[DEBUG]')
+    expect(logContent).not.toContain('[INFO]')
+
+    // Restore
+    const restored = await (await page.request.get(`${BASE_URL}/api/settings`)).json()
+    await page.request.put(`${BASE_URL}/api/settings`, {
+      data: { ...restored, logLevel: current.logLevel || 'info', logToFile: current.logToFile ?? false },
+    })
   })
 })

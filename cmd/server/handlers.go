@@ -237,13 +237,19 @@ func (a *app) handleSettingsPUT(w http.ResponseWriter, r *http.Request) {
 
 	applyLogConfig(filepath.Join(reloaded.ConfigDir, "logs"), reloaded)
 
-	// If the user explicitly set a log level via the UI, apply it immediately even
-	// if LOG_LEVEL env var is set (which wins in the reloaded config).
-	// On restart the env var takes priority again, so no persistence concern.
-	if body.LogLevel != "" && body.LogLevel != logLevelLabel(configuredLogLevel) {
-		configuredLogLevel = parseLogLevel(body.LogLevel)
-		logInfof("api: log level applied logLevel=%s (env=%q will override on restart if set)",
-			logLevelLabel(configuredLogLevel), strings.TrimSpace(os.Getenv("LOG_LEVEL")))
+	// Apply the user-requested log level immediately even if LOG_LEVEL env var
+	// overrides it in `reloaded` (env wins on next restart; this change is live-only).
+	// Also sync a.cfg.LogLevel so GET /api/settings reflects the active level.
+	if body.LogLevel != "" {
+		newLevel := parseLogLevel(body.LogLevel)
+		if newLevel != configuredLogLevel {
+			configuredLogLevel = newLevel
+			logInfof("api: log level changed logLevel=%s (env=%q will override on restart if set)",
+				logLevelLabel(configuredLogLevel), strings.TrimSpace(os.Getenv("LOG_LEVEL")))
+		}
+		a.mu.Lock()
+		a.cfg.LogLevel = body.LogLevel
+		a.mu.Unlock()
 	}
 
 	if poolConfigChanged {
