@@ -170,7 +170,6 @@ test.describe('Settings — Docker Hosts tab', () => {
       await expect(page.locator('#dockerHostMsgBody')).toBeHidden()
       await page.locator('#dockerHostMsgBody').evaluate(el => (el as HTMLElement).closest('div[style*="border"]')?.querySelector('div')?.click())
       // Try clicking the header directly
-      const msgHeader = page.locator('div').filter({ has: page.locator('#dockerHostMsgBody') }).first()
       // Just verify the fields exist in the collapsed body
       await expect(page.locator('#dockerHostDownTemplate')).toBeAttached()
       await expect(page.locator('#dockerHostRecoveryTemplate')).toBeAttached()
