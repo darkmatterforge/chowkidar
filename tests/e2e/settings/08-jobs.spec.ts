@@ -12,6 +12,14 @@ async function openAddForm(page: Page) {
 
 async function saveJob(page: Page, name: string) {
   await page.locator('#jobName').fill(name)
+  // If multiple docker hosts exist, select local explicitly so validation doesn't block the save
+  const hostWrap = page.locator('#jobDockerHostWrap')
+  if (await hostWrap.isVisible()) {
+    const localChip = page.locator('#jobDockerHostChips button[data-host-chip-id="local"]')
+    if (!await localChip.evaluate((el: Element) => el.classList.contains('selected'))) {
+      await localChip.click()
+    }
+  }
   const [res] = await Promise.all([
     page.waitForResponse(r => r.url().includes('/api/job') && r.request().method() !== 'GET'),
     page.locator('#saveJobBtn').click(),
@@ -675,6 +683,7 @@ docker restart "$1"`)
     test('creating a disabled job saves enabled=false and persists via API', async ({ page }) => {
       const BASE_URL = process.env.BASE_URL ?? 'http://localhost:8080'
       await openJobsTab(page)
+      await deleteJob(page, 'e2e-disabled-job') // idempotent: remove leftovers from a prior failed run
       await openAddForm(page)
       await page.locator('#jobEnabled').uncheck()
       await expect(page.locator('#jobEnabled')).not.toBeChecked()
@@ -700,6 +709,7 @@ docker restart "$1"`)
     test('creating a job with startExited saves startExited=true', async ({ page }) => {
       const BASE_URL = process.env.BASE_URL ?? 'http://localhost:8080'
       await openJobsTab(page)
+      await deleteJob(page, 'e2e-start-exited-job') // idempotent: remove leftovers from a prior failed run
       await openAddForm(page)
       await page.locator('#jobStartExited').check()
       await expect(page.locator('#jobStartExited')).toBeChecked()
