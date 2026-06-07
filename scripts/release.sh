@@ -135,7 +135,6 @@ done
 if [[ -z "$RUN_ID" ]]; then
   echo "Error: CI run never appeared. Closing PR — main is untouched." >&2
   gh pr close "$PR_URL" --delete-branch
-  git checkout main && git branch -D "$RELEASE_BRANCH"
   exit 1
 fi
 
@@ -144,7 +143,6 @@ if ! gh run watch "$RUN_ID" --exit-status; then
   echo ""
   echo "CI failed — closing PR. main is untouched, no changelog committed." >&2
   gh pr close "$PR_URL" --delete-branch
-  git checkout main && git branch -D "$RELEASE_BRANCH"
   exit 1
 fi
 echo "  CI passed ✓"
