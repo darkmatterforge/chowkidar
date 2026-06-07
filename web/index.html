@@ -246,6 +246,53 @@
     .status-warn { color: var(--warn); }
     .status-danger { color: var(--danger); }
     .hint { color: var(--muted); font-size: 12px; }
+    .info-tip {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 1px solid var(--muted);
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+      font-style: normal;
+      text-transform: none;
+      letter-spacing: normal;
+      cursor: help;
+      vertical-align: middle;
+    }
+    /* Positioned in JS as a viewport-fixed element (see setupInfoTips) rather
+       than an in-flow ::after — the job form card clips overflow in both axes
+       (overflow-y:auto forces overflow-x:auto per the CSS spec quirk), so a
+       bubble anchored to the icon gets cut off whenever the icon sits near an
+       edge. position:fixed escapes that clipping context entirely and lets us
+       clamp the bubble to the viewport instead, regardless of where the
+       triggering icon falls in a responsive multi-column layout. */
+    #infoTipBubble {
+      position: fixed;
+      max-width: 320px;
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      box-shadow: 0 6px 20px var(--shadow);
+      padding: 8px 10px;
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 1.4;
+      text-transform: none;
+      letter-spacing: normal;
+      white-space: normal;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity .12s ease;
+      z-index: 1000;
+      pointer-events: none;
+    }
+    #infoTipBubble.visible { opacity: 1; visibility: visible; }
     .error-banner {
       display: none;
       margin: 10px 0;
@@ -1598,21 +1645,21 @@
                   </div>
                   <div class="field" style="display:flex;align-items:center;gap:8px;min-width:unset;">
                     <input type="checkbox" id="notifyIsDefault" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" />
-                    <label for="notifyIsDefault" style="margin:0;cursor:pointer;text-transform:none;letter-spacing:0;font-size:14px;">Set as default</label>
+                    <label for="notifyIsDefault" style="margin:0;cursor:pointer;text-transform:none;letter-spacing:0;font-size:14px;">Set as default <span class="info-tip" tabindex="0" data-tip="Makes this the exclusive profile for system-level alerts (Docker host up/down, agent update notices, etc.) — when a default is set, it alone is used for those and other enabled profiles are skipped. Only one profile can be default at a time; checking this clears the flag on any other. Job notifications are unaffected — those are picked per-job under each job's Notifications field.">i</span></label>
                   </div>
                   <div class="field editing-only" style="display:flex;align-items:center;gap:8px;min-width:unset;">
                     <input type="checkbox" id="notifyAddToAllJobs" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" />
-                    <label for="notifyAddToAllJobs" style="margin:0;cursor:pointer;text-transform:none;letter-spacing:0;font-size:14px;">Add to all jobs</label>
+                    <label for="notifyAddToAllJobs" style="margin:0;cursor:pointer;text-transform:none;letter-spacing:0;font-size:14px;">Add to all jobs <span class="info-tip" tabindex="0" data-tip="One-time action performed on save: appends this profile to every existing job's Notifications list (jobs that already include it are left alone). It doesn't affect jobs created afterwards — add this profile to those individually, or re-check this box later to backfill again.">i</span></label>
                   </div>
                 </div>
 
                 <!-- Rate limiting & suspension -->
                 <div style="margin-top:14px;padding:14px 16px;background:var(--bg);border:1px solid var(--line);border-radius:10px;">
-                  <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);font-weight:700;margin-bottom:12px;">Notification Limits <span style="text-transform:none;letter-spacing:0;font-weight:400;">(optional — leave blank for no limit)</span></div>
+                  <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);font-weight:700;margin-bottom:12px;">Notification Limits <span class="info-tip" tabindex="0" data-tip="Optional throttles that cap how often this profile sends notifications — handy for staying within a provider's free-tier quota or avoiding alert floods in a busy channel. Counters are tracked in memory (reset on restart); leaving Burst Limit and Daily Cap both blank sends without any limit.">i</span> <span style="text-transform:none;letter-spacing:0;font-weight:400;">(optional — leave blank for no limit)</span></div>
 
                   <div class="form-grid" style="margin-bottom:12px;">
                     <div class="field">
-                      <label>Burst limit</label>
+                      <label>Burst limit <span class="info-tip" tabindex="0" data-tip="Maximum notifications this profile may send within the chosen rolling window (5/10/30 minutes or 1 hour). Stops a sudden flood — e.g. many containers failing at once — from spamming the channel in a short burst. The counter resets at the start of each window; once hit, the 'When limit is reached' choice decides what happens next. Leave blank for no burst limit.">i</span></label>
                       <div style="display:flex;align-items:center;gap:8px;">
                         <input type="number" id="notifyBurstLimit" min="1" placeholder="e.g. 3" style="max-width:90px;" />
                         <span style="font-size:13px;color:var(--muted);">per</span>
@@ -1626,7 +1673,7 @@
                       <div class="hint" style="margin-top:4px;">Stops rapid-fire floods</div>
                     </div>
                     <div class="field">
-                      <label>Daily cap</label>
+                      <label>Daily cap <span class="info-tip" tabindex="0" data-tip="Maximum notifications this profile may send within a UTC calendar day. Once reached, the 'When limit is reached' choice decides what happens to further notifications until the counter resets at UTC midnight. Leave blank for no daily cap.">i</span></label>
                       <div style="display:flex;align-items:center;gap:8px;">
                         <input type="number" id="notifyDailyLimit" min="1" placeholder="e.g. 20" style="max-width:90px;" />
                         <span style="font-size:13px;color:var(--muted);">per day</span>
@@ -1636,7 +1683,7 @@
                   </div>
 
                   <div class="field" style="margin-bottom:12px;">
-                    <label>When limit is reached</label>
+                    <label>When limit is reached <span class="info-tip" tabindex="0" data-tip="Chooses what happens to further notifications once the Burst Limit or Daily Cap above is hit: Auto-suspend pauses this profile until the limit period resets and raises a dashboard alert; Drop silently just skips sending with no warning. This is separate from 'auto-suspend on quota/rate-limit error' below — that one reacts to error responses from the provider, not to these configured caps.">i</span></label>
                     <div style="display:flex;flex-direction:column;gap:7px;margin-top:6px;">
                       <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;font-weight:normal;text-transform:none;letter-spacing:0;">
                         <input type="radio" name="notifyOnLimit" id="notifyOnLimitSuspend" value="auto-suspend" checked style="accent-color:var(--accent);width:14px;height:14px;" />
@@ -1654,7 +1701,7 @@
                   </div>
 
                   <div class="field" style="margin-bottom:0;">
-                    <label>Suspend now</label>
+                    <label>Suspend now <span class="info-tip" tabindex="0" data-tip="Manually pauses this profile right away — for a fixed length (hours / minutes / days / weeks) or until a calendar boundary (midnight / month end). Useful for muting noisy alerts during planned maintenance; the agent resumes automatically once the period ends, and the active status with remaining time is shown below.">i</span></label>
                     <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;">
                       <input type="number" id="notifySuspendAmount" min="1" placeholder="e.g. 6" style="max-width:80px;" />
                       <select id="notifySuspendUnit" onchange="toggleSuspendAmount(this.value)">
@@ -1676,7 +1723,7 @@
                 <!-- Message Templates collapsible -->
                 <div style="margin-top:14px;background:var(--bg);border:1px solid var(--line);border-radius:8px;overflow:hidden;">
                   <div id="notifyTemplatesHeader" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;cursor:pointer;user-select:none;gap:8px;" onclick="toggleNotifyTemplates()">
-                    <span style="font-size:13px;font-weight:600;color:var(--text);">Message Templates</span>
+                    <span style="font-size:13px;font-weight:600;color:var(--text);">Message Templates <span class="info-tip" tabindex="0" data-tip="Per-event message bodies sent through this profile, grouped by lifecycle stage (startup, detection, recovery, etc.). Leave any box blank to fall back to chowkidar's built-in template for the selected provider — Reset restores that default text. Insert live values using the {{.Variable}} placeholders shown above (container name, action, reason, rule name, and more).">i</span></span>
                     <span id="notifyTemplatesChevron" style="font-size:11px;color:var(--muted);transition:transform .2s;display:inline-block;">▼</span>
                   </div>
                   <div id="notifyTemplatesBody" style="display:none;border-top:1px solid var(--line);padding:16px;">
@@ -1871,11 +1918,11 @@
                 </div>
 
                 <div class="form-grid" style="margin-top:14px;">
-                  <div class="field"><label>Friendly Name</label><input type="text" id="dockerHostName" placeholder="e.g. Unraid Docker" /></div>
+                  <div class="field"><label>Friendly Name <span class="info-tip" tabindex="0" data-tip="A display label for this Docker host — shown throughout the dashboard, job filters, and host lists. Purely cosmetic; it doesn't need to match the daemon's actual hostname.">i</span></label><input type="text" id="dockerHostName" placeholder="e.g. Unraid Docker" /></div>
                 </div>
 
                 <div style="margin-top:14px;">
-                  <div class="label" style="margin-bottom:6px;">Connection Type</div>
+                  <div class="label" style="margin-bottom:6px;">Connection Type <span class="info-tip" tabindex="0" data-tip="How chowkidar reaches this Docker daemon. Socket connects to a local Unix socket file path — the usual choice for a daemon on the same machine or mounted into chowkidar's container. TCP / HTTP connects to a remote daemon's exposed API over HTTP or HTTPS, and reveals optional TLS credential fields below for securing that connection.">i</span></div>
                   <div id="dockerConnTypePicker" class="provider-picker">
                     <button type="button" class="provider-option selected" data-conn-type="socket">
                       <span class="provider-badge" style="background:#2f8fdd">SK</span>
@@ -1890,7 +1937,7 @@
 
                 <div class="form-grid" style="margin-top:14px;">
                   <div class="field">
-                    <label>Docker Daemon</label>
+                    <label>Docker Daemon <span class="info-tip" tabindex="0" data-tip="Where chowkidar reaches this host's Docker API. For Socket connections, a Unix socket file path (e.g. /var/run/docker.sock); for TCP / HTTP, a base URL to the daemon's exposed API (e.g. http://host:2375 or https://host:2376). The expected format follows whichever Connection Type is selected above.">i</span></label>
                     <input type="text" id="dockerHostEndpoint" placeholder="/var/run/docker.sock" />
                     <div id="dockerDaemonExamples" class="hint" style="margin-top:6px;line-height:1.8;">
                       Examples: &nbsp;<code style="background:#eef2f8;padding:1px 5px;border-radius:4px;">/var/run/docker.sock</code>
@@ -1926,7 +1973,7 @@
                 <!-- Notifications when this host goes offline -->
                 <div class="job-notify-section" style="margin-top:14px;">
                   <div class="job-notify-label">
-                    Offline Notifications
+                    Offline Notifications <span class="info-tip" tabindex="0" data-tip="Notification profiles alerted about this host's reachability — both when it goes offline and when it comes back online (the label only mentions 'offline', but recovery is announced too, using the Recovery Message template below). Leave empty to send no host-level alerts for this connection.">i</span>
                     <span class="hint" style="text-transform:none;letter-spacing:0;">&mdash; alert these agents when this host goes offline</span>
                   </div>
                   <div id="dockerHostNotifyChips" class="notify-chips">
@@ -1944,7 +1991,7 @@
                     <div class="hint" style="margin-bottom:10px;line-height:1.6;">Use <code style="font-size:11px;background:var(--bg);padding:1px 4px;border-radius:3px;">{{.HostName}}</code> for the host name. Messages are sent as-is to all configured notification agents.</div>
 
                     <div class="field" style="margin-bottom:12px;">
-                      <label>Offline Message</label>
+                      <label>Offline Message <span class="info-tip" tabindex="0" data-tip="Custom message sent to the Offline Notifications profiles above once this host is confirmed offline. Use {{.HostName}} to insert the host's Friendly Name. Leave blank to use the built-in default: Docker host &quot;NAME&quot; is offline.">i</span></label>
                       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
                         <span style="font-size:12px;color:var(--muted);">Templates:</span>
                         <select style="font-size:12px;padding:3px 8px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--text);" onchange="(function(s){const v=s.value;if(!v)return;document.getElementById('dockerHostDownTemplate').value=v;s.value='';}).call(this,this)">
@@ -1958,7 +2005,7 @@
                     </div>
 
                     <div class="field">
-                      <label>Back Online Message</label>
+                      <label>Back Online Message <span class="info-tip" tabindex="0" data-tip="Custom message sent to the Offline Notifications profiles above as soon as this host responds again — recovery is announced immediately, with no confirmation delay. Use {{.HostName}} to insert the host's Friendly Name. Leave blank to use the built-in default: Docker host &quot;NAME&quot; is back online.">i</span></label>
                       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
                         <span style="font-size:12px;color:var(--muted);">Templates:</span>
                         <select style="font-size:12px;padding:3px 8px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--text);" onchange="(function(s){const v=s.value;if(!v)return;document.getElementById('dockerHostRecoveryTemplate').value=v;s.value='';}).call(this,this)">
@@ -1982,15 +2029,15 @@
                   <div id="dockerHostAdvBody" style="display:none;padding:12px 14px;border-top:1px solid var(--line);">
                     <div class="form-grid" style="gap:10px 24px;">
                       <div>
-                        <div class="field setting-row"><label>Monitor Interval (s)</label><input type="number" inputmode="numeric" id="dockerHostMonitorInterval" min="0" max="3600" style="max-width:100px;" placeholder="60" /></div>
+                        <div class="field setting-row"><label>Monitor Interval (s) <span class="info-tip" tabindex="0" data-tip="Minimum time between connectivity pings to this host. Leave blank or 0 to scan it on every monitoring cycle instead of waiting out its own schedule — useful for hosts you want checked as often as possible. Default 60s.">i</span></label><input type="number" inputmode="numeric" id="dockerHostMonitorInterval" min="0" max="3600" style="max-width:100px;" placeholder="60" /></div>
                         <div class="hint" style="margin-top:2px;">How often to ping this host. Default 60s.</div>
                       </div>
                       <div>
-                        <div class="field setting-row"><label>Ping Timeout (s)</label><input type="number" inputmode="numeric" id="dockerHostPingTimeout" min="1" max="60" style="max-width:100px;" placeholder="5" /></div>
+                        <div class="field setting-row"><label>Ping Timeout (s) <span class="info-tip" tabindex="0" data-tip="How long chowkidar waits for this host to answer a connectivity ping before treating it as unreachable. Leave blank to fall back to the configured global default, or 5s if that's unset too.">i</span></label><input type="number" inputmode="numeric" id="dockerHostPingTimeout" min="1" max="60" style="max-width:100px;" placeholder="5" /></div>
                         <div class="hint" style="margin-top:2px;">Seconds to wait for a ping response. Default 5s.</div>
                       </div>
                       <div>
-                        <div class="field setting-row"><label>Confirm Offline (s)</label><input type="number" inputmode="numeric" id="dockerHostConfirmScans" min="0" max="86400" style="max-width:100px;" placeholder="1800" /></div>
+                        <div class="field setting-row"><label>Confirm Offline (s) <span class="info-tip" tabindex="0" data-tip="How long this host must stay continuously unreachable before chowkidar raises an offline alert — filters out brief network blips so you're not paged for a momentary hiccup. Once raised, the matching recovery alert fires as soon as the host responds again, with no separate delay. Default 1800s (30 min).">i</span></label><input type="number" inputmode="numeric" id="dockerHostConfirmScans" min="0" max="86400" style="max-width:100px;" placeholder="1800" /></div>
                         <div class="hint" style="margin-top:2px;">Seconds the host must be continuously offline before alerting. Default 1800s (30 min). Alerts once on down, once on recovery.</div>
                       </div>
                     </div>
@@ -1998,7 +2045,7 @@
                 </div>
 
                 <div class="job-toggle-row" style="margin-top:14px;">
-                  <div class="field"><label style="display:flex;align-items:center;gap:8px;font-weight:normal;text-transform:none;letter-spacing:0;cursor:pointer;font-size:13px;"><input type="checkbox" id="dockerHostEnabled" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" /> Enabled</label></div>
+                  <div class="field"><label style="display:flex;align-items:center;gap:8px;font-weight:normal;text-transform:none;letter-spacing:0;cursor:pointer;font-size:13px;"><input type="checkbox" id="dockerHostEnabled" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" /> Enabled <span class="info-tip" tabindex="0" data-tip="Whether chowkidar actively monitors this Docker host. Disabled hosts are skipped entirely during scans — their containers aren't checked and jobs targeting them don't run — but the connection stays saved and fully configurable until you re-enable it.">i</span></label></div>
                 </div>
 
                 <div class="actions" style="margin-top:14px;">
@@ -2072,12 +2119,15 @@
                   <div class="form-grid" style="margin-top:12px;">
                     <div class="field"><label>Name <span style="color:var(--danger)">*</span></label><input type="text" id="jobName" placeholder="e.g. restart-nginx" /></div>
                     <div class="field-error" id="jobNameError"></div>
-                    <div class="field"><label>Group</label><input type="text" id="jobGroup" placeholder="optional" /></div>
+                    <div class="field"><label>Group <span class="info-tip" tabindex="0" data-tip="Optional free-text label for organizing related jobs in the jobs list and dashboard views. Purely cosmetic — has no effect on monitoring or actions.">i</span></label><input type="text" id="jobGroup" placeholder="optional" /></div>
                     <div class="field-error" id="jobGroupError"></div>
                   </div>
 
                   <!-- Action type tabs -->
                   <div class="job-action-tabs" style="margin-top:14px;">
+                    <div class="job-notify-label" style="margin-bottom:8px;">
+                      Action Type <span class="info-tip" tabindex="0" data-tip="Selects how this job's action is defined — pick a built-in Docker operation from the dropdown (Standard Action) or write your own script (Bash Script). This only affects how the action is performed; detection is configured separately below, under Health Check — which reuses the same 'Bash Script' tab label for a different purpose, so don't confuse the two.">i</span>
+                    </div>
                     <div class="job-tab-bar">
                       <button class="job-tab-btn active" id="jobTabStandard" type="button">Standard Action</button>
                       <button class="job-tab-btn" id="jobTabScript" type="button">Bash Script</button>
@@ -2085,7 +2135,7 @@
 
                     <div id="jobTabStandardContent" class="job-tab-content active">
                       <div class="field" style="max-width:260px;">
-                        <label>Action <span style="color:var(--danger)">*</span></label>
+                        <label>Action <span style="color:var(--danger)">*</span> <span class="info-tip" tabindex="0" data-tip="Chooses what happens when this job's health check reports a container unhealthy. restart / start / stop run the matching native Docker operation; none only records the detection in history without acting. This is independent of the Health Check method further down — switch to this section's Bash Script tab to run a custom action script instead of a built-in one.">i</span></label>
                         <select id="jobAction">
                           <option value="restart">restart</option>
                           <option value="start">start</option>
@@ -2156,7 +2206,7 @@
                   <!-- Container filter — same tab-toggle style as Standard Action / Bash Script -->
                   <div class="job-filter-row" style="margin-top:14px;">
                     <div class="field">
-                      <label>Container Filter <span style="color:var(--danger)">*</span></label>
+                      <label>Container Filter <span style="color:var(--danger)">*</span> <span class="info-tip" tabindex="0" data-tip="Chooses which containers this job watches. Match by container name (comma-separated substrings), a Docker label key/value pair, or the presence of an environment variable. Every container that matches is monitored and acted on independently.">i</span></label>
                       <div class="job-tab-bar">
                         <button class="job-tab-btn active" id="jobFilterTypeName"  type="button">Container Name</button>
                         <button class="job-tab-btn"        id="jobFilterTypeLabel" type="button">Label</button>
@@ -2198,7 +2248,7 @@
                   <!-- Health Check mode — Docker native status or bash script -->
                   <div class="job-filter-row" style="margin-top:14px;">
                     <div class="field" style="grid-column:1/-1;">
-                      <label>Health Check</label>
+                      <label>Health Check <span class="info-tip" tabindex="0" data-tip="How chowkidar decides a matched container is unhealthy. Docker Status relies on the container's own HEALTHCHECK reporting health: unhealthy. Bash Script runs your own exit-code check (0 = healthy) — but it executes inside the monitor's shared 30-second scan window, so keep it fast and set Action Timeout to 30s or less.">i</span></label>
                       <div class="job-tab-bar">
                         <button class="job-tab-btn active" id="jobHCTabDocker" type="button">Docker Status</button>
                         <button class="job-tab-btn" id="jobHCTabScript" type="button">Bash Script</button>
@@ -2251,7 +2301,7 @@
                   <!-- Row 1: Retry Limit — own full-width row so the toggle has room -->
                   <div class="job-filter-row" style="margin-top:14px;">
                     <div class="field" style="grid-column:1/-1;">
-                      <label>Retry Limit</label>
+                      <label>Retry Limit <span class="info-tip" tabindex="0" data-tip="Caps how many times the action is retried on a still-failing container before chowkidar marks it retries-exhausted and stops acting until the container recovers (or is reset). Choose a fixed attempt count or a maximum total duration. Leave unchecked to retry indefinitely.">i</span></label>
                       <label style="display:flex;align-items:center;gap:6px;font-weight:normal;text-transform:none;letter-spacing:0;cursor:pointer;font-size:13px;margin:4px 0 6px;">
                         <input type="checkbox" id="jobRetryLimitEnabled" /> Limit retries
                       </label>
@@ -2277,7 +2327,7 @@
                   <!-- Docker Contexts chips — none selected means all contexts -->
                   <div class="job-notify-section" id="jobDockerHostWrap" style="margin-top:14px;">
                     <div class="job-notify-label">
-                      Docker Contexts <span style="color:var(--danger)">*</span>
+                      Docker Contexts <span style="color:var(--danger)">*</span> <span class="info-tip" tabindex="0" data-tip="Which Docker hosts/contexts this job monitors. Select one or more — the container filter is evaluated independently on each selected context. Selecting none monitors all configured contexts.">i</span>
                       <span class="hint" id="jobDockerHostHint" style="text-transform:none;letter-spacing:0;"></span>
                     </div>
                     <div id="jobDockerHostChips" class="notify-chips">
@@ -2290,22 +2340,22 @@
                   <div class="job-filter-row" style="margin-top:10px;align-items:end;">
                     <div style="display:none;" id="jobDockerHostSelectLegacy"></div>
                     <div class="field">
-                      <label>Monitor Interval (s) <span style="color:var(--danger)">*</span></label>
+                      <label>Monitor Interval (s) <span style="color:var(--danger)">*</span> <span class="info-tip" tabindex="0" data-tip="How often chowkidar checks this job's matching containers, in seconds. Lower values catch problems sooner but add more Docker API and (if configured) health-check-script load.">i</span></label>
                       <input type="number" id="jobMonitorInterval" min="5" max="3600" required style="max-width:120px;" />
                       <div class="field-error" id="jobMonitorIntervalError"></div>
                     </div>
                     <div class="field">
-                      <label>Action Timeout (s) <span style="color:var(--danger)">*</span> <span class="hint" style="text-transform:none;letter-spacing:0;">restart / stop / start / bash script</span></label>
+                      <label>Action Timeout (s) <span style="color:var(--danger)">*</span> <span class="info-tip" tabindex="0" data-tip="Maximum time allowed for the configured action (restart / stop / start / bash script) to run. If a health-check script is also set, this same value bounds its execution too — but health checks run inside the monitor's shared 30-second scan window, so anything above 30s gets killed mid-run and logged as an error instead of marking the container unhealthy. Plain restart/stop/start/bash-script actions run independently in the worker pool and may use the full range.">i</span> <span class="hint" style="text-transform:none;letter-spacing:0;">restart / stop / start / bash script</span></label>
                       <input type="number" id="jobActionTimeout" min="5" max="300" required style="max-width:120px;" />
                       <div class="field-error" id="jobActionTimeoutError"></div>
                     </div>
                     <div class="field">
-                      <label>Post-Action Wait (s) <span class="hint" style="text-transform:none;letter-spacing:0;">(0 = off)</span></label>
+                      <label>Post-Action Wait (s) <span class="info-tip" tabindex="0" data-tip="Seconds to pause re-checking this container after an action completes, giving it time to stabilize before the next evaluation. 0 disables the wait, so the very next scan re-evaluates immediately. Leave blank to fall back to the Monitor Interval.">i</span> <span class="hint" style="text-transform:none;letter-spacing:0;">(0 = off)</span></label>
                       <input type="number" id="jobPostWait" min="0" max="600" style="max-width:120px;" />
                       <div class="field-error"></div>
                     </div>
                     <div class="field">
-                      <label>Stable Scans Required <span class="hint" style="text-transform:none;letter-spacing:0;">(blank = default 3)</span></label>
+                      <label>Stable Scans Required <span class="info-tip" tabindex="0" data-tip="Number of consecutive healthy scans a recovering container must pass before it's treated as fully recovered (cycle reset, retry counter cleared). Guards against a brief 'running' blip being mistaken for genuine recovery. Leave blank to use the default of 3.">i</span> <span class="hint" style="text-transform:none;letter-spacing:0;">(blank = default 3)</span></label>
                       <input type="number" id="jobStableScans" min="1" max="20" placeholder="3" style="max-width:120px;" />
                       <div class="field-error"></div>
                     </div>
@@ -2313,7 +2363,7 @@
 
                   <div class="job-notify-section">
                     <div class="job-notify-label">
-                      Notifications
+                      Notifications <span class="info-tip" tabindex="0" data-tip="Notification profiles alerted for this job's events — unhealthy detected, retry attempts, cooldown, and recovery. Leave empty to send no notifications for this job; other jobs and host-level alerts are unaffected.">i</span>
                       <span class="hint" style="text-transform:none;letter-spacing:0;">&mdash; alert these agents when this job fires</span>
                     </div>
                     <div id="jobNotifyChips" class="notify-chips">
@@ -2322,8 +2372,8 @@
                   </div>
 
                   <div class="job-toggle-row" style="margin-top:14px;">
-                    <div class="field"><label style="display:flex;align-items:center;gap:8px;font-weight:normal;text-transform:none;letter-spacing:0;cursor:pointer;font-size:13px;"><input type="checkbox" id="jobEnabled" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" /> Enabled</label></div>
-                    <div class="field"><label style="display:flex;align-items:center;gap:8px;font-weight:normal;text-transform:none;letter-spacing:0;cursor:pointer;font-size:13px;"><input type="checkbox" id="jobStartExited" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" /> Start Exited</label></div>
+                    <div class="field"><label style="display:flex;align-items:center;gap:8px;font-weight:normal;text-transform:none;letter-spacing:0;cursor:pointer;font-size:13px;"><input type="checkbox" id="jobEnabled" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" /> Enabled <span class="info-tip" tabindex="0" data-tip="Whether this job is active. Disabled jobs are not monitored and never trigger their action — they stay saved and fully configurable, just dormant until re-enabled.">i</span></label></div>
+                    <div class="field"><label style="display:flex;align-items:center;gap:8px;font-weight:normal;text-transform:none;letter-spacing:0;cursor:pointer;font-size:13px;"><input type="checkbox" id="jobStartExited" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" /> Start Exited <span class="info-tip" tabindex="0" data-tip="When enabled, chowkidar also starts matching containers that are stopped/exited — on top of its normal unhealthy-detection cycle for already-running ones. Useful for jobs that should keep a service running, not just heal it once it's up.">i</span></label></div>
                   </div>
 
                   <div class="actions" style="margin-top:14px;">
@@ -2373,10 +2423,10 @@
           <section class="tab-panel" id="tab-monitoring">
             <h2 class="section-title">Monitoring</h2>
             <div class="form-grid">
-              <div><div class="field setting-row"><label>HTTP Client Timeout (s)</label><input type="number" inputmode="numeric" id="httpClientTimeoutSeconds" min="1" max="3600" /></div><div class="field-error" id="httpClientTimeoutSecondsError"></div></div>
-              <div><div class="field setting-row"><label>HTTP Max Idle Conns</label><input type="number" inputmode="numeric" id="httpMaxIdleConns" min="1" max="1000" /></div><div class="field-error" id="httpMaxIdleConnsError"></div></div>
-              <div><div class="field setting-row"><label>HTTP Max Idle Conns / Host</label><input type="number" inputmode="numeric" id="httpMaxIdleConnsPerHost" min="1" max="1000" /></div><div class="field-error" id="httpMaxIdleConnsPerHostError"></div></div>
-              <div><div class="field setting-row"><label>HTTP Idle Conn Timeout (s)</label><input type="number" inputmode="numeric" id="httpIdleConnTimeoutSeconds" min="1" max="3600" /></div><div class="field-error" id="httpIdleConnTimeoutSecondsError"></div></div>
+              <div><div class="field setting-row"><label>HTTP Client Timeout (s) <span class="info-tip" tabindex="0" data-tip="Maximum time chowkidar's shared outbound HTTP client waits for a response — currently used for the periodic GitHub release check. Raise it on slow or high-latency networks; lower it to fail fast when the network is unreachable. 1-3600 seconds (default 15).">i</span></label><input type="number" inputmode="numeric" id="httpClientTimeoutSeconds" min="1" max="3600" /></div><div class="field-error" id="httpClientTimeoutSecondsError"></div></div>
+              <div><div class="field setting-row"><label>HTTP Max Idle Conns <span class="info-tip" tabindex="0" data-tip="Total number of idle keep-alive connections the shared HTTP client keeps open across all hosts, ready to be reused on the next outbound request. Higher values reduce reconnect overhead; this rarely needs tuning since chowkidar makes very few outbound HTTP calls. 1-1000 (default 20).">i</span></label><input type="number" inputmode="numeric" id="httpMaxIdleConns" min="1" max="1000" /></div><div class="field-error" id="httpMaxIdleConnsError"></div></div>
+              <div><div class="field setting-row"><label>HTTP Max Idle Conns / Host <span class="info-tip" tabindex="0" data-tip="Caps how many of those idle keep-alive connections may be held open to any single host at once. Only meaningful up to the HTTP Max Idle Conns total above. 1-1000 (default 10).">i</span></label><input type="number" inputmode="numeric" id="httpMaxIdleConnsPerHost" min="1" max="1000" /></div><div class="field-error" id="httpMaxIdleConnsPerHostError"></div></div>
+              <div><div class="field setting-row"><label>HTTP Idle Conn Timeout (s) <span class="info-tip" tabindex="0" data-tip="How long an idle keep-alive connection may sit unused before the shared HTTP client closes it. Shorter values free up sockets sooner; longer values keep connections warm between infrequent calls like the daily release check. 1-3600 seconds (default 90).">i</span></label><input type="number" inputmode="numeric" id="httpIdleConnTimeoutSeconds" min="1" max="3600" /></div><div class="field-error" id="httpIdleConnTimeoutSecondsError"></div></div>
             </div>
           </section>
 
@@ -5780,7 +5830,18 @@ echo "Restart complete"`,
       }
 
       if (!monitorIntervalRaw || isNaN(monitorIntervalSeconds) || monitorIntervalSeconds < 5) { setFieldError('jobMonitorInterval', 'Required — minimum 5s.'); hasErrors = true; }
-      if (!actionTimeoutRaw || isNaN(actionTimeoutSeconds) || actionTimeoutSeconds < 5) { setFieldError('jobActionTimeout', 'Required — minimum 5s.'); hasErrors = true; }
+      if (!actionTimeoutRaw || isNaN(actionTimeoutSeconds) || actionTimeoutSeconds < 5) {
+        setFieldError('jobActionTimeout', 'Required — minimum 5s.'); hasErrors = true;
+      } else if (currentJobHealthCheckMode === 'script' && actionTimeoutSeconds > 30) {
+        // Health-check scripts run inside the monitor's shared 30s scan-cycle budget
+        // (cmd/server/monitor.go scanOnce), not their own timeout window — anything
+        // longer gets killed mid-run and logged as a script error rather than being
+        // treated as "unhealthy", so the action never fires. Pure restart/stop/start/
+        // bash-script actions run in the worker pool instead and aren't affected,
+        // which is why this cap only applies when a health-check script is set.
+        setFieldError('jobActionTimeout', 'Health-check scripts must complete within the monitor’s 30s scan window — higher values will be killed before finishing and logged as errors, so the action will never trigger.');
+        hasErrors = true;
+      }
 
       if (hasErrors) { statusEl.textContent = 'Please fix highlighted fields.'; return; }
 
@@ -7007,6 +7068,69 @@ echo "Restart complete"`,
         }
       });
     }
+
+    // Shared viewport-fixed bubble for .info-tip icons. position:fixed escapes
+    // the job-form-card's overflow clipping (see #infoTipBubble comment), so we
+    // measure the icon and the bubble's own size on hover/focus and clamp the
+    // bubble's coordinates to stay fully inside the viewport — flipping below
+    // the icon when there isn't room above.
+    (function setupInfoTips() {
+      const bubble = document.createElement('div');
+      bubble.id = 'infoTipBubble';
+      document.body.appendChild(bubble);
+
+      let activeIcon = null;
+
+      function position(icon) {
+        const iconRect   = icon.getBoundingClientRect();
+        const bubbleRect = bubble.getBoundingClientRect();
+        const margin = 8;
+
+        let left = iconRect.left + iconRect.width / 2 - bubbleRect.width / 2;
+        left = Math.max(margin, Math.min(left, window.innerWidth - bubbleRect.width - margin));
+
+        let top = iconRect.top - bubbleRect.height - margin;
+        if (top < margin) top = iconRect.bottom + margin;
+
+        bubble.style.left = `${left}px`;
+        bubble.style.top  = `${top}px`;
+      }
+
+      function show(icon) {
+        const tip = icon.getAttribute('data-tip');
+        if (!tip) return;
+        activeIcon = icon;
+        bubble.textContent = tip;
+        bubble.classList.add('visible');
+        position(icon);
+      }
+
+      function hide(icon) {
+        if (activeIcon !== icon) return;
+        activeIcon = null;
+        bubble.classList.remove('visible');
+      }
+
+      document.addEventListener('mouseover', (e) => {
+        const icon = e.target.closest('.info-tip');
+        if (icon) show(icon);
+      });
+      document.addEventListener('mouseout', (e) => {
+        const icon = e.target.closest('.info-tip');
+        if (icon && !icon.contains(e.relatedTarget)) hide(icon);
+      });
+      document.addEventListener('focusin', (e) => {
+        const icon = e.target.closest('.info-tip');
+        if (icon) show(icon);
+      });
+      document.addEventListener('focusout', (e) => {
+        const icon = e.target.closest('.info-tip');
+        if (icon) hide(icon);
+      });
+      // Icon moves relative to viewport on scroll (form card, page, etc.) — just hide.
+      document.addEventListener('scroll', () => { if (activeIcon) hide(activeIcon); }, true);
+      window.addEventListener('resize', () => { if (activeIcon) hide(activeIcon); });
+    })();
 
     bootstrap();
   </script>
