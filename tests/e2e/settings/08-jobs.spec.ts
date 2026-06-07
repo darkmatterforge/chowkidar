@@ -989,6 +989,11 @@ docker restart "$1"`)
           containerNameFilter: 'all-contexts-container',
         },
       })
+      await openJobsTab(page)
+
+      // Wait for jobs to load — confirms loadJobs + loadDockerHosts (populateContextFilter) have both run
+      await expect(page.locator('#jobsTbody')).toContainText('e2e-context-pinned-job')
+      await expect(page.locator('#jobFilterContext option[value="local"]')).toBeAttached()
 
       // Filter by local context — both jobs should appear (pinned to local + all-contexts)
       await page.locator('#jobFilterContext').selectOption('local')
@@ -1025,6 +1030,8 @@ docker restart "$1"`)
       expect(job.dockerHostIDs).toEqual(['local'])
       // Verify it appears in context filter
       await openJobsTab(page)
+      await expect(page.locator('#jobsTbody')).toContainText('e2e-migration-test-job')
+      await expect(page.locator('#jobFilterContext option[value="local"]')).toBeAttached()
       await page.locator('#jobFilterContext').selectOption('local')
       await expect(page.locator('#jobsTbody')).toContainText('e2e-migration-test-job')
       await page.locator('#jobFilterContext').selectOption('')

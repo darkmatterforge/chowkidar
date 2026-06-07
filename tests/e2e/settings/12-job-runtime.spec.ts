@@ -82,6 +82,14 @@ docker restart "$1"`)
     await page.locator('#jobName').fill('e2e-action-script-job')
     await page.locator('#jobMonitorInterval').fill('5')
     await page.locator('#jobActionTimeout').fill('30')
+    // If multiple docker hosts exist (state from prior test blocks), select local explicitly
+    const hostWrap = page.locator('#jobDockerHostWrap')
+    if (await hostWrap.isVisible()) {
+      const localChip = page.locator('#jobDockerHostChips button[data-host-chip-id="local"]')
+      if (!await localChip.evaluate((el) => el.classList.contains('selected'))) {
+        await localChip.click()
+      }
+    }
     const [res] = await Promise.all([
       page.waitForResponse(r => r.url().includes('/api/job') && r.request().method() !== 'GET'),
       page.locator('#saveJobBtn').click(),
