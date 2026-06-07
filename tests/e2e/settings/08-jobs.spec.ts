@@ -12,7 +12,9 @@ async function openAddForm(page: Page) {
 
 async function saveJob(page: Page, name: string) {
   await page.locator('#jobName').fill(name)
-  // If multiple docker hosts exist, select local explicitly so validation doesn't block the save
+  // populateContextFilter() adds option[value="local"] only after loadDockerHosts() completes.
+  // Wait for it so the chip visibility check below sees stable state, not a mid-load snapshot.
+  await expect(page.locator('#jobFilterContext option[value="local"]')).toBeAttached()
   const hostWrap = page.locator('#jobDockerHostWrap')
   if (await hostWrap.isVisible()) {
     const localChip = page.locator('#jobDockerHostChips button[data-host-chip-id="local"]')
