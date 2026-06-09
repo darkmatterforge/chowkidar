@@ -36,6 +36,7 @@ func newRecoveryApp(t *testing.T, fake *fakeDockerClient, jobs []config.Job) (*a
 		lastNotified:         make(map[string]time.Time),
 		cState:               make(map[string]*containerActionState),
 		activeJobs:           make(map[string]bool),
+		activeJobCancels:     make(map[string]activeJobCancel),
 		lastJobScan:          make(map[string]time.Time),
 		lastJobNotifications: make(map[string][]string),
 	}
@@ -80,6 +81,7 @@ func TestHealthRecovery_SuccessfulRestartWritesHistoryEntry(t *testing.T) {
 		lastNotified:         make(map[string]time.Time),
 		cState:               make(map[string]*containerActionState),
 		activeJobs:           make(map[string]bool),
+		activeJobCancels:     make(map[string]activeJobCancel),
 		lastJobNotifications: make(map[string][]string),
 	}
 	dir := t.TempDir()
