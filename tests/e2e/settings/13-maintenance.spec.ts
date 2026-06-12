@@ -1480,22 +1480,28 @@ test.describe('Maintenance — Bell lifecycle UI', () => {
     }
   })
 
+  // Returns the e2e-monitor job ID, or null if not found.
+  // Using a job-targeted window (jobIDs) avoids the 60s scan-slowdown that
+  // dockerHostIDs:['local'] causes via skipEntireScan — keeping the scan cycle
+  // at the job's 8s interval so poll timeouts stay tight.
+  async function getMonitorJobId(page: Page): Promise<string | null> {
+    const res = await page.request.get(`${BASE_URL}/api/jobs`)
+    const data = await res.json() as { jobs: Array<{ id: string; name: string }> }
+    return data.jobs.find(j => j.name === 'e2e-monitor')?.id ?? null
+  }
+
   test('maintenance_started alert renders in bell with ⏸️ icon', async ({ page }) => {
-    test.setTimeout(60_000) // needs up to one 8s scan cycle + assertions
+    test.setTimeout(60_000)
     await gotoApp(page)
+    const jobId = await getMonitorJobId(page)
+    if (!jobId) { test.skip(); return }
+
     const createRes = await page.request.post(`${BASE_URL}/api/maintenance`, {
-      data: {
-        title: 'e2e-bell-started',
-        active: true,
-        strategy: 'manual',
-        timezone: 'UTC',
-        dockerHostIDs: ['local'],
-      },
+      data: { title: 'e2e-bell-started', active: true, strategy: 'manual', timezone: 'UTC', jobIDs: [jobId] },
     })
     const created = await createRes.json() as { id: string }
 
     try {
-      // Wait for the scan cycle to detect the transition (50s cap leaves room for cleanup).
       const alert = await pollForAlert(page, 'maintenance_started', created.id, 50_000)
       expect(alert).not.toBeNull()
       if (!alert) return
@@ -1517,33 +1523,27 @@ test.describe('Maintenance — Bell lifecycle UI', () => {
   })
 
   test('maintenance_ended alert renders in bell with ▶️ icon after window is deactivated', async ({ page }) => {
-    // Polls for "started" then "ended" sequentially — each capped at 50s.
-    test.setTimeout(120_000)
+    test.setTimeout(90_000)
     await gotoApp(page)
+    const jobId = await getMonitorJobId(page)
+    if (!jobId) { test.skip(); return }
+
     const createRes = await page.request.post(`${BASE_URL}/api/maintenance`, {
-      data: {
-        title: 'e2e-bell-ended',
-        active: true,
-        strategy: 'manual',
-        timezone: 'UTC',
-        dockerHostIDs: ['local'],
-      },
+      data: { title: 'e2e-bell-ended', active: true, strategy: 'manual', timezone: 'UTC', jobIDs: [jobId] },
     })
     const created = await createRes.json() as { id: string }
 
     let startedId = ''
     try {
-      // Confirm the "started" transition is recorded before deleting the window.
-      const startedAlert = await pollForAlert(page, 'maintenance_started', created.id, 50_000)
+      const startedAlert = await pollForAlert(page, 'maintenance_started', created.id, 40_000)
       expect(startedAlert).not.toBeNull()
       if (!startedAlert) return
       startedId = startedAlert.id
 
-      // Deleting the window causes it to drop from the active set on the next
-      // scan cycle, which triggers the "ended" transition.
+      // Delete window — next scan (≤8s away) detects it's gone and emits "ended".
       await cleanupWindowByApi(page, created.id)
 
-      const endedAlert = await pollForAlert(page, 'maintenance_ended', created.id, 50_000)
+      const endedAlert = await pollForAlert(page, 'maintenance_ended', created.id, 40_000)
       expect(endedAlert).not.toBeNull()
       if (!endedAlert) return
 
