@@ -191,9 +191,10 @@ func TestRetryHistoryLogging(t *testing.T) {
 		docker:             fake,
 		history:            historyStore,
 		notifier:           notify.New(""),
-		lastNotified: make(map[string]time.Time),
-		cState:       make(map[string]*containerActionState),
-		activeJobs:   make(map[string]bool),
+		lastNotified:     make(map[string]time.Time),
+		cState:           make(map[string]*containerActionState),
+		activeJobs:       make(map[string]bool),
+		activeJobCancels: make(map[string]activeJobCancel),
 	}
 	// jobID must be non-empty so resolveJobSettings returns per-job retryCount (not the hardcoded fallback of 1).
 	job := actionJob{app: a, container: containertypes.Summary{ID: "c1", Names: []string{"demo"}}, reason: "unhealthy", action: "restart", jobID: "test-job", retryCount: 3}
@@ -229,9 +230,10 @@ func TestRetriesExhaustedAfterMaxCycles(t *testing.T) {
 		docker:             fake,
 		history:            historyStore,
 		notifier:           notify.New(""),
-		lastNotified: make(map[string]time.Time),
-		cState:       make(map[string]*containerActionState),
-		activeJobs:   make(map[string]bool),
+		lastNotified:     make(map[string]time.Time),
+		cState:           make(map[string]*containerActionState),
+		activeJobs:       make(map[string]bool),
+		activeJobCancels: make(map[string]activeJobCancel),
 	}
 	job := actionJob{app: a, container: containertypes.Summary{ID: "c1", Names: []string{"demo"}}, reason: "unhealthy", action: "restart"}
 
@@ -577,6 +579,7 @@ func newScanOnceApp(t *testing.T, fake *fakeDockerClient, jobs []config.Job) (*a
 		lastNotified:         make(map[string]time.Time),
 		cState:               make(map[string]*containerActionState),
 		activeJobs:           make(map[string]bool),
+		activeJobCancels:     make(map[string]activeJobCancel),
 		lastJobScan:          make(map[string]time.Time),
 		lastJobNotifications: make(map[string][]string),
 	}

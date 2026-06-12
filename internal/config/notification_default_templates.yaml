@@ -30,7 +30,7 @@ providers:
     titles:
       bootUp: "🚀 Chowkidar started"
       unhealthyDetected: "⚠️ {{.ContainerName}} unhealthy detected"
-      retrying: "🔁 {{.ContainerName}} — recovery attempt {{.Cycle}}/{{.MaxRetries}}"
+      retrying: "🔁 {{.ContainerName}} — recovery attempt {{.Cycle}}{{if .MaxRetries}}/{{.MaxRetries}}{{end}}"
       cooldown: "⏳ {{.ContainerName}} cooldown started"
       containerRecovered: "✅ {{.ContainerName}} recovered"
       actionFailed: "❌ {{.ContainerName}} action failed"
@@ -47,9 +47,9 @@ providers:
       📦 Container : {{.ContainerName}}
       📋 Rule      : {{.RuleName}}
       ⚡ Action    : {{.Action}}
-      🔁 Attempt   : {{.Cycle}} / {{.MaxRetries}}
+      🔁 Attempt   : {{.Cycle}}{{if .MaxRetries}} / {{.MaxRetries}}{{end}}
 
-      Recovery attempt {{.Cycle}} of {{.MaxRetries}} has been initiated.
+      Recovery attempt {{.Cycle}}{{if .MaxRetries}} of {{.MaxRetries}}{{end}} has been initiated.
     cooldown: |-
       📦 Container : {{.ContainerName}}
       📋 Rule      : {{.RuleName}}
@@ -80,7 +80,7 @@ providers:
     titles:
       bootUp: "🚀 Chowkidar started"
       unhealthyDetected: "⚠️ {{.ContainerName}} unhealthy detected"
-      retrying: "🔁 {{.ContainerName}} — recovery attempt {{.Cycle}}/{{.MaxRetries}}"
+      retrying: "🔁 {{.ContainerName}} — recovery attempt {{.Cycle}}{{if .MaxRetries}}/{{.MaxRetries}}{{end}}"
       cooldown: "⏳ {{.ContainerName}} cooldown started"
       containerRecovered: "✅ {{.ContainerName}} recovered"
       actionFailed: "❌ {{.ContainerName}} action failed"
@@ -97,9 +97,9 @@ providers:
       📦 **Container** : `{{.ContainerName}}`
       📋 **Rule**      : `{{.RuleName}}`
       ⚡ **Action**    : `{{.Action}}`
-      🔁 **Attempt**   : **{{.Cycle}} / {{.MaxRetries}}**
+      🔁 **Attempt**   : **{{.Cycle}}{{if .MaxRetries}} / {{.MaxRetries}}{{end}}**
 
-      Recovery attempt {{.Cycle}} of {{.MaxRetries}} has been initiated.
+      Recovery attempt {{.Cycle}}{{if .MaxRetries}} of {{.MaxRetries}}{{end}} has been initiated.
     cooldown: |-
       📦 **Container** : `{{.ContainerName}}`
       📋 **Rule**      : `{{.RuleName}}`
@@ -130,7 +130,7 @@ providers:
     titles:
       bootUp: "🚀 Chowkidar started"
       unhealthyDetected: "⚠️ {{.ContainerName}} unhealthy detected"
-      retrying: "🔁 {{.ContainerName}} — recovery attempt {{.Cycle}}/{{.MaxRetries}}"
+      retrying: "🔁 {{.ContainerName}} — recovery attempt {{.Cycle}}{{if .MaxRetries}}/{{.MaxRetries}}{{end}}"
       cooldown: "⏳ {{.ContainerName}} cooldown started"
       containerRecovered: "✅ {{.ContainerName}} recovered"
       actionFailed: "❌ {{.ContainerName}} action failed"
@@ -147,9 +147,9 @@ providers:
       📦 Container : {{.ContainerName}}
       📋 Rule      : {{.RuleName}}
       ⚡ Action    : {{.Action}}
-      🔁 Attempt   : {{.Cycle}} / {{.MaxRetries}}
+      🔁 Attempt   : {{.Cycle}}{{if .MaxRetries}} / {{.MaxRetries}}{{end}}
 
-      Recovery attempt {{.Cycle}} of {{.MaxRetries}} has been initiated.
+      Recovery attempt {{.Cycle}}{{if .MaxRetries}} of {{.MaxRetries}}{{end}} has been initiated.
     cooldown: |-
       📦 Container : {{.ContainerName}}
       �� Rule      : {{.RuleName}}
@@ -180,7 +180,7 @@ providers:
     titles:
       bootUp: "🚀 Chowkidar started"
       unhealthyDetected: "⚠️ {{.ContainerName}} unhealthy detected"
-      retrying: "🔁 {{.ContainerName}} — recovery attempt {{.Cycle}}/{{.MaxRetries}}"
+      retrying: "🔁 {{.ContainerName}} — recovery attempt {{.Cycle}}{{if .MaxRetries}}/{{.MaxRetries}}{{end}}"
       cooldown: "⏳ {{.ContainerName}} cooldown started"
       containerRecovered: "✅ {{.ContainerName}} recovered"
       actionFailed: "❌ {{.ContainerName}} action failed"
@@ -197,9 +197,9 @@ providers:
       📦 *Container* : `{{.ContainerName}}`
       📋 *Rule*      : `{{.RuleName}}`
       ⚡ *Action*    : `{{.Action}}`
-      🔁 *Attempt*   : *{{.Cycle}} / {{.MaxRetries}}*
+      🔁 *Attempt*   : *{{.Cycle}}{{if .MaxRetries}} / {{.MaxRetries}}{{end}}*
 
-      Recovery attempt {{.Cycle}} of {{.MaxRetries}} has been initiated.
+      Recovery attempt {{.Cycle}}{{if .MaxRetries}} of {{.MaxRetries}}{{end}} has been initiated.
     cooldown: |-
       📦 *Container* : `{{.ContainerName}}`
       📋 *Rule*      : `{{.RuleName}}`

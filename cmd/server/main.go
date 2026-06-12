@@ -13,6 +13,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	_ "time/tzdata"
 
 	containertypes "github.com/docker/docker/api/types/container"
 
@@ -52,6 +53,7 @@ type app struct {
 	notifUsage             map[string]*notifProfileUsage // profile ID → in-memory usage (reset on restart)
 	notifUsageMu           sync.Mutex
 	dockerHosts            []config.DockerHostProfile
+	maintenanceWindows     []config.MaintenanceWindow
 	scripts                []config.ScriptEntry
 	history                *history.Store
 	mu                     sync.RWMutex
@@ -77,6 +79,9 @@ type app struct {
 	dockerHostOfflineSince map[string]time.Time // when each host first went offline in the current outage
 	dockerHostNotified     map[string]bool      // whether the down notification has been sent for the current outage
 	dockerHostLastScan     map[string]time.Time
+	maintenanceActiveIDs   map[string]string        // window ID → title, as of the previous scan cycle (title kept so "ended" alerts can name the window after it stops being active)
+	maintenanceTransitions []maintenanceTransition  // recent start/end edges (pruned to ~24h), source of maintenance_started/maintenance_ended bell alerts
+	activeJobCancels       map[string]activeJobCancel // container name → {jobID, cancel} for its in-flight action job (registered while running; used by force-cancel maintenance windows)
 }
 
 type dockerClient interface {
@@ -113,6 +118,17 @@ type actionJob struct {
 	postActionWaitSeconds int
 }
 
+// activeJobCancel pairs a running action job's cancel func with the job ID it
+// was dispatched for (empty for job-less actions — manual restarts and
+// start-exited recovery — which always run against the local Docker client).
+// Registered in (*app).activeJobCancels for the duration of the job's Run, so
+// a force-cancel maintenance window can find and interrupt exactly the
+// in-flight jobs it now governs; see (*app).cancelForceCancelledJobs.
+type activeJobCancel struct {
+	jobID  string
+	cancel context.CancelFunc
+}
+
 // appVersion is set at build time via -ldflags "-X main.appVersion=x.y.z".
 // Falls back to "dev" when built without the flag (local development).
 var appVersion = "dev"
@@ -121,6 +137,7 @@ type bootFiles struct {
 	jobs                 []config.Job
 	notificationProfiles []config.NotificationProfile
 	dockerHostProfiles   []config.DockerHostProfile
+	maintenanceWindows   []config.MaintenanceWindow
 	scriptEntries        []config.ScriptEntry
 }
 
@@ -157,6 +174,15 @@ func bootLoadFiles(cfg config.Config) (bootFiles, error) {
 	}
 	logInfof("boot: docker hosts loaded count=%d path=%s", len(dockerHostProfiles), filepath.Join(cfg.ConfigDir, "docker_hosts.yaml"))
 
+	maintenanceWindows, err := config.LoadMaintenanceWindows(cfg.ConfigDir)
+	if err != nil {
+		return f, fmt.Errorf("load maintenance windows: %w", err)
+	}
+	if err := config.SaveMaintenanceWindows(cfg.ConfigDir, maintenanceWindows); err != nil {
+		return f, fmt.Errorf("init maintenance file: %w", err)
+	}
+	logInfof("boot: maintenance windows loaded count=%d path=%s", len(maintenanceWindows), filepath.Join(cfg.ConfigDir, "maintenance.yaml"))
+
 	scriptEntries, err := config.LoadScriptEntries(cfg.ConfigDir)
 	if err != nil {
 		return f, fmt.Errorf("load script entries: %w", err)
@@ -169,6 +195,7 @@ func bootLoadFiles(cfg config.Config) (bootFiles, error) {
 	f.jobs = jobs
 	f.notificationProfiles = notificationProfiles
 	f.dockerHostProfiles = dockerHostProfiles
+	f.maintenanceWindows = maintenanceWindows
 	f.scriptEntries = scriptEntries
 	return f, nil
 }
@@ -253,6 +280,7 @@ func main() {
 		jobs:                   files.jobs,
 		notifications:          files.notificationProfiles,
 		dockerHosts:            files.dockerHostProfiles,
+		maintenanceWindows:     files.maintenanceWindows,
 		scripts:                files.scriptEntries,
 		history:                historyStore,
 		lastNotified:           make(map[string]time.Time),
@@ -271,6 +299,7 @@ func main() {
 		dockerHostOfflineSince: map[string]time.Time{},
 		dockerHostNotified:     map[string]bool{},
 		dockerHostLastScan:     map[string]time.Time{},
+		activeJobCancels:       make(map[string]activeJobCancel),
 	}
 	defer a.stopPool()
 	if da, err := loadDismissedAlerts(cfg.ConfigDir); err != nil {
@@ -278,6 +307,12 @@ func main() {
 	} else {
 		a.dismissedAlerts = da
 		logInfof("boot: dismissed alerts loaded count=%d", len(da))
+	}
+	if nu, err := loadNotifUsage(cfg.ConfigDir); err != nil {
+		logWarnf("boot: could not load notification usage counters: %v", err)
+	} else {
+		a.notifUsage = nu
+		logInfof("boot: notification usage counters loaded count=%d", len(nu))
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.MaxIdleConns = cfg.HttpMaxIdleConns
@@ -316,6 +351,8 @@ func main() {
 	logInfof("boot: update checker started version=%s", appVersion)
 	go a.pruneHistoryLoop(stopMonitor)
 	logInfof("boot: history pruner started retentionDays=%d", cfg.LogRetentionDays)
+	go a.pruneFinishedMaintenanceLoop(stopMonitor)
+	logInfof("boot: maintenance-window pruner started")
 
 	mux := setupMux(a)
 	srv := &http.Server{
@@ -382,6 +419,9 @@ func setupMux(a *app) *http.ServeMux {
 	mux.HandleFunc("/api/system-alerts/dismiss", a.authMiddleware(a.handleSystemAlertsDismiss))
 	mux.HandleFunc("/api/docker-hosts", a.authMiddleware(a.handleDockerHosts))
 	mux.HandleFunc("/api/docker-hosts/status", a.authMiddleware(a.handleDockerHostsStatus))
+	mux.HandleFunc("/api/maintenance", a.authMiddleware(a.handleMaintenance))
+	mux.HandleFunc("/api/maintenance/active", a.authMiddleware(a.handleMaintenanceActive))
+	mux.HandleFunc("/api/maintenance/", a.authMiddleware(a.handleMaintenanceByID))
 	mux.HandleFunc("/api/scripts", a.authMiddleware(a.handleScripts))
 	mux.HandleFunc("/api/history", a.authMiddleware(a.handleHistoryEndpoint))
 	mux.HandleFunc("/api/test-notification", a.authMiddleware(a.handleTestNotification))
@@ -535,6 +575,14 @@ func (a *app) getDockerHostProfiles() []config.DockerHostProfile {
 	defer a.mu.RUnlock()
 	out := make([]config.DockerHostProfile, len(a.dockerHosts))
 	copy(out, a.dockerHosts)
+	return out
+}
+
+func (a *app) getMaintenanceWindows() []config.MaintenanceWindow {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	out := make([]config.MaintenanceWindow, len(a.maintenanceWindows))
+	copy(out, a.maintenanceWindows)
 	return out
 }
 

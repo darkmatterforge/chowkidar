@@ -81,6 +81,18 @@ func (j actionJob) Run(ctx context.Context) {
 		}
 		defer j.app.releaseActiveJob(name)
 
+		// Give a force-cancel maintenance window a way to interrupt this job
+		// mid-flight: derive a cancellable context and register it under the
+		// container name so checkMaintenanceTransitions can reach in and stop
+		// an in-flight Docker call (executeAction threads ctx into its own
+		// context.WithTimeout calls, so cancellation propagates straight
+		// through) the moment such a window opens.
+		var jobCancel context.CancelFunc
+		ctx, jobCancel = context.WithCancel(ctx)
+		j.app.registerActiveJobCancel(name, j.jobID, jobCancel)
+		defer j.app.unregisterActiveJobCancel(name)
+		defer jobCancel()
+
 		if j.app.isRetriesExhausted(name) {
 			logInfof("job: skipping container=%s reason=retries-exhausted source=%s", name, source)
 			return
@@ -91,6 +103,17 @@ func (j actionJob) Run(ctx context.Context) {
 			logInfof("job: skipping container=%s reason=post-action-wait remaining=%s source=%s",
 				name, remaining.Round(time.Second), source)
 			j.app.logActionHistory(j.container, j.reason, action, 0, "skipped", "cooldown active", "", 0)
+			return
+		}
+
+		// Maintenance-window guard: a window may have opened in the moments
+		// between this action being dispatched and the worker claiming it.
+		// Re-check now — any active window always cancels queued actions before
+		// they reach the Docker call. (force-cancel also handles in-flight
+		// interruption separately via cancelForceCancelledJobs.)
+		if onStart := j.app.maintenanceOnStartFor(j.jobID); onStart != "" {
+			logInfof("job: skipping container=%s reason=maintenance-window-started onStart=%s source=%s", name, onStart, source)
+			j.app.logActionHistory(j.container, j.reason, action, 0, "skipped", "maintenance window started", "", 0)
 			return
 		}
 	}

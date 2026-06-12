@@ -1303,6 +1303,9 @@
         <span>Monitoring starts in <strong id="startupDelayCountdown"></strong></span>
       </div>
 
+      <!-- Active maintenance windows banner -->
+      <div id="maintenanceActiveBanner" style="display:none;flex-direction:column;gap:6px;padding:12px 16px;margin-bottom:12px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;font-size:13px;color:#363a8a;"></div>
+
       <!-- Toolbar -->
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
         <span id="statLastScan" style="font-size:12px;color:var(--muted);"></span>
@@ -1391,6 +1394,7 @@
           <button class="tab-btn" data-tab="notifications">Notifications</button>
           <button class="tab-btn" data-tab="dockerHosts">Docker Hosts</button>
           <button class="tab-btn" data-tab="jobs">Jobs</button>
+          <button class="tab-btn" data-tab="maintenance">Maintenance</button>
           <button class="tab-btn" data-tab="monitoring">Monitoring</button>
           <button class="tab-btn" data-tab="security">Security</button>
           <div style="margin-top:auto;padding-top:14px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:4px;">
@@ -1655,7 +1659,7 @@
 
                 <!-- Rate limiting & suspension -->
                 <div style="margin-top:14px;padding:14px 16px;background:var(--bg);border:1px solid var(--line);border-radius:10px;">
-                  <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);font-weight:700;margin-bottom:12px;">Notification Limits <span class="info-tip" tabindex="0" data-tip="Optional throttles that cap how often this profile sends notifications — handy for staying within a provider's free-tier quota or avoiding alert floods in a busy channel. Counters are tracked in memory (reset on restart); leaving Burst Limit and Daily Cap both blank sends without any limit.">i</span> <span style="text-transform:none;letter-spacing:0;font-weight:400;">(optional — leave blank for no limit)</span></div>
+                  <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);font-weight:700;margin-bottom:12px;">Notification Limits <span class="info-tip" tabindex="0" data-tip="Optional throttles that cap how often this profile sends notifications — handy for staying within a provider's free-tier quota or avoiding alert floods in a busy channel. The Daily Cap counter is saved to disk and survives a restart; the short-lived Burst Limit counter is kept in memory only. Leaving both blank sends without any limit.">i</span> <span style="text-transform:none;letter-spacing:0;font-weight:400;">(optional — leave blank for no limit)</span></div>
 
                   <div class="form-grid" style="margin-bottom:12px;">
                     <div class="field">
@@ -1673,7 +1677,7 @@
                       <div class="hint" style="margin-top:4px;">Stops rapid-fire floods</div>
                     </div>
                     <div class="field">
-                      <label>Daily cap <span class="info-tip" tabindex="0" data-tip="Maximum notifications this profile may send within a UTC calendar day. Once reached, the 'When limit is reached' choice decides what happens to further notifications until the counter resets at UTC midnight. Leave blank for no daily cap.">i</span></label>
+                      <label>Daily cap <span class="info-tip" tabindex="0" data-tip="Maximum notifications this profile may send within a calendar day (in your display timezone — see Settings). Once reached, the 'When limit is reached' choice decides what happens to further notifications until the counter resets at local midnight. The count is saved to disk, so it survives a restart rather than starting over. Leave blank for no daily cap.">i</span></label>
                       <div style="display:flex;align-items:center;gap:8px;">
                         <input type="number" id="notifyDailyLimit" min="1" placeholder="e.g. 20" style="max-width:90px;" />
                         <span style="font-size:13px;color:var(--muted);">per day</span>
@@ -2420,6 +2424,196 @@
             </div>
           </section>
 
+          <section class="tab-panel" id="tab-maintenance">
+            <div style="margin-top:4px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+                <div>
+                  <h2 class="section-title" style="margin:0;">Maintenance Windows</h2>
+                  <div class="hint" style="margin-top:4px;">Pause monitoring for selected jobs and/or Docker hosts on a schedule — fully skipped, exactly like disabling a job.</div>
+                </div>
+                <button class="btn primary" id="openAddMaintenanceBtn" type="button">+ Add Maintenance Window</button>
+              </div>
+
+              <!-- Slide-down form panel -->
+              <div id="maintenanceFormPanel" class="job-form-panel">
+                <div class="job-form-card" id="maintenanceFormCard">
+                  <div class="job-form-header">
+                    <span id="maintenanceFormTitle" class="job-form-title">New Maintenance Window</span>
+                    <button class="btn ghost" id="closeMaintenanceFormBtn" type="button" style="padding:4px 10px;font-size:18px;line-height:1;">&#x2715;</button>
+                  </div>
+
+                  <div class="form-grid" style="margin-top:12px;">
+                    <div class="field"><label>Title <span style="color:var(--danger)">*</span></label><input type="text" id="maintTitle" placeholder="e.g. Sunday backup window" /></div>
+                    <div class="field-error" id="maintTitleError"></div>
+                    <div class="field"><label>Description</label><input type="text" id="maintDescription" placeholder="optional" /></div>
+                    <div class="field-error" id="maintDescriptionError"></div>
+                  </div>
+
+                  <!-- Affects — pick either specific jobs or Docker hosts, never both -->
+                  <div class="job-filter-row" style="margin-top:14px;">
+                    <div class="field">
+                      <label>Affects <span style="color:var(--danger)">*</span> <span class="info-tip" tabindex="0" data-tip="Choose what this window pauses — either specific jobs or one or more Docker hosts (selecting Local Docker pauses the entire app). A window can target jobs or hosts, never both at once.">i</span></label>
+                      <div class="job-tab-bar">
+                        <button class="job-tab-btn active" id="maintTargetTypeJobs"  type="button">Specific Jobs</button>
+                        <button class="job-tab-btn"        id="maintTargetTypeHosts" type="button">Docker Hosts</button>
+                      </div>
+
+                      <!-- specific jobs -->
+                      <div id="maintTargetJobsWrap" class="job-tab-content active">
+                        <div class="job-notify-label">
+                          Affected Jobs <span class="info-tip" tabindex="0" data-tip="Jobs selected here are fully paused during this window — no scans, history, actions, or notifications, exactly like disabling the job.">i</span>
+                        </div>
+                        <div id="maintJobChips" class="notify-chips"></div>
+                        <div class="field-error" id="maintJobChipsError"></div>
+                      </div>
+
+                      <!-- docker hosts -->
+                      <div id="maintTargetHostsWrap" class="job-tab-content">
+                        <div class="job-notify-label">
+                          Affected Docker Hosts <span class="info-tip" tabindex="0" data-tip="Selecting a host pauses every job pinned to it plus that host's offline/connectivity monitoring and notifications. Selecting Local Docker additionally pauses the entire scan cycle, since the whole app depends on it — i.e. it pauses everything.">i</span>
+                        </div>
+                        <div id="maintHostChips" class="notify-chips"></div>
+                        <div class="field-error" id="maintHostChipsError"></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="job-toggle-row" style="margin-top:14px;">
+                    <div class="field"><label style="display:flex;align-items:center;gap:8px;font-weight:normal;text-transform:none;letter-spacing:0;cursor:pointer;font-size:13px;"><input type="checkbox" id="maintActive" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" checked /> Active <span class="info-tip" tabindex="0" data-tip="Master on/off switch. For the Manual strategy this IS the toggle that starts and stops the window; for scheduled strategies it lets you temporarily disable the window without deleting it.">i</span></label></div>
+                    <div class="field" style="max-width:280px;">
+                      <label>When this window starts <span class="info-tip" tabindex="0" data-tip="Controls what happens to actions when this window opens. Allow to finish (default): queued actions that haven't started a Docker call yet are cancelled; anything already mid-call runs to completion. Force-cancel everything: also interrupts Docker calls already in flight via context cancellation, which can leave a container mid-restart/-stop in an inconsistent state that may need a manual check afterwards. Choose this only if you'd rather risk that than have any action touch a container during the window.">i</span></label>
+                      <select id="maintOnStart">
+                        <option value="allow-finish">Allow to finish (default)</option>
+                        <option value="force-cancel">Force-cancel everything</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <!-- Strategy -->
+                  <div style="margin-top:14px;">
+                    <div class="field" style="max-width:280px;">
+                      <label>Schedule Strategy <span style="color:var(--danger)">*</span> <span class="info-tip" tabindex="0" data-tip="Determines how chowkidar decides when this window pauses monitoring. Manual is a direct on/off switch with no timing — you start and stop the pause yourself via the Active toggle. Single Window pauses once for a fixed start and end time and never recurs. Cron Expression and the three Recurring strategies (Interval / Day of Week / Day of Month) repeat on a schedule: each computes when the window 'opens' and keeps monitoring paused for the configured Duration.">i</span></label>
+                      <select id="maintStrategy">
+                        <option value="manual">Manual</option>
+                        <option value="single">Single Window</option>
+                        <option value="cron">Cron Expression</option>
+                        <option value="recur-interval">Recurring — Interval</option>
+                        <option value="recur-day-of-week">Recurring — Day of Week</option>
+                        <option value="recur-day-of-month">Recurring — Day of Month</option>
+                      </select>
+                    </div>
+
+                    <!-- Manual: nothing extra — the Active checkbox above is the whole toggle -->
+                    <div id="maintManualWrap" class="job-tab-content active">
+                      <div class="hint" style="margin-top:8px;">The Active toggle above starts and stops this window directly. <span class="info-tip" tabindex="0" data-tip="Checking Active arms this window — the pause begins as soon as you save, and ends as soon as you uncheck it and save again. If you also set an optional Effective Date Range below, the pause is further bounded to that window of calendar dates (evaluated in the Timezone you choose) — so an armed manual window only actually takes effect while 'today' falls inside that range.">i</span></div>
+                    </div>
+
+                    <!-- Single Window -->
+                    <div id="maintSingleWrap" class="job-tab-content">
+                      <div class="form-grid" style="margin-top:10px;">
+                        <div class="field"><label>Start <span class="info-tip" tabindex="0" data-tip="A one-time pause between these exact start and end moments — fires once and never recurs, ideal for a single planned event like an upgrade or migration. Both fields use your browser's local timezone.">i</span></label><input type="datetime-local" id="maintSingleStart" /></div>
+                        <div class="field-error" id="maintSingleStartError"></div>
+                        <div class="field"><label>End <span class="info-tip" tabindex="0" data-tip="Marks the exact moment this one-time pause closes. Combined with the auto-prune behavior, it's also when the 12-hour countdown to this window's automatic removal from the list begins.">i</span></label><input type="datetime-local" id="maintSingleEnd" /></div>
+                        <div class="field-error" id="maintSingleEndError"></div>
+                      </div>
+                    </div>
+
+                    <!-- Cron -->
+                    <div id="maintCronWrap" class="job-tab-content">
+                      <div class="form-grid" style="margin-top:10px;">
+                        <div class="field"><label>Cron Expression <span class="info-tip" tabindex="0" data-tip="Standard 5-field cron expression (minute hour day month weekday) evaluated in the timezone selected below. Each tick 'opens' the window, and monitoring stays paused for the configured Duration afterward — e.g. \"0 2 * * *\" with a 60-minute duration pauses every day from 2:00 AM to 3:00 AM.">i</span></label><input type="text" id="maintCronExpr" placeholder="0 2 * * *" /></div>
+                        <div class="field-error" id="maintCronExprError"></div>
+                        <div class="field" style="max-width:160px;"><label>Duration (minutes) <span class="info-tip" tabindex="0" data-tip="How long the pause lasts once this window opens, regardless of which scheduling strategy triggered it. Monitoring resumes automatically when the duration expires.">i</span></label><input type="number" inputmode="numeric" id="maintCronDuration" min="1" placeholder="60" /></div>
+                        <div class="field-error" id="maintCronDurationError"></div>
+                      </div>
+                    </div>
+
+                    <!-- Recurring: interval -->
+                    <div id="maintIntervalWrap" class="job-tab-content">
+                      <div class="form-grid" style="margin-top:10px;">
+                        <div class="field" style="max-width:160px;"><label>Every N days <span class="info-tip" tabindex="0" data-tip="Repeats on a fixed cadence counted from this window's creation date — e.g. 7 means every 7th day from then on, at the chosen Time of day, each time pausing monitoring for the configured Duration. Unlike Day of Week / Day of Month, this isn't tied to the calendar — it just keeps counting forward in fixed-size steps.">i</span></label><input type="number" inputmode="numeric" id="maintIntervalDays" min="1" placeholder="7" /></div>
+                        <div class="field-error" id="maintIntervalDaysError"></div>
+                        <div class="field" style="max-width:160px;"><label>Time of day <span class="info-tip" tabindex="0" data-tip="The clock time, in the chosen Timezone, at which each occurrence of this window opens.">i</span></label><input type="time" id="maintIntervalTime" /></div>
+                        <div class="field-error" id="maintIntervalTimeError"></div>
+                        <div class="field" style="max-width:160px;"><label>Duration (minutes) <span class="info-tip" tabindex="0" data-tip="How long the pause lasts once this window opens, regardless of which scheduling strategy triggered it. Monitoring resumes automatically when the duration expires.">i</span></label><input type="number" inputmode="numeric" id="maintIntervalDuration" min="1" placeholder="60" /></div>
+                        <div class="field-error" id="maintIntervalDurationError"></div>
+                      </div>
+                    </div>
+
+                    <!-- Recurring: day of week -->
+                    <div id="maintWeeklyWrap" class="job-tab-content">
+                      <div style="margin-top:10px;">
+                        <div class="label" style="margin-bottom:6px;">Days of week <span class="info-tip" tabindex="0" data-tip="Repeats every selected weekday — e.g. Saturday + Sunday at 02:00 pauses monitoring for the configured Duration starting at 2 AM each of those days, every week.">i</span></div>
+                        <div id="maintWeekdayChips" class="notify-chips"></div>
+                        <div class="field-error" id="maintWeekdayChipsError"></div>
+                      </div>
+                      <div class="form-grid" style="margin-top:10px;">
+                        <div class="field" style="max-width:160px;"><label>Time of day <span class="info-tip" tabindex="0" data-tip="The clock time, in the chosen Timezone, at which each occurrence of this window opens.">i</span></label><input type="time" id="maintWeeklyTime" /></div>
+                        <div class="field-error" id="maintWeeklyTimeError"></div>
+                        <div class="field" style="max-width:160px;"><label>Duration (minutes) <span class="info-tip" tabindex="0" data-tip="How long the pause lasts once this window opens, regardless of which scheduling strategy triggered it. Monitoring resumes automatically when the duration expires.">i</span></label><input type="number" inputmode="numeric" id="maintWeeklyDuration" min="1" placeholder="60" /></div>
+                        <div class="field-error" id="maintWeeklyDurationError"></div>
+                      </div>
+                    </div>
+
+                    <!-- Recurring: day of month -->
+                    <div id="maintMonthlyWrap" class="job-tab-content">
+                      <div style="margin-top:10px;">
+                        <div class="label" style="margin-bottom:6px;">Days of month <span class="info-tip" tabindex="0" data-tip="Repeats every selected day-of-month — e.g. the 1st and 15th at 03:00 pauses monitoring for the configured Duration starting at 3 AM on those dates, every month. Pick 29-31 with care: months that don't have that date simply skip that occurrence.">i</span></div>
+                        <div id="maintMonthDayChips" class="notify-chips"></div>
+                        <div class="field-error" id="maintMonthDayChipsError"></div>
+                      </div>
+                      <div class="form-grid" style="margin-top:10px;">
+                        <div class="field" style="max-width:160px;"><label>Time of day <span class="info-tip" tabindex="0" data-tip="The clock time, in the chosen Timezone, at which each occurrence of this window opens.">i</span></label><input type="time" id="maintMonthlyTime" /></div>
+                        <div class="field-error" id="maintMonthlyTimeError"></div>
+                        <div class="field" style="max-width:160px;"><label>Duration (minutes) <span class="info-tip" tabindex="0" data-tip="How long the pause lasts once this window opens, regardless of which scheduling strategy triggered it. Monitoring resumes automatically when the duration expires.">i</span></label><input type="number" inputmode="numeric" id="maintMonthlyDuration" min="1" placeholder="60" /></div>
+                        <div class="field-error" id="maintMonthlyDurationError"></div>
+                      </div>
+                    </div>
+
+                    <!-- Timezone — shared by cron + the 3 recurring strategies -->
+                    <div id="maintTimezoneWrap" class="field" style="margin-top:10px;max-width:280px;display:none;">
+                      <label>Timezone <span class="info-tip" tabindex="0" data-tip="The timezone in which cron expressions and recurring time-of-day fields are interpreted, and in which any optional Effective Date Range start/end are calculated. Pick the timezone your operations team works in, not necessarily the server's.">i</span></label>
+                      <select id="maintTimezone"></select>
+                      <div class="field-error" id="maintTimezoneError"></div>
+                    </div>
+
+                    <!-- Effective Date Range — shared, optional -->
+                    <div id="maintEffectiveRangeWrap" style="margin-top:14px;display:none;">
+                      <label style="display:flex;align-items:center;gap:8px;font-weight:normal;text-transform:none;letter-spacing:0;cursor:pointer;font-size:13px;">
+                        <input type="checkbox" id="maintEffectiveRangeEnabled" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" />
+                        Limit to a date range <span class="info-tip" tabindex="0" data-tip="Optional — bounds the recurring schedule to a specific start/end date range, evaluated in the timezone selected above. Outside this range the window never activates, even if the underlying schedule would otherwise fire.">i</span>
+                      </label>
+                      <div id="maintEffectiveRangeOptions" class="form-grid" style="margin-top:10px;display:none;">
+                        <div class="field"><label>From</label><input type="date" id="maintEffectiveFrom" /></div>
+                        <div class="field-error" id="maintEffectiveFromError"></div>
+                        <div class="field"><label>To</label><input type="date" id="maintEffectiveTo" /></div>
+                        <div class="field-error" id="maintEffectiveToError"></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="actions" style="margin-top:14px;">
+                    <button class="btn primary" id="saveMaintenanceBtn" type="button">Add Window</button>
+                    <button class="btn warn" id="deleteMaintenanceBtn" type="button" style="display:none;">Delete</button>
+                    <button class="btn ghost" id="cancelMaintenanceBtn" type="button">Cancel</button>
+                    <span id="maintenanceStatus" class="hint"></span>
+                  </div>
+                  <div id="maintenanceSaveStatus" class="global-test-result" role="status">
+                    <span class="test-result-icon"></span>
+                    <div><div class="test-result-title"></div><div class="test-result-detail"></div></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Windows table -->
+              <div id="maintenanceListStatus" class="global-test-result" role="status" style="display:none;margin-bottom:10px;"></div>
+              <table>
+                <thead><tr><th>Title</th><th>Strategy</th><th>Active</th><th>Affects</th><th>Edit</th><th>Delete</th></tr></thead>
+                <tbody id="maintenanceTbody"><tr><td colspan="6">No maintenance windows configured</td></tr></tbody>
+              </table>
+            </div>
+          </section>
+
           <section class="tab-panel" id="tab-monitoring">
             <h2 class="section-title">Monitoring</h2>
             <div class="form-grid">
@@ -2481,6 +2675,7 @@
         </article>
       </section>
     </section>
+
   </main>
 
   <footer style="margin-top:auto;">
@@ -3699,11 +3894,8 @@ echo "Restart complete"`,
       if (!page) return; // ignore clicks from non-page nav buttons (theme, bell, etc.)
       document.querySelectorAll('.page').forEach((el) => el.classList.remove('active'));
       document.querySelectorAll('.nav-btn[data-page]').forEach((el) => el.classList.remove('active'));
-      if (page === 'settings') {
-        document.getElementById('settingsPage').classList.add('active');
-      } else {
-        document.getElementById('dashboardPage').classList.add('active');
-      }
+      const pageId = { settings: 'settingsPage' }[page] || 'dashboardPage';
+      document.getElementById(pageId)?.classList.add('active');
       const activeBtn = document.querySelector(`.nav-btn[data-page="${page}"]`);
       if (activeBtn) activeBtn.classList.add('active');
     }
@@ -3716,6 +3908,7 @@ echo "Restart complete"`,
       const saveRow = document.getElementById('saveSettingsBtn').parentElement;
       if (saveRow) saveRow.style.display = ['general', 'monitoring'].includes(tab) ? '' : 'none';
       if (tab === 'security') renderSecurityTab();
+      if (tab === 'maintenance' && !maintenanceLoaded) loadMaintenanceWindows();
     }
 
     function applyLayoutPickerSelection() {
@@ -4738,7 +4931,7 @@ echo "Restart complete"`,
       loadError.textContent = '';
 
       try {
-        const [healthRes, diagRes, containersRes, historyRes, barsRes, jobsRes, dockerStatusRes] = await Promise.all([
+        const [healthRes, diagRes, containersRes, historyRes, barsRes, jobsRes, dockerStatusRes, maintActiveRes] = await Promise.all([
           apiFetch('/api/health'),
           apiFetch('/api/diagnostics'),
           apiFetch('/api/containers'),
@@ -4746,6 +4939,7 @@ echo "Restart complete"`,
           apiFetch('/api/history?bars=true&limit=2000'),
           apiFetch('/api/jobs?enabled=true&limit=1'),
           apiFetch('/api/docker-hosts/status'),
+          apiFetch('/api/maintenance/active'),
         ]);
         if (!healthRes.ok || !diagRes.ok || !containersRes.ok || !historyRes.ok) {
           throw new Error(`API request failed (health=${healthRes.status}, diag=${diagRes.status}, containers=${containersRes.status}, history=${historyRes.status}, bars=${barsRes.status})`);
@@ -4872,6 +5066,12 @@ echo "Restart complete"`,
         // Encryption key mismatch warning
         const mismatchBanner = document.getElementById('encryptionMismatchBanner');
         if (mismatchBanner) mismatchBanner.style.display = health.encryptionKeyMismatch ? 'flex' : 'none';
+
+        // Active maintenance windows banner
+        if (maintActiveRes.ok) {
+          const maintActive = await maintActiveRes.json();
+          renderMaintenanceBanner(maintActive.windows || []);
+        }
 
         // Shutdown stat — visible when startExited is DISABLED (containers stopped and unmanaged)
         const exitedCard = document.getElementById('statExitedCard');
@@ -5981,7 +6181,11 @@ echo "Restart complete"`,
           statusHtml = `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><span class="pill" style="background:#fff3e0;color:#b05a00;border:1px solid #ffd08a;">🟡 Suspended ${left}</span><button class="btn" style="font-size:11px;padding:3px 8px;" data-notify-resume-id="${escapeHtml(profile.id)}">Resume</button></div>`;
           rowStyle = 'opacity:.75;';
         } else if (hasError) {
-          statusHtml = `<span class="pill fail" style="border:1px solid #f5b3b8;">⚠ Quota hit</span>`;
+          // The agent is no longer suspended (its suspension period elapsed and
+          // it auto-resumed), but the rate-limit error from before is still
+          // recorded — surface a way to clear it so the row doesn't stay stuck
+          // showing "Quota hit" with no available action.
+          statusHtml = `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><span class="pill fail" style="border:1px solid #f5b3b8;">⚠ Quota hit</span><button class="btn" style="font-size:11px;padding:3px 8px;" data-notify-clear-error-id="${escapeHtml(profile.id)}" title="Agent has resumed sending — clear this stale error">Resume</button></div>`;
         } else if (profile.enabled) {
           statusHtml = `<span class="pill ok">● Active</span>`;
         } else {
@@ -6104,6 +6308,14 @@ echo "Restart complete"`,
       tbody.querySelectorAll('button[data-notify-resume-id]').forEach((btn) => {
         btn.addEventListener('click', async () => {
           await quickResume(btn.getAttribute('data-notify-resume-id'));
+        });
+      });
+
+      // "Resume" on a stale Quota-hit row (suspension already elapsed) — clears
+      // the lingering rate-limit error rather than the suspension (already gone)
+      tbody.querySelectorAll('button[data-notify-clear-error-id]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          await dismissNotifAlert(btn.getAttribute('data-notify-clear-error-id'));
         });
       });
 
@@ -6238,13 +6450,19 @@ echo "Restart complete"`,
       if (visibleSysAlerts.length) {
         html += `<div style="padding:6px 14px 4px;font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);font-weight:700;background:var(--bg);">System</div>`;
         html += visibleSysAlerts.map(a => {
-          const typeIcon = a.type === 'paused_monitoring' ? '⛔' : a.type === 'failed_recovery' ? '❌' : a.type === 'update_available' ? '🔔' : '✅';
+          const typeIcon = a.type === 'paused_monitoring' ? '⛔' : a.type === 'failed_recovery' ? '❌' : a.type === 'update_available' ? '🔔' : a.type === 'maintenance_upcoming' ? '🛠️' : a.type === 'maintenance_started' ? '⏸️' : a.type === 'maintenance_ended' ? '▶️' : '✅';
           const typeLabel = a.type === 'paused_monitoring'
             ? `Monitoring paused — ${escapeHtml(a.containerName || '')}`
             : a.type === 'failed_recovery'
             ? `Recovery failed — ${escapeHtml(a.containerName || '')}`
             : a.type === 'update_available'
             ? 'Update available'
+            : a.type === 'maintenance_upcoming'
+            ? 'Upcoming maintenance'
+            : a.type === 'maintenance_started'
+            ? 'Maintenance started'
+            : a.type === 'maintenance_ended'
+            ? 'Maintenance ended'
             : 'Monitoring active';
           const desc = a.message ? escapeHtml(truncateMsg(a.message, 120)) : '';
           const ts = a.timestamp ? formatTimestamp(a.timestamp) : '';
@@ -6807,6 +7025,531 @@ echo "Restart complete"`,
       }
     }
 
+    // ── Maintenance Windows ──────────────────────────────────────────────────
+    let maintenanceWindows = [];
+    let maintenanceAllJobs = [];
+    let maintenanceLoaded = false;
+    let editingMaintenanceId = null;
+    let maintSelectedJobs = new Set();
+    let maintSelectedHosts = new Set();
+    let maintSelectedWeekdays = new Set();
+    let maintSelectedMonthDays = new Set();
+
+    const MAINT_STRATEGY_LABELS = {
+      manual: 'Manual',
+      single: 'Single Window',
+      cron: 'Cron Expression',
+      'recur-interval': 'Recurring · Interval',
+      'recur-day-of-week': 'Recurring · Day of Week',
+      'recur-day-of-month': 'Recurring · Day of Month',
+    };
+    const MAINT_WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const maintFields = [
+      'maintTitle', 'maintJobChips', 'maintHostChips',
+      'maintSingleStart', 'maintSingleEnd',
+      'maintCronExpr', 'maintCronDuration',
+      'maintIntervalDays', 'maintIntervalTime', 'maintIntervalDuration',
+      'maintWeekdayChips', 'maintWeeklyTime', 'maintWeeklyDuration',
+      'maintMonthDayChips', 'maintMonthlyTime', 'maintMonthlyDuration',
+      'maintTimezone', 'maintEffectiveFrom', 'maintEffectiveTo',
+    ];
+
+    function clearMaintenanceErrors() { maintFields.forEach(clearFieldError); }
+
+    function maintToDatetimeLocal(iso) {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return '';
+      const pad = (n) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    function maintFromDatetimeLocal(value) {
+      if (!value) return null;
+      const d = new Date(value);
+      if (isNaN(d.getTime())) return null;
+      return d.toISOString();
+    }
+
+    function renderMaintenanceJobChips(selectedIDs) {
+      maintSelectedJobs = new Set(selectedIDs || []);
+      const host = document.getElementById('maintJobChips');
+      if (!host) return;
+      if (!maintenanceAllJobs.length) {
+        host.innerHTML = '<span class="job-notify-empty">No jobs configured yet.</span>';
+        return;
+      }
+      host.innerHTML = maintenanceAllJobs.map((j) => {
+        const sel = maintSelectedJobs.has(j.id) ? ' selected' : '';
+        return `<button type="button" class="notify-chip${sel}" data-maint-job-chip-id="${escapeHtml(j.id)}">
+          <span class="chip-dot"></span>
+          <span class="chip-name">${escapeHtml(j.name)}</span>
+        </button>`;
+      }).join('');
+      host.querySelectorAll('button[data-maint-job-chip-id]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-maint-job-chip-id');
+          if (maintSelectedJobs.has(id)) {
+            maintSelectedJobs.delete(id);
+            btn.classList.remove('selected');
+          } else {
+            maintSelectedJobs.add(id);
+            btn.classList.add('selected');
+          }
+        });
+      });
+    }
+
+    function renderMaintenanceHostChips(selectedIDs) {
+      maintSelectedHosts = new Set((selectedIDs || []).filter(Boolean));
+      const host = document.getElementById('maintHostChips');
+      if (!host) return;
+      const all = [
+        { id: 'local', name: 'Local Docker', sub: 'built-in' },
+        ...(dockerHosts || []).filter((h) => !h.built_in).map((h) => ({ id: h.id, name: h.name, sub: h.type || '' })),
+      ];
+      host.innerHTML = all.map((h) => {
+        const sel = maintSelectedHosts.has(h.id) ? ' selected' : '';
+        return `<button type="button" class="notify-chip${sel}" data-maint-host-chip-id="${escapeHtml(h.id)}">
+          <span class="chip-dot"></span>
+          <span class="chip-name">${escapeHtml(h.name)}</span>
+          <span class="chip-provider">${escapeHtml(h.sub)}</span>
+        </button>`;
+      }).join('');
+      host.querySelectorAll('button[data-maint-host-chip-id]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-maint-host-chip-id');
+          if (maintSelectedHosts.has(id)) {
+            maintSelectedHosts.delete(id);
+            btn.classList.remove('selected');
+          } else {
+            maintSelectedHosts.add(id);
+            btn.classList.add('selected');
+          }
+        });
+      });
+    }
+
+    function renderMaintenanceWeekdayChips(selected) {
+      maintSelectedWeekdays = new Set((selected || []).map(Number));
+      const host = document.getElementById('maintWeekdayChips');
+      if (!host) return;
+      host.innerHTML = MAINT_WEEKDAY_LABELS.map((label, idx) => {
+        const sel = maintSelectedWeekdays.has(idx) ? ' selected' : '';
+        return `<button type="button" class="notify-chip${sel}" data-maint-weekday="${idx}"><span class="chip-name">${label}</span></button>`;
+      }).join('');
+      host.querySelectorAll('button[data-maint-weekday]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const idx = Number(btn.getAttribute('data-maint-weekday'));
+          if (maintSelectedWeekdays.has(idx)) {
+            maintSelectedWeekdays.delete(idx);
+            btn.classList.remove('selected');
+          } else {
+            maintSelectedWeekdays.add(idx);
+            btn.classList.add('selected');
+          }
+        });
+      });
+    }
+
+    function renderMaintenanceMonthDayChips(selected) {
+      maintSelectedMonthDays = new Set((selected || []).map(Number));
+      const host = document.getElementById('maintMonthDayChips');
+      if (!host) return;
+      let html = '';
+      for (let d = 1; d <= 31; d++) {
+        const sel = maintSelectedMonthDays.has(d) ? ' selected' : '';
+        html += `<button type="button" class="notify-chip${sel}" data-maint-monthday="${d}" style="min-width:38px;justify-content:center;"><span class="chip-name">${d}</span></button>`;
+      }
+      host.innerHTML = html;
+      host.querySelectorAll('button[data-maint-monthday]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const d = Number(btn.getAttribute('data-maint-monthday'));
+          if (maintSelectedMonthDays.has(d)) {
+            maintSelectedMonthDays.delete(d);
+            btn.classList.remove('selected');
+          } else {
+            maintSelectedMonthDays.add(d);
+            btn.classList.add('selected');
+          }
+        });
+      });
+    }
+
+    let currentMaintTargetType = 'jobs';
+
+    function setMaintTargetType(type) {
+      currentMaintTargetType = type;
+      const isJobs = type === 'jobs';
+      const jobsBtn  = document.getElementById('maintTargetTypeJobs');
+      const hostsBtn = document.getElementById('maintTargetTypeHosts');
+      const jobsWrap  = document.getElementById('maintTargetJobsWrap');
+      const hostsWrap = document.getElementById('maintTargetHostsWrap');
+      if (jobsBtn)  jobsBtn.classList.toggle('active', isJobs);
+      if (hostsBtn) hostsBtn.classList.toggle('active', !isJobs);
+      if (jobsWrap)  jobsWrap.classList.toggle('active', isJobs);
+      if (hostsWrap) hostsWrap.classList.toggle('active', !isJobs);
+      // Selections are stateful Sets (unlike the Container Filter's plain inputs) — clear
+      // the inactive type's selection so a hidden, stale cross-type pick can never be submitted.
+      if (isJobs) {
+        renderMaintenanceHostChips([]);
+      } else {
+        renderMaintenanceJobChips([]);
+      }
+    }
+
+    function setMaintenanceStrategy(strategy) {
+      const panels = {
+        manual: 'maintManualWrap',
+        single: 'maintSingleWrap',
+        cron: 'maintCronWrap',
+        'recur-interval': 'maintIntervalWrap',
+        'recur-day-of-week': 'maintWeeklyWrap',
+        'recur-day-of-month': 'maintMonthlyWrap',
+      };
+      Object.entries(panels).forEach(([key, id]) => {
+        const el = document.getElementById(id);
+        if (el) el.classList.toggle('active', key === strategy);
+      });
+      const needsTZ = strategy !== 'single';
+      const tzWrap = document.getElementById('maintTimezoneWrap');
+      const rangeWrap = document.getElementById('maintEffectiveRangeWrap');
+      if (tzWrap) tzWrap.style.display = needsTZ ? '' : 'none';
+      if (rangeWrap) rangeWrap.style.display = needsTZ ? '' : 'none';
+    }
+
+    function openMaintenanceForm(mode) {
+      const panel = document.getElementById('maintenanceFormPanel');
+      const card = document.getElementById('maintenanceFormCard');
+      const title = document.getElementById('maintenanceFormTitle');
+      panel.classList.add('open');
+      card.classList.toggle('editing', mode === 'edit');
+      title.textContent = mode === 'edit' ? 'Edit Maintenance Window' : 'New Maintenance Window';
+      document.getElementById('saveMaintenanceBtn').textContent = mode === 'edit' ? 'Save Changes' : 'Add Window';
+      document.getElementById('deleteMaintenanceBtn').style.display = mode === 'edit' ? 'inline-block' : 'none';
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function closeMaintenanceForm() {
+      document.getElementById('maintenanceFormPanel').classList.remove('open');
+    }
+
+    function resetMaintenanceForm() {
+      editingMaintenanceId = null;
+      document.getElementById('maintTitle').value = '';
+      document.getElementById('maintDescription').value = '';
+      setMaintTargetType('jobs');
+      renderMaintenanceJobChips([]);
+      renderMaintenanceHostChips([]);
+      document.getElementById('maintActive').checked = true;
+      document.getElementById('maintOnStart').value = 'allow-finish';
+      document.getElementById('maintStrategy').value = 'manual';
+      setMaintenanceStrategy('manual');
+      document.getElementById('maintSingleStart').value = '';
+      document.getElementById('maintSingleEnd').value = '';
+      document.getElementById('maintCronExpr').value = '';
+      document.getElementById('maintCronDuration').value = '';
+      document.getElementById('maintIntervalDays').value = '';
+      document.getElementById('maintIntervalTime').value = '';
+      document.getElementById('maintIntervalDuration').value = '';
+      renderMaintenanceWeekdayChips([]);
+      document.getElementById('maintWeeklyTime').value = '';
+      document.getElementById('maintWeeklyDuration').value = '';
+      renderMaintenanceMonthDayChips([]);
+      document.getElementById('maintMonthlyTime').value = '';
+      document.getElementById('maintMonthlyDuration').value = '';
+      buildTZSelect('maintTimezone', '');
+      document.getElementById('maintEffectiveRangeEnabled').checked = false;
+      document.getElementById('maintEffectiveRangeOptions').style.display = 'none';
+      document.getElementById('maintEffectiveFrom').value = '';
+      document.getElementById('maintEffectiveTo').value = '';
+      document.getElementById('deleteMaintenanceBtn').style.display = 'none';
+      document.getElementById('maintenanceStatus').textContent = '';
+      closeMaintenanceForm();
+    }
+
+    function populateMaintenanceForm(w) {
+      editingMaintenanceId = w.id;
+      document.getElementById('maintTitle').value = w.title || '';
+      document.getElementById('maintDescription').value = w.description || '';
+      // A window targets jobs or hosts, never both — but data saved before this constraint
+      // existed could still be mixed. Pick whichever side has selections (jobs wins ties)
+      // and let setMaintTargetType clear the other, so the form never silently re-submits a mix.
+      const targetType = (w.jobIDs || []).length ? 'jobs' : 'hosts';
+      setMaintTargetType(targetType);
+      if (targetType === 'jobs') {
+        renderMaintenanceJobChips(w.jobIDs || []);
+      } else {
+        renderMaintenanceHostChips(w.dockerHostIDs || []);
+      }
+      document.getElementById('maintActive').checked = !!w.active;
+      document.getElementById('maintOnStart').value = w.onStart || 'allow-finish';
+      const strategy = w.strategy || 'manual';
+      document.getElementById('maintStrategy').value = strategy;
+      setMaintenanceStrategy(strategy);
+
+      document.getElementById('maintSingleStart').value = w.single ? maintToDatetimeLocal(w.single.start) : '';
+      document.getElementById('maintSingleEnd').value   = w.single ? maintToDatetimeLocal(w.single.end)   : '';
+
+      document.getElementById('maintCronExpr').value     = w.cron?.expression || '';
+      document.getElementById('maintCronDuration').value = w.cron?.durationMinutes || '';
+
+      document.getElementById('maintIntervalDays').value     = w.recurInterval?.everyDays || '';
+      document.getElementById('maintIntervalTime').value     = w.recurInterval?.timeOfDay || '';
+      document.getElementById('maintIntervalDuration').value = w.recurInterval?.durationMinutes || '';
+
+      renderMaintenanceWeekdayChips(w.recurWeekly?.weekdays || []);
+      document.getElementById('maintWeeklyTime').value     = w.recurWeekly?.timeOfDay || '';
+      document.getElementById('maintWeeklyDuration').value = w.recurWeekly?.durationMinutes || '';
+
+      renderMaintenanceMonthDayChips(w.recurMonthly?.daysOfMonth || []);
+      document.getElementById('maintMonthlyTime').value     = w.recurMonthly?.timeOfDay || '';
+      document.getElementById('maintMonthlyDuration').value = w.recurMonthly?.durationMinutes || '';
+
+      buildTZSelect('maintTimezone', w.timezone || '');
+
+      const hasRange = !!(w.effectiveFrom || w.effectiveTo);
+      document.getElementById('maintEffectiveRangeEnabled').checked = hasRange;
+      document.getElementById('maintEffectiveRangeOptions').style.display = hasRange ? '' : 'none';
+      document.getElementById('maintEffectiveFrom').value = w.effectiveFrom ? w.effectiveFrom.slice(0, 10) : '';
+      document.getElementById('maintEffectiveTo').value   = w.effectiveTo   ? w.effectiveTo.slice(0, 10)   : '';
+
+      document.getElementById('deleteMaintenanceBtn').style.display = 'inline-block';
+      document.getElementById('maintenanceStatus').textContent = '';
+    }
+
+    async function loadMaintenanceWindows() {
+      const tbody = document.getElementById('maintenanceTbody');
+      try {
+        const [winRes, jobsRes] = await Promise.all([
+          fetch('/api/maintenance'),
+          fetch('/api/jobs?limit=10000&offset=0'),
+        ]);
+        const winData = await winRes.json();
+        const jobsData = await jobsRes.json();
+        maintenanceWindows = winData.windows || [];
+        maintenanceAllJobs = jobsData.jobs || [];
+        maintenanceLoaded = true;
+        renderMaintenanceWindows();
+      } catch (err) {
+        if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--danger);">Failed to load maintenance windows: ${escapeHtml(err.message)}</td></tr>`;
+      }
+    }
+
+    function formatMaintenanceAffects(w, jobNames, hostNames) {
+      const jobIDs = w.jobIDs || [];
+      const hostIDs = w.dockerHostIDs || [];
+      if (jobIDs.length) {
+        const names = jobIDs.map((id) => jobNames[id] || id);
+        const label = `${jobIDs.length} Job${jobIDs.length === 1 ? '' : 's'}`;
+        return `<span title="${escapeHtml(names.join(', '))}" style="cursor:default;">${label}</span>`;
+      }
+      if (hostIDs.length) {
+        if (hostIDs.length === 1 && hostIDs[0] === 'local') {
+          return `<span title="Pauses the entire local Docker host — i.e. the whole app" style="cursor:default;">Full App</span>`;
+        }
+        const names = hostIDs.map((id) => (id === 'local' ? 'Full App' : (hostNames[id] || id)));
+        const label = `${hostIDs.length} Docker Host${hostIDs.length === 1 ? '' : 's'}`;
+        return `<span title="${escapeHtml(names.join(', '))}" style="cursor:default;">${label}</span>`;
+      }
+      return '<span style="color:var(--muted)">-</span>';
+    }
+
+    function renderMaintenanceWindows() {
+      const tbody = document.getElementById('maintenanceTbody');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+      if (!maintenanceWindows.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);">No maintenance windows configured</td></tr>';
+        return;
+      }
+      const jobNames = {};
+      maintenanceAllJobs.forEach((j) => { jobNames[j.id] = j.name; });
+      const hostNames = { local: 'Local Docker' };
+      (dockerHosts || []).forEach((h) => { hostNames[h.id] = h.name; });
+
+      maintenanceWindows.forEach((w) => {
+        const tr = document.createElement('tr');
+        const affectsCell = formatMaintenanceAffects(w, jobNames, hostNames);
+        const activePill = w.active ? '<span class="pill">true</span>' : '<span class="pill fail">false</span>';
+        const lastStr = w.lastOccurrence ? formatTimestamp(w.lastOccurrence) : 'never';
+        const nextStr = w.nextOccurrence ? formatTimestamp(w.nextOccurrence) : '—';
+        tr.innerHTML = `<td><strong>${escapeHtml(w.title)}</strong><div class="hint" style="margin-top:2px;">Last: ${escapeHtml(lastStr)} · Next: ${escapeHtml(nextStr)}</div></td>
+          <td>${escapeHtml(MAINT_STRATEGY_LABELS[w.strategy] || w.strategy)}</td>
+          <td>${activePill}</td>
+          <td>${affectsCell}</td>
+          <td><button class="btn" style="font-size:12px;padding:5px 10px;" data-maint-edit-id="${escapeHtml(w.id)}">Edit</button></td>
+          <td><button class="btn warn" style="font-size:12px;padding:5px 10px;" data-maint-delete-id="${escapeHtml(w.id)}">Delete</button></td>`;
+        tbody.appendChild(tr);
+      });
+      tbody.querySelectorAll('button[data-maint-edit-id]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-maint-edit-id');
+          const w = maintenanceWindows.find((x) => x.id === id);
+          if (!w) return;
+          populateMaintenanceForm(w);
+          openMaintenanceForm('edit');
+        });
+      });
+      tbody.querySelectorAll('button[data-maint-delete-id]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-maint-delete-id');
+          const res = await fetch(`/api/maintenance/${id}`, { method: 'DELETE' });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            const status = document.getElementById('maintenanceListStatus');
+            if (status) {
+              status.style.display = '';
+              status.className = 'global-test-result error';
+              status.textContent = `Delete failed: ${err.error || res.status}`;
+            }
+            return;
+          }
+          if (editingMaintenanceId === id) resetMaintenanceForm();
+          await loadMaintenanceWindows();
+        });
+      });
+    }
+
+    async function saveMaintenanceWindow() {
+      clearMaintenanceErrors();
+      const statusEl = document.getElementById('maintenanceStatus');
+      statusEl.textContent = '';
+
+      const title = document.getElementById('maintTitle').value.trim();
+      const description = document.getElementById('maintDescription').value.trim();
+      const active = document.getElementById('maintActive').checked;
+      const onStart = document.getElementById('maintOnStart').value;
+      const strategy = document.getElementById('maintStrategy').value;
+      const jobIDs = Array.from(maintSelectedJobs);
+      const dockerHostIDs = Array.from(maintSelectedHosts);
+
+      let hasErrors = false;
+      if (!title) { setFieldError('maintTitle', 'Title is required.'); hasErrors = true; }
+      if (currentMaintTargetType === 'jobs') {
+        if (jobIDs.length === 0) {
+          setFieldError('maintJobChips', 'Select at least one job.');
+          hasErrors = true;
+        }
+      } else {
+        if (dockerHostIDs.length === 0) {
+          setFieldError('maintHostChips', 'Select at least one Docker host.');
+          hasErrors = true;
+        }
+      }
+
+      const payload = {
+        title, description, active, onStart, strategy,
+        jobIDs: currentMaintTargetType === 'jobs' ? jobIDs : [],
+        dockerHostIDs: currentMaintTargetType === 'hosts' ? dockerHostIDs : [],
+      };
+      const needsTZ = strategy !== 'single';
+      if (needsTZ) {
+        payload.timezone = document.getElementById('maintTimezone').value || Intl.DateTimeFormat().resolvedOptions().timeZone;
+      }
+
+      if (strategy === 'single') {
+        const startVal = document.getElementById('maintSingleStart').value;
+        const endVal = document.getElementById('maintSingleEnd').value;
+        const start = maintFromDatetimeLocal(startVal);
+        const end = maintFromDatetimeLocal(endVal);
+        if (!start) { setFieldError('maintSingleStart', 'Start is required.'); hasErrors = true; }
+        if (!end)   { setFieldError('maintSingleEnd', 'End is required.'); hasErrors = true; }
+        if (start && end && !(new Date(end) > new Date(start))) {
+          setFieldError('maintSingleEnd', 'End must be after start.');
+          hasErrors = true;
+        }
+        if (start && end) payload.single = { start, end };
+      } else if (strategy === 'cron') {
+        const expr = document.getElementById('maintCronExpr').value.trim();
+        const duration = parseInt(document.getElementById('maintCronDuration').value, 10);
+        if (!expr) { setFieldError('maintCronExpr', 'Cron expression is required.'); hasErrors = true; }
+        if (!duration || duration < 1) { setFieldError('maintCronDuration', 'Required — at least 1 minute.'); hasErrors = true; }
+        payload.cron = { expression: expr, durationMinutes: duration || 0 };
+      } else if (strategy === 'recur-interval') {
+        const everyDays = parseInt(document.getElementById('maintIntervalDays').value, 10);
+        const timeOfDay = document.getElementById('maintIntervalTime').value;
+        const duration = parseInt(document.getElementById('maintIntervalDuration').value, 10);
+        if (!everyDays || everyDays < 1) { setFieldError('maintIntervalDays', 'Required — at least 1 day.'); hasErrors = true; }
+        if (!timeOfDay) { setFieldError('maintIntervalTime', 'Time of day is required.'); hasErrors = true; }
+        if (!duration || duration < 1) { setFieldError('maintIntervalDuration', 'Required — at least 1 minute.'); hasErrors = true; }
+        payload.recurInterval = { everyDays: everyDays || 0, timeOfDay, durationMinutes: duration || 0 };
+      } else if (strategy === 'recur-day-of-week') {
+        const weekdays = Array.from(maintSelectedWeekdays).sort((a, b) => a - b);
+        const timeOfDay = document.getElementById('maintWeeklyTime').value;
+        const duration = parseInt(document.getElementById('maintWeeklyDuration').value, 10);
+        if (!weekdays.length) { setFieldError('maintWeekdayChips', 'Select at least one day.'); hasErrors = true; }
+        if (!timeOfDay) { setFieldError('maintWeeklyTime', 'Time of day is required.'); hasErrors = true; }
+        if (!duration || duration < 1) { setFieldError('maintWeeklyDuration', 'Required — at least 1 minute.'); hasErrors = true; }
+        payload.recurWeekly = { weekdays, timeOfDay, durationMinutes: duration || 0 };
+      } else if (strategy === 'recur-day-of-month') {
+        const daysOfMonth = Array.from(maintSelectedMonthDays).sort((a, b) => a - b);
+        const timeOfDay = document.getElementById('maintMonthlyTime').value;
+        const duration = parseInt(document.getElementById('maintMonthlyDuration').value, 10);
+        if (!daysOfMonth.length) { setFieldError('maintMonthDayChips', 'Select at least one day.'); hasErrors = true; }
+        if (!timeOfDay) { setFieldError('maintMonthlyTime', 'Time of day is required.'); hasErrors = true; }
+        if (!duration || duration < 1) { setFieldError('maintMonthlyDuration', 'Required — at least 1 minute.'); hasErrors = true; }
+        payload.recurMonthly = { daysOfMonth, timeOfDay, durationMinutes: duration || 0 };
+      }
+
+      if (needsTZ && document.getElementById('maintEffectiveRangeEnabled').checked) {
+        const fromVal = document.getElementById('maintEffectiveFrom').value;
+        const toVal = document.getElementById('maintEffectiveTo').value;
+        if (fromVal) payload.effectiveFrom = new Date(`${fromVal}T00:00:00Z`).toISOString();
+        if (toVal)   payload.effectiveTo   = new Date(`${toVal}T00:00:00Z`).toISOString();
+        if (fromVal && toVal && !(new Date(payload.effectiveTo) > new Date(payload.effectiveFrom))) {
+          setFieldError('maintEffectiveTo', 'End date must be after start date.');
+          hasErrors = true;
+        }
+      }
+
+      if (hasErrors) { statusEl.textContent = 'Please fix highlighted fields.'; return; }
+
+      const saveBtn = document.getElementById('saveMaintenanceBtn');
+      const origLabel = saveBtn.textContent;
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+      try {
+        const method = editingMaintenanceId ? 'PUT' : 'POST';
+        const url = editingMaintenanceId ? `/api/maintenance/${editingMaintenanceId}` : '/api/maintenance';
+        const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          statusEl.textContent = '';
+          showSaveResult('maintenanceSaveStatus', false, 'Save failed', err.error || String(res.status));
+          return;
+        }
+        statusEl.textContent = '';
+        showSaveResult('maintenanceSaveStatus', true, editingMaintenanceId ? 'Maintenance window updated' : 'Maintenance window added', '');
+        resetMaintenanceForm();
+        await loadMaintenanceWindows();
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = origLabel;
+      }
+    }
+
+    function renderMaintenanceBanner(windows) {
+      const banner = document.getElementById('maintenanceActiveBanner');
+      if (!banner) return;
+      if (!windows || !windows.length) {
+        banner.style.display = 'none';
+        banner.innerHTML = '';
+        return;
+      }
+      banner.innerHTML = windows.map((w) => {
+        const targets = [...(w.affectsJobs || []), ...(w.affectsHosts || [])];
+        const what = w.wholeApp
+          ? 'the entire app (local Docker host)'
+          : (targets.length ? targets.map(escapeHtml).join(', ') : 'nothing currently');
+        return `<div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:16px;">🛠️</span>
+          <span><strong>${escapeHtml(w.title)}</strong> is active — pausing monitoring for ${what}</span>
+        </div>`;
+      }).join('');
+      banner.style.display = 'flex';
+    }
+
     function bindEvents() {
       const themeBtn = document.getElementById('themeToggleBtn');
       if (themeBtn) themeBtn.addEventListener('click', cycleTheme);
@@ -6946,6 +7689,14 @@ echo "Restart complete"`,
           if (dd) dd.style.display = 'none';
         }
       });
+      // Chrome/Safari silently bump a focused <input type="number">'s value when the
+      // user scrolls the wheel/trackpad over it — easy to trigger by accident while
+      // scrolling a form (e.g. typing "10" into Daily cap, then scrolling the panel,
+      // ends up saving "7"). Blur it on wheel so scrolling just scrolls the page.
+      document.addEventListener('wheel', () => {
+        const el = document.activeElement;
+        if (el && el.tagName === 'INPUT' && el.type === 'number') el.blur();
+      }, { passive: true, capture: true });
       document.getElementById('copyScriptBtn').addEventListener('click', () => {
         const script = document.getElementById('jobScript').value;
         if (!script.trim()) return;
@@ -7013,6 +7764,32 @@ echo "Restart complete"`,
           dockerHosts = snapshot;
           renderDockerHosts();
         }
+      });
+
+      document.getElementById('openAddMaintenanceBtn').addEventListener('click', () => {
+        resetMaintenanceForm();
+        openMaintenanceForm('add');
+      });
+      document.getElementById('closeMaintenanceFormBtn').addEventListener('click', () => resetMaintenanceForm());
+      document.getElementById('cancelMaintenanceBtn').addEventListener('click', () => resetMaintenanceForm());
+      document.getElementById('saveMaintenanceBtn').addEventListener('click', saveMaintenanceWindow);
+      document.getElementById('maintStrategy').addEventListener('change', (e) => setMaintenanceStrategy(e.target.value));
+      document.getElementById('maintTargetTypeJobs').addEventListener('click',  () => setMaintTargetType('jobs'));
+      document.getElementById('maintTargetTypeHosts').addEventListener('click', () => setMaintTargetType('hosts'));
+      document.getElementById('maintEffectiveRangeEnabled').addEventListener('change', (e) => {
+        document.getElementById('maintEffectiveRangeOptions').style.display = e.target.checked ? '' : 'none';
+      });
+      document.getElementById('deleteMaintenanceBtn').addEventListener('click', async () => {
+        if (!editingMaintenanceId) return;
+        const id = editingMaintenanceId;
+        const res = await fetch(`/api/maintenance/${id}`, { method: 'DELETE' });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          showSaveResult('maintenanceSaveStatus', false, 'Delete failed', err.error || String(res.status));
+          return;
+        }
+        resetMaintenanceForm();
+        await loadMaintenanceWindows();
       });
     }
 

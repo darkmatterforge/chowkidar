@@ -12,11 +12,15 @@ import (
 	"chowkidar/internal/notify"
 )
 
-// notifProfileUsage tracks in-memory send counts for rate limiting.
-// Counts reset on server restart — this is acceptable since SuspendedUntil
-// (the hard enforcement) is persisted to notifications.yaml.
+// notifProfileUsage tracks send counts for rate limiting, keyed by profile ID.
+// dayKey/dayCount are mirrored to disk (see persistNotifUsage/loadNotifUsage)
+// so the visible "N of cap used today" survives a restart instead of silently
+// resetting to zero — which would otherwise let a profile send another full
+// day's worth of notifications immediately after every restart, defeating the
+// cap. burstKey/burstCount stay in-memory only: their window is minutes, so a
+// restart losing them is inconsequential.
 type notifProfileUsage struct {
-	dayKey     string // "YYYY-MM-DD" — reset when day changes
+	dayKey     string // "YYYY-MM-DD" in the display timezone — reset when the local day changes
 	dayCount   int
 	burstKey   string // truncated time bucket
 	burstCount int
@@ -190,6 +194,19 @@ func (a *app) isProfileSuspended(p config.NotificationProfile) bool {
 	return p.SuspendedUntil != nil && p.SuspendedUntil.After(time.Now().UTC())
 }
 
+// notifDayKey returns "YYYY-MM-DD" for the current moment in the resolved
+// display timezone (falling back to UTC) — the same zone nextMidnight uses for
+// auto-suspend, so the daily cap counter and "suspend until midnight" agree on
+// when "today" rolls over, and the counter resets at the user's local midnight
+// rather than UTC midnight.
+func (a *app) notifDayKey() string {
+	loc, err := time.LoadLocation(a.resolveTimezone())
+	if err != nil {
+		loc = time.UTC
+	}
+	return time.Now().In(loc).Format("2006-01-02")
+}
+
 // getOrCreateUsage returns the usage bucket for a profile, resetting stale counters.
 func (a *app) getOrCreateUsage(profileID string, p config.NotificationProfile) *notifProfileUsage {
 	a.notifUsageMu.Lock()
@@ -199,7 +216,7 @@ func (a *app) getOrCreateUsage(profileID string, p config.NotificationProfile) *
 		u = &notifProfileUsage{}
 		a.notifUsage[profileID] = u
 	}
-	today := time.Now().UTC().Format("2006-01-02")
+	today := a.notifDayKey()
 	if u.dayKey != today {
 		u.dayKey = today
 		u.dayCount = 0
@@ -213,6 +230,27 @@ func (a *app) getOrCreateUsage(profileID string, p config.NotificationProfile) *
 		}
 	}
 	return u
+}
+
+// persistNotifUsage snapshots the in-memory daily-usage counters and writes
+// them to disk so a restart doesn't silently zero out "N of cap used today" —
+// the hard enforcement (SuspendedUntil) was already persisted, but the visible
+// count drifting back to 0 on every restart was confusing and effectively let
+// a profile send another full day's worth of notifications right after a
+// restart, defeating the cap. Burst counters are intentionally left in-memory
+// only (see the call site).
+func (a *app) persistNotifUsage() {
+	a.notifUsageMu.Lock()
+	snapshot := make(map[string]notifUsageRecord, len(a.notifUsage))
+	for id, u := range a.notifUsage {
+		if u.dayCount > 0 {
+			snapshot[id] = notifUsageRecord{DayKey: u.dayKey, DayCount: u.dayCount}
+		}
+	}
+	a.notifUsageMu.Unlock()
+	if err := saveNotifUsage(a.cfg.ConfigDir, snapshot); err != nil {
+		logWarnf("notif: failed to persist usage counters: %v", err)
+	}
 }
 
 // suspendProfile writes SuspendedUntil + optional error to the profile and persists.
@@ -359,6 +397,10 @@ func (a *app) sendJobNotifications(event string, data notifData, profileIDs []st
 				u.dayCount++
 				u.burstCount++
 				a.notifUsageMu.Unlock()
+				// Persist the daily count so it survives a restart — only the
+				// burst counter is restart-volatile (its window is minutes, so
+				// losing it on a rare restart is inconsequential).
+				a.persistNotifUsage()
 			}
 		}
 	}

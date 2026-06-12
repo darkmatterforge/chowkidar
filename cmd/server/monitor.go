@@ -105,10 +105,16 @@ func (a *app) monitorLoop(stop <-chan struct{}) {
 
 func (a *app) timeUntilNextJobDue() time.Duration {
 	jobs := a.getJobs()
+	now := time.Now()
+	pause := a.computeMaintenancePause(jobs, now)
+	if pause.skipEntireScan {
+		return 60 * time.Second
+	}
+	jobs = filterPausedJobs(jobs, pause)
+
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
-	now := time.Now()
 	var next time.Time
 	for _, r := range jobs {
 		if !r.Enabled {
@@ -656,6 +662,23 @@ func (a *app) scanOnce() {
 
 	cfg := a.getConfig()
 	allJobs := a.getJobs()
+
+	now := time.Now()
+	pause := a.computeMaintenancePause(allJobs, now)
+	if started := a.checkMaintenanceTransitions(pause.active, now); len(started) > 0 {
+		if n := a.cancelForceCancelledJobs(pause); n > 0 {
+			logInfof("maintenance: force-cancelled in-flight jobs count=%d", n)
+		}
+	}
+	if pause.skipEntireScan {
+		logInfof("monitor: scan skipped — local Docker host under maintenance")
+		return
+	}
+	if len(pause.pausedJobIDs) > 0 {
+		logDebugf("monitor: maintenance pause active pausedJobs=%d pausedHosts=%d", len(pause.pausedJobIDs), len(pause.pausedHostIDs))
+	}
+	allJobs = filterPausedJobs(allJobs, pause)
+
 	dueJobs, dueJobIDs := a.computeDueJobs(allJobs)
 
 	// Scan primary host + all extra hosts, merging results.
@@ -668,6 +691,10 @@ func (a *app) scanOnce() {
 
 	for _, h := range a.getExtraClients() {
 		if !h.profile.Enabled {
+			continue
+		}
+		if pause.hostPaused(h.profile.ID) {
+			logDebugf("docker-hosts: skipping offline-monitoring for host=%s — under maintenance", h.profile.ID)
 			continue
 		}
 
