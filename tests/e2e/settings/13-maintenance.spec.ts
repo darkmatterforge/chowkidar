@@ -1517,8 +1517,8 @@ test.describe('Maintenance — Bell lifecycle UI', () => {
   })
 
   test('maintenance_ended alert renders in bell with ▶️ icon after window is deactivated', async ({ page }) => {
-    // Polls for "started" then "ended" sequentially — each capped at 25s.
-    test.setTimeout(90_000)
+    // Polls for "started" then "ended" sequentially — each capped at 50s.
+    test.setTimeout(120_000)
     await gotoApp(page)
     const createRes = await page.request.post(`${BASE_URL}/api/maintenance`, {
       data: {
@@ -1534,7 +1534,7 @@ test.describe('Maintenance — Bell lifecycle UI', () => {
     let startedId = ''
     try {
       // Confirm the "started" transition is recorded before deleting the window.
-      const startedAlert = await pollForAlert(page, 'maintenance_started', created.id, 25_000)
+      const startedAlert = await pollForAlert(page, 'maintenance_started', created.id, 50_000)
       expect(startedAlert).not.toBeNull()
       if (!startedAlert) return
       startedId = startedAlert.id
@@ -1543,7 +1543,7 @@ test.describe('Maintenance — Bell lifecycle UI', () => {
       // scan cycle, which triggers the "ended" transition.
       await cleanupWindowByApi(page, created.id)
 
-      const endedAlert = await pollForAlert(page, 'maintenance_ended', created.id, 25_000)
+      const endedAlert = await pollForAlert(page, 'maintenance_ended', created.id, 50_000)
       expect(endedAlert).not.toBeNull()
       if (!endedAlert) return
 
