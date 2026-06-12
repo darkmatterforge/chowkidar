@@ -1232,8 +1232,7 @@ test.describe('Maintenance — UI form validation', () => {
 
 test.describe('Maintenance — Info-tips', () => {
   async function expectTipVisible(page: Page, icon: ReturnType<Page['locator']>) {
-    await icon.scrollIntoViewIfNeeded()
-    await icon.focus()
+    await icon.hover()
     const bubble = page.locator('#infoTipBubble')
     await expect(bubble).toHaveClass(/visible/)
     await expect(bubble).not.toHaveText('')
@@ -1391,12 +1390,12 @@ test.describe('Maintenance — Bell lifecycle alert types', () => {
   test('/api/system-alerts can return maintenance_started alerts', async ({ page }) => {
     await gotoApp(page)
     const res = await page.request.get(`${BASE_URL}/api/system-alerts`)
-    const body = await res.json() as { alerts: Array<{ type: string }> }
+    const body = await res.json() as { alerts: Array<{ type: string; id: string }> }
     // Alert types are registered; even if none are active we can verify the API schema
     expect(Array.isArray(body.alerts)).toBe(true)
     // If any maintenance_started alert exists its ID must follow the stable format
     const started = body.alerts.filter(a => a.type === 'maintenance_started')
-    for (const a of started as Array<{ id: string }>) {
+    for (const a of started) {
       expect(a.id).toMatch(/^maint-started-/)
     }
   })
@@ -1404,10 +1403,159 @@ test.describe('Maintenance — Bell lifecycle alert types', () => {
   test('/api/system-alerts can return maintenance_ended alerts', async ({ page }) => {
     await gotoApp(page)
     const res = await page.request.get(`${BASE_URL}/api/system-alerts`)
-    const body = await res.json() as { alerts: Array<{ type: string }> }
+    const body = await res.json() as { alerts: Array<{ type: string; id: string }> }
     const ended = body.alerts.filter(a => a.type === 'maintenance_ended')
-    for (const a of ended as Array<{ id: string }>) {
+    for (const a of ended) {
       expect(a.id).toMatch(/^maint-ended-/)
+    }
+  })
+})
+
+// ── Bell lifecycle UI ─────────────────────────────────────────────────────────
+
+test.describe('Maintenance — Bell lifecycle UI', () => {
+  async function openBell(page: Page): Promise<void> {
+    await page.locator('#notifBellBtn').click()
+    await expect(page.locator('#notifBellDropdown')).not.toHaveCSS('display', 'none')
+  }
+
+  async function closeBell(page: Page): Promise<void> {
+    const style = await page.locator('#notifBellDropdown').getAttribute('style') ?? ''
+    if (!style.includes('none')) await page.locator('#notifBellBtn').click()
+  }
+
+  // Polls /api/system-alerts every 2s until an alert of `type` whose ID
+  // contains `windowId` appears, or the timeout elapses.
+  async function pollForAlert(
+    page: Page, type: string, windowId: string, timeoutMs = 30_000,
+  ): Promise<{ id: string; message: string } | null> {
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      const res = await page.request.get(`${BASE_URL}/api/system-alerts`)
+      const body = await res.json() as { alerts: Array<{ id: string; type: string; message: string }> }
+      const found = body.alerts.find(a => a.type === type && a.id.includes(windowId))
+      if (found) return found
+      await page.waitForTimeout(2000)
+    }
+    return null
+  }
+
+  test('maintenance_upcoming alert renders in bell with 🛠️ icon', async ({ page }) => {
+    await gotoApp(page)
+    // Single window starting 30 min from now — sits inside the 2h reminder bucket.
+    // upcoming alerts are computed live on each GET, so no scan cycle is needed.
+    const start = new Date(Date.now() + 30 * 60 * 1000)
+    const end = new Date(start.getTime() + 5 * 60 * 1000)
+    const createRes = await page.request.post(`${BASE_URL}/api/maintenance`, {
+      data: {
+        title: 'e2e-bell-upcoming',
+        active: true,
+        strategy: 'single',
+        timezone: 'UTC',
+        dockerHostIDs: ['local'],
+        single: { start: start.toISOString(), end: end.toISOString() },
+      },
+    })
+    const created = await createRes.json() as { id: string }
+
+    try {
+      const alertsRes = await page.request.get(`${BASE_URL}/api/system-alerts`)
+      const body = await alertsRes.json() as { alerts: Array<{ type: string; id: string }> }
+      const upcoming = body.alerts.find(a => a.type === 'maintenance_upcoming' && a.id.includes(created.id))
+      expect(upcoming).toBeTruthy()
+
+      await page.reload()
+      await expect(page.locator('#themeToggleBtn')).toBeVisible()
+      await openBell(page)
+      await page.waitForTimeout(600)
+
+      const listText = await page.locator('#notifBellList').innerText()
+      expect(listText).toContain('🛠️')
+      expect(listText).toContain('Maintenance upcoming')
+    } finally {
+      await closeBell(page)
+      await cleanupWindowByApi(page, created.id)
+    }
+  })
+
+  test('maintenance_started alert renders in bell with ⏸️ icon', async ({ page }) => {
+    await gotoApp(page)
+    const createRes = await page.request.post(`${BASE_URL}/api/maintenance`, {
+      data: {
+        title: 'e2e-bell-started',
+        active: true,
+        strategy: 'manual',
+        timezone: 'UTC',
+        dockerHostIDs: ['local'],
+      },
+    })
+    const created = await createRes.json() as { id: string }
+
+    try {
+      // Wait for the scan cycle to detect the transition.
+      const alert = await pollForAlert(page, 'maintenance_started', created.id)
+      expect(alert).not.toBeNull()
+      if (!alert) return
+
+      await page.reload()
+      await expect(page.locator('#themeToggleBtn')).toBeVisible()
+      await openBell(page)
+      await page.waitForTimeout(600)
+
+      const listText = await page.locator('#notifBellList').innerText()
+      expect(listText).toContain('⏸️')
+      expect(listText).toContain('Maintenance started')
+
+      await page.request.post(`${BASE_URL}/api/system-alerts/dismiss`, { data: { ids: [alert.id] } })
+    } finally {
+      await closeBell(page)
+      await cleanupWindowByApi(page, created.id)
+    }
+  })
+
+  test('maintenance_ended alert renders in bell with ▶️ icon after window is deactivated', async ({ page }) => {
+    await gotoApp(page)
+    const createRes = await page.request.post(`${BASE_URL}/api/maintenance`, {
+      data: {
+        title: 'e2e-bell-ended',
+        active: true,
+        strategy: 'manual',
+        timezone: 'UTC',
+        dockerHostIDs: ['local'],
+      },
+    })
+    const created = await createRes.json() as { id: string }
+
+    let startedId = ''
+    try {
+      // Confirm the "started" transition is recorded before deactivating.
+      const startedAlert = await pollForAlert(page, 'maintenance_started', created.id)
+      expect(startedAlert).not.toBeNull()
+      if (!startedAlert) return
+      startedId = startedAlert.id
+
+      // Deleting the window causes it to drop from the active set on the next
+      // scan cycle, which triggers the "ended" transition.
+      await cleanupWindowByApi(page, created.id)
+
+      const endedAlert = await pollForAlert(page, 'maintenance_ended', created.id)
+      expect(endedAlert).not.toBeNull()
+      if (!endedAlert) return
+
+      await page.reload()
+      await expect(page.locator('#themeToggleBtn')).toBeVisible()
+      await openBell(page)
+      await page.waitForTimeout(600)
+
+      const listText = await page.locator('#notifBellList').innerText()
+      expect(listText).toContain('▶️')
+      expect(listText).toContain('Maintenance ended')
+
+      const toDismiss = [endedAlert.id, ...(startedId ? [startedId] : [])]
+      await page.request.post(`${BASE_URL}/api/system-alerts/dismiss`, { data: { ids: toDismiss } })
+    } finally {
+      await closeBell(page)
+      await cleanupWindowByApi(page, created.id) // no-op if already deleted above
     }
   })
 })
