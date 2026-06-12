@@ -63,11 +63,13 @@ func (a *app) computeMaintenancePause(allJobs []config.Job, now time.Time) maint
 // when multiple active windows pause the same job/host with different settings
 // the strictest one governs — a force-cancel window should never be silently
 // overridden by a co-active allow-finish window.
+// Rank 0 is reserved for the zero value ("" = not governed by any window), so
+// any real OnStart value beats it via strongerOnStart.
 func onStartRank(v string) int {
 	switch v {
 	case config.MaintenanceOnStartForceCancel:
 		return 2
-	case config.MaintenanceOnStartCancelQueued:
+	case config.MaintenanceOnStartAllowFinish:
 		return 1
 	default:
 		return 0

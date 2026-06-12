@@ -31,6 +31,7 @@ Chowkidar watches your containers for `unhealthy` health events and exited state
 - **Encryption** — notification credentials encrypted at rest via `CHOWKIDAR_SECRET_KEY`
 - **3 dashboard layouts** — Card List, Compact Table, Status Grid; service groups are collapsible with state persisted across reloads
 - **Dashboard filters** — filter by status, tag, job action, Docker host, container name, label, env var, and job name; advanced filters panel for power users
+- **Maintenance windows** — schedule service pauses using six strategies (Manual, Single Window, Cron, Interval, Day of Week, Day of Month); targets jobs or Docker hosts (mutually exclusive); optional effective date ranges; per-window control over queued/in-flight action handling when a window opens (allow-finish / cancel-queued / force-cancel); bell notifications on start and end; auto-prune of expired single-occurrence windows
 - **Notification bell** — persistent system alerts (boot, failed recovery, paused monitoring) with per-alert dismiss and mark-all-read
 - **Version check** — settings sidebar shows running version; background check surfaces a bell alert when a newer release is available
 - **Light/dark/auto theme**

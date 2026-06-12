@@ -2481,10 +2481,9 @@
                   <div class="job-toggle-row" style="margin-top:14px;">
                     <div class="field"><label style="display:flex;align-items:center;gap:8px;font-weight:normal;text-transform:none;letter-spacing:0;cursor:pointer;font-size:13px;"><input type="checkbox" id="maintActive" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" checked /> Active <span class="info-tip" tabindex="0" data-tip="Master on/off switch. For the Manual strategy this IS the toggle that starts and stops the window; for scheduled strategies it lets you temporarily disable the window without deleting it.">i</span></label></div>
                     <div class="field" style="max-width:280px;">
-                      <label>When this window starts <span class="info-tip" tabindex="0" data-tip="Controls what happens to actions already queued or running against this window's targets the moment it opens. Allow to finish (default): no interruption — anything already dispatched runs to completion, exactly like before this setting existed. Cancel queued actions: an action dispatched moments before the window opened, but whose Docker call hasn't started yet, is aborted and logged as skipped; anything already mid-call still finishes. Force-cancel everything: the most aggressive option — also interrupts Docker calls already in flight via context cancellation, which can leave a container mid-restart/-stop in an inconsistent state that may need a manual check afterwards. Choose this only if you'd rather risk that than have any action touch a container during the window.">i</span></label>
+                      <label>When this window starts <span class="info-tip" tabindex="0" data-tip="Controls what happens to actions when this window opens. Allow to finish (default): queued actions that haven't started a Docker call yet are cancelled; anything already mid-call runs to completion. Force-cancel everything: also interrupts Docker calls already in flight via context cancellation, which can leave a container mid-restart/-stop in an inconsistent state that may need a manual check afterwards. Choose this only if you'd rather risk that than have any action touch a container during the window.">i</span></label>
                       <select id="maintOnStart">
                         <option value="allow-finish">Allow to finish (default)</option>
-                        <option value="cancel-queued">Cancel queued actions</option>
                         <option value="force-cancel">Force-cancel everything</option>
                       </select>
                     </div>
@@ -2524,7 +2523,7 @@
                       <div class="form-grid" style="margin-top:10px;">
                         <div class="field"><label>Cron Expression <span class="info-tip" tabindex="0" data-tip="Standard 5-field cron expression (minute hour day month weekday) evaluated in the timezone selected below. Each tick 'opens' the window, and monitoring stays paused for the configured Duration afterward — e.g. \"0 2 * * *\" with a 60-minute duration pauses every day from 2:00 AM to 3:00 AM.">i</span></label><input type="text" id="maintCronExpr" placeholder="0 2 * * *" /></div>
                         <div class="field-error" id="maintCronExprError"></div>
-                        <div class="field" style="max-width:160px;"><label>Duration (minutes)</label><input type="number" inputmode="numeric" id="maintCronDuration" min="1" placeholder="60" /></div>
+                        <div class="field" style="max-width:160px;"><label>Duration (minutes) <span class="info-tip" tabindex="0" data-tip="How long the pause lasts once this window opens, regardless of which scheduling strategy triggered it. Monitoring resumes automatically when the duration expires.">i</span></label><input type="number" inputmode="numeric" id="maintCronDuration" min="1" placeholder="60" /></div>
                         <div class="field-error" id="maintCronDurationError"></div>
                       </div>
                     </div>
@@ -2534,9 +2533,9 @@
                       <div class="form-grid" style="margin-top:10px;">
                         <div class="field" style="max-width:160px;"><label>Every N days <span class="info-tip" tabindex="0" data-tip="Repeats on a fixed cadence counted from this window's creation date — e.g. 7 means every 7th day from then on, at the chosen Time of day, each time pausing monitoring for the configured Duration. Unlike Day of Week / Day of Month, this isn't tied to the calendar — it just keeps counting forward in fixed-size steps.">i</span></label><input type="number" inputmode="numeric" id="maintIntervalDays" min="1" placeholder="7" /></div>
                         <div class="field-error" id="maintIntervalDaysError"></div>
-                        <div class="field" style="max-width:160px;"><label>Time of day</label><input type="time" id="maintIntervalTime" /></div>
+                        <div class="field" style="max-width:160px;"><label>Time of day <span class="info-tip" tabindex="0" data-tip="The clock time, in the chosen Timezone, at which each occurrence of this window opens.">i</span></label><input type="time" id="maintIntervalTime" /></div>
                         <div class="field-error" id="maintIntervalTimeError"></div>
-                        <div class="field" style="max-width:160px;"><label>Duration (minutes)</label><input type="number" inputmode="numeric" id="maintIntervalDuration" min="1" placeholder="60" /></div>
+                        <div class="field" style="max-width:160px;"><label>Duration (minutes) <span class="info-tip" tabindex="0" data-tip="How long the pause lasts once this window opens, regardless of which scheduling strategy triggered it. Monitoring resumes automatically when the duration expires.">i</span></label><input type="number" inputmode="numeric" id="maintIntervalDuration" min="1" placeholder="60" /></div>
                         <div class="field-error" id="maintIntervalDurationError"></div>
                       </div>
                     </div>
@@ -2549,9 +2548,9 @@
                         <div class="field-error" id="maintWeekdayChipsError"></div>
                       </div>
                       <div class="form-grid" style="margin-top:10px;">
-                        <div class="field" style="max-width:160px;"><label>Time of day</label><input type="time" id="maintWeeklyTime" /></div>
+                        <div class="field" style="max-width:160px;"><label>Time of day <span class="info-tip" tabindex="0" data-tip="The clock time, in the chosen Timezone, at which each occurrence of this window opens.">i</span></label><input type="time" id="maintWeeklyTime" /></div>
                         <div class="field-error" id="maintWeeklyTimeError"></div>
-                        <div class="field" style="max-width:160px;"><label>Duration (minutes)</label><input type="number" inputmode="numeric" id="maintWeeklyDuration" min="1" placeholder="60" /></div>
+                        <div class="field" style="max-width:160px;"><label>Duration (minutes) <span class="info-tip" tabindex="0" data-tip="How long the pause lasts once this window opens, regardless of which scheduling strategy triggered it. Monitoring resumes automatically when the duration expires.">i</span></label><input type="number" inputmode="numeric" id="maintWeeklyDuration" min="1" placeholder="60" /></div>
                         <div class="field-error" id="maintWeeklyDurationError"></div>
                       </div>
                     </div>
@@ -2564,16 +2563,16 @@
                         <div class="field-error" id="maintMonthDayChipsError"></div>
                       </div>
                       <div class="form-grid" style="margin-top:10px;">
-                        <div class="field" style="max-width:160px;"><label>Time of day</label><input type="time" id="maintMonthlyTime" /></div>
+                        <div class="field" style="max-width:160px;"><label>Time of day <span class="info-tip" tabindex="0" data-tip="The clock time, in the chosen Timezone, at which each occurrence of this window opens.">i</span></label><input type="time" id="maintMonthlyTime" /></div>
                         <div class="field-error" id="maintMonthlyTimeError"></div>
-                        <div class="field" style="max-width:160px;"><label>Duration (minutes)</label><input type="number" inputmode="numeric" id="maintMonthlyDuration" min="1" placeholder="60" /></div>
+                        <div class="field" style="max-width:160px;"><label>Duration (minutes) <span class="info-tip" tabindex="0" data-tip="How long the pause lasts once this window opens, regardless of which scheduling strategy triggered it. Monitoring resumes automatically when the duration expires.">i</span></label><input type="number" inputmode="numeric" id="maintMonthlyDuration" min="1" placeholder="60" /></div>
                         <div class="field-error" id="maintMonthlyDurationError"></div>
                       </div>
                     </div>
 
                     <!-- Timezone — shared by cron + the 3 recurring strategies -->
                     <div id="maintTimezoneWrap" class="field" style="margin-top:10px;max-width:280px;display:none;">
-                      <label>Timezone</label>
+                      <label>Timezone <span class="info-tip" tabindex="0" data-tip="The timezone in which cron expressions and recurring time-of-day fields are interpreted, and in which any optional Effective Date Range start/end are calculated. Pick the timezone your operations team works in, not necessarily the server's.">i</span></label>
                       <select id="maintTimezone"></select>
                       <div class="field-error" id="maintTimezoneError"></div>
                     </div>
