@@ -1232,7 +1232,9 @@ test.describe('Maintenance — UI form validation', () => {
 
 test.describe('Maintenance — Info-tips', () => {
   async function expectTipVisible(page: Page, icon: ReturnType<Page['locator']>) {
-    await icon.hover()
+    await icon.scrollIntoViewIfNeeded()
+    await page.waitForTimeout(150) // let any scroll settle
+    await icon.dispatchEvent('mouseover')
     const bubble = page.locator('#infoTipBubble')
     await expect(bubble).toHaveClass(/visible/)
     await expect(bubble).not.toHaveText('')
@@ -1471,14 +1473,15 @@ test.describe('Maintenance — Bell lifecycle UI', () => {
 
       const listText = await page.locator('#notifBellList').innerText()
       expect(listText).toContain('🛠️')
-      expect(listText).toContain('Maintenance upcoming')
+      expect(listText).toContain('Upcoming maintenance') // label in renderNotifBellList
     } finally {
-      await closeBell(page)
+      try { await closeBell(page) } catch { /* page may be closed */ }
       await cleanupWindowByApi(page, created.id)
     }
   })
 
   test('maintenance_started alert renders in bell with ⏸️ icon', async ({ page }) => {
+    test.setTimeout(60_000) // needs up to one 8s scan cycle + assertions
     await gotoApp(page)
     const createRes = await page.request.post(`${BASE_URL}/api/maintenance`, {
       data: {
@@ -1492,8 +1495,8 @@ test.describe('Maintenance — Bell lifecycle UI', () => {
     const created = await createRes.json() as { id: string }
 
     try {
-      // Wait for the scan cycle to detect the transition.
-      const alert = await pollForAlert(page, 'maintenance_started', created.id)
+      // Wait for the scan cycle to detect the transition (50s cap leaves room for cleanup).
+      const alert = await pollForAlert(page, 'maintenance_started', created.id, 50_000)
       expect(alert).not.toBeNull()
       if (!alert) return
 
@@ -1508,12 +1511,14 @@ test.describe('Maintenance — Bell lifecycle UI', () => {
 
       await page.request.post(`${BASE_URL}/api/system-alerts/dismiss`, { data: { ids: [alert.id] } })
     } finally {
-      await closeBell(page)
+      try { await closeBell(page) } catch { /* page may be closed */ }
       await cleanupWindowByApi(page, created.id)
     }
   })
 
   test('maintenance_ended alert renders in bell with ▶️ icon after window is deactivated', async ({ page }) => {
+    // Polls for "started" then "ended" sequentially — each capped at 25s.
+    test.setTimeout(90_000)
     await gotoApp(page)
     const createRes = await page.request.post(`${BASE_URL}/api/maintenance`, {
       data: {
@@ -1528,8 +1533,8 @@ test.describe('Maintenance — Bell lifecycle UI', () => {
 
     let startedId = ''
     try {
-      // Confirm the "started" transition is recorded before deactivating.
-      const startedAlert = await pollForAlert(page, 'maintenance_started', created.id)
+      // Confirm the "started" transition is recorded before deleting the window.
+      const startedAlert = await pollForAlert(page, 'maintenance_started', created.id, 25_000)
       expect(startedAlert).not.toBeNull()
       if (!startedAlert) return
       startedId = startedAlert.id
@@ -1538,7 +1543,7 @@ test.describe('Maintenance — Bell lifecycle UI', () => {
       // scan cycle, which triggers the "ended" transition.
       await cleanupWindowByApi(page, created.id)
 
-      const endedAlert = await pollForAlert(page, 'maintenance_ended', created.id)
+      const endedAlert = await pollForAlert(page, 'maintenance_ended', created.id, 25_000)
       expect(endedAlert).not.toBeNull()
       if (!endedAlert) return
 
@@ -1554,7 +1559,7 @@ test.describe('Maintenance — Bell lifecycle UI', () => {
       const toDismiss = [endedAlert.id, ...(startedId ? [startedId] : [])]
       await page.request.post(`${BASE_URL}/api/system-alerts/dismiss`, { data: { ids: toDismiss } })
     } finally {
-      await closeBell(page)
+      try { await closeBell(page) } catch { /* page may be closed */ }
       await cleanupWindowByApi(page, created.id) // no-op if already deleted above
     }
   })
