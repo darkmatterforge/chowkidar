@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -115,6 +116,23 @@ func (a *app) releaseActiveJob(containerID string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	delete(a.activeJobs, containerID)
+}
+
+// registerActiveJobCancel records the cancel func (and originating job ID) for
+// a container's in-flight action job so a force-cancel maintenance window can
+// interrupt it mid-flight (see (*app).cancelForceCancelledJobs in maintenance.go).
+func (a *app) registerActiveJobCancel(containerID, jobID string, cancel context.CancelFunc) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.activeJobCancels[containerID] = activeJobCancel{jobID: jobID, cancel: cancel}
+}
+
+// unregisterActiveJobCancel removes a container's registered cancel func once
+// its action job has finished, regardless of outcome.
+func (a *app) unregisterActiveJobCancel(containerID string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	delete(a.activeJobCancels, containerID)
 }
 
 func (a *app) setLastActionFailed(containerID string, failed bool) {

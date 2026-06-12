@@ -55,6 +55,50 @@ func loadDismissedAlerts(configDir string) (map[string]time.Time, error) {
 	return m, nil
 }
 
+// notifUsageRecord is the on-disk shape of a profile's daily send counter —
+// just enough to resume "N of cap used today" across a restart. dayKey is
+// compared against the current local day (see notifDayKey) so a record from a
+// previous day is naturally treated as stale and reset to zero on next use.
+type notifUsageRecord struct {
+	DayKey   string `json:"dayKey"`
+	DayCount int    `json:"dayCount"`
+}
+
+// saveNotifUsage persists per-profile daily usage counters to disk so they
+// survive a restart — without this, a restart would silently zero the
+// counters and let a profile burn through another full day's cap immediately.
+func saveNotifUsage(configDir string, usage map[string]notifUsageRecord) error {
+	data, err := json.MarshalIndent(usage, "", "  ")
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(configDir, "data", "notification-usage.json")
+	return os.WriteFile(path, data, 0o644)
+}
+
+// loadNotifUsage reads persisted daily usage counters from disk. Entries for a
+// prior day are loaded as-is; getOrCreateUsage resets them to zero the first
+// time they're touched after the day rolls over, so no filtering is needed here.
+func loadNotifUsage(configDir string) (map[string]*notifProfileUsage, error) {
+	path := filepath.Join(configDir, "data", "notification-usage.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string]*notifProfileUsage{}, nil
+		}
+		return nil, err
+	}
+	var raw map[string]notifUsageRecord
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	out := make(map[string]*notifProfileUsage, len(raw))
+	for id, rec := range raw {
+		out[id] = &notifProfileUsage{dayKey: rec.DayKey, dayCount: rec.DayCount}
+	}
+	return out, nil
+}
+
 // checkForUpdates polls the GitHub releases API for a newer version and stores
 // the result in a.latestVersion.  It runs in its own goroutine and checks once
 // on startup and then once every 24 hours (daily).
@@ -149,6 +193,46 @@ func (a *app) pruneHistoryLoop(stop <-chan struct{}) {
 	}
 }
 
+// pruneFinishedMaintenanceLoop removes finished one-off maintenance windows
+// (Single windows, and Manual windows with an Effective-To date) once their
+// grace period (maintenanceAutoRemoveGrace) has elapsed — once at startup and
+// then hourly, frequent enough to feel responsive for a "12 hours after" rule.
+// Cron and recurring windows repeat indefinitely and are left for the user to
+// remove manually; see shouldAutoRemoveMaintenanceWindow.
+func (a *app) pruneFinishedMaintenanceLoop(stop <-chan struct{}) {
+	doPrune := func() {
+		now := time.Now()
+		windows := a.getMaintenanceWindows()
+		kept := make([]config.MaintenanceWindow, 0, len(windows))
+		removed := 0
+		for _, w := range windows {
+			if shouldAutoRemoveMaintenanceWindow(w, now) {
+				removed++
+				continue
+			}
+			kept = append(kept, w)
+		}
+		if removed == 0 {
+			return
+		}
+		if err := a.persistMaintenanceWindows(kept); err != nil {
+			logWarnf("maintenance-prune: error removing=%d err=%v", removed, err)
+			return
+		}
+		logInfof("maintenance-prune: removed=%d", removed)
+	}
+
+	doPrune()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-time.After(time.Hour):
+			doPrune()
+		}
+	}
+}
+
 func (a *app) persistJobs(jobs []config.Job) error {
 	cfg := a.getConfig()
 	if err := config.SaveJobs(cfg.ConfigDir, jobs); err != nil {
@@ -191,6 +275,17 @@ func (a *app) persistDockerHostProfiles(profiles []config.DockerHostProfile) err
 	a.dockerHosts = profiles
 	a.mu.Unlock()
 	go a.buildExtraClients()
+	return nil
+}
+
+func (a *app) persistMaintenanceWindows(windows []config.MaintenanceWindow) error {
+	cfg := a.getConfig()
+	if err := config.SaveMaintenanceWindows(cfg.ConfigDir, windows); err != nil {
+		return err
+	}
+	a.mu.Lock()
+	a.maintenanceWindows = windows
+	a.mu.Unlock()
 	return nil
 }
 

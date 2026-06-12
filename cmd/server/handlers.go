@@ -360,11 +360,11 @@ func (a *app) handleNotifications(w http.ResponseWriter, r *http.Request) {
 			BurstUsage int `json:"burstUsage"`
 		}
 		out := make([]enriched, len(profiles))
+		today := a.notifDayKey()
 		a.notifUsageMu.Lock()
 		for i, p := range profiles {
 			e := enriched{NotificationProfile: p}
 			if u, ok := a.notifUsage[p.ID]; ok {
-				today := time.Now().UTC().Format("2006-01-02")
 				if u.dayKey == today {
 					e.DailyUsage = u.dayCount
 				}
@@ -591,6 +591,75 @@ func (a *app) handleSystemAlerts(w http.ResponseWriter, r *http.Request) {
 			}()),
 			Timestamp: time.Now(),
 		})
+	}
+
+	// Upcoming-maintenance reminders — fire at 12h/4h/2h before a window's next
+	// scheduled start so users aren't caught off guard by a planned pause.
+	// Buckets are ordered tightest-first and only the single closest one that
+	// "until" has counted down into is shown — otherwise, once inside the 2h
+	// window, all three thresholds are simultaneously satisfied and would all
+	// fire at once. Each bucket gets a stable ID keyed on the occurrence's
+	// start time, so dismissing a reminder for one occurrence doesn't suppress
+	// the next one (and progressing from one bucket to the next surfaces a
+	// fresh, undismissed alert since the ID changes).
+	type reminderBucket struct {
+		id        string
+		human     string
+		threshold time.Duration
+	}
+	buckets := []reminderBucket{
+		{"2h", "2 hours", 2 * time.Hour},
+		{"4h", "4 hours", 4 * time.Hour},
+		{"12h", "12 hours", 12 * time.Hour},
+	}
+	now := time.Now()
+	for _, win := range a.getMaintenanceWindows() {
+		occurrence, ok := win.NextOccurrence(now)
+		if !ok {
+			continue
+		}
+		until := occurrence.Sub(now)
+		if until <= 0 {
+			continue
+		}
+		for _, b := range buckets {
+			if until <= b.threshold {
+				alerts = append(alerts, SystemAlert{
+					ID:        fmt.Sprintf("maint-reminder-%s-%d-%s", win.ID, occurrence.Unix(), b.id),
+					Type:      "maintenance_upcoming",
+					Message:   fmt.Sprintf("%q is scheduled to begin in about %s", win.Title, b.human),
+					Timestamp: occurrence,
+				})
+				break
+			}
+		}
+	}
+
+	// Maintenance lifecycle alerts — completes the started→...→ended story
+	// alongside the upcoming reminders above. Each transition is recorded once
+	// (in checkMaintenanceTransitions, called once per scan cycle) and kept for
+	// ~24h; the stable ID embeds the detected time so it ages out naturally and
+	// dismissal survives recomputation.
+	a.mu.RLock()
+	transitions := append([]maintenanceTransition(nil), a.maintenanceTransitions...)
+	a.mu.RUnlock()
+	for _, tr := range transitions {
+		switch tr.Kind {
+		case "started":
+			alerts = append(alerts, SystemAlert{
+				ID:        fmt.Sprintf("maint-started-%s-%d", tr.WindowID, tr.At.Unix()),
+				Type:      "maintenance_started",
+				Message:   fmt.Sprintf("%q has started — affected services are now paused", tr.Title),
+				Timestamp: tr.At,
+			})
+		case "ended":
+			alerts = append(alerts, SystemAlert{
+				ID:        fmt.Sprintf("maint-ended-%s-%d", tr.WindowID, tr.At.Unix()),
+				Type:      "maintenance_ended",
+				Message:   fmt.Sprintf("%q has ended — affected services have resumed", tr.Title),
+				Timestamp: tr.At,
+			})
+		}
 	}
 
 	// Filter out dismissed alerts before returning.
