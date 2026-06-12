@@ -1480,29 +1480,31 @@ test.describe('Maintenance — Bell lifecycle UI', () => {
     }
   })
 
-  // Returns the e2e-monitor job ID, or null if not found.
-  // Using a job-targeted window (jobIDs) avoids the 60s scan-slowdown that
-  // dockerHostIDs:['local'] causes via skipEntireScan — keeping the scan cycle
-  // at the job's 8s interval so poll timeouts stay tight.
-  async function getMonitorJobId(page: Page): Promise<string | null> {
-    const res = await page.request.get(`${BASE_URL}/api/jobs`)
-    const data = await res.json() as { jobs: Array<{ id: string; name: string }> }
-    return data.jobs.find(j => j.name === 'e2e-monitor')?.id ?? null
+  // Creates a short-interval enabled job to keep the monitor scan cycle fast.
+  // spec-08 deletes e2e-monitor, so by spec-13 there may be no enabled jobs and
+  // timeUntilNextJobDue falls back to 60s.  The scan driver keeps cycles at 5s.
+  // The maintenance windows target a synthetic fake job ID (not the driver's real
+  // ID) so the driver is never added to pausedJobIDs and keeps driving scans.
+  // JobIDs values are not validated against real jobs, so a synthetic ID is fine.
+  async function createScanDriver(page: Page): Promise<string> {
+    const res = await page.request.post(`${BASE_URL}/api/jobs`, {
+      data: { name: 'e2e-bell-scan-driver', action: 'restart', containerNameFilter: 'e2e-nonexistent-bell', monitorIntervalSeconds: 5, enabled: true },
+    })
+    return (await res.json() as { id: string }).id
   }
 
   test('maintenance_started alert renders in bell with ⏸️ icon', async ({ page }) => {
     test.setTimeout(60_000)
     await gotoApp(page)
-    const jobId = await getMonitorJobId(page)
-    if (!jobId) { test.skip(); return }
+    const driverJobId = await createScanDriver(page)
 
     const createRes = await page.request.post(`${BASE_URL}/api/maintenance`, {
-      data: { title: 'e2e-bell-started', active: true, strategy: 'manual', timezone: 'UTC', jobIDs: [jobId] },
+      data: { title: 'e2e-bell-started', active: true, strategy: 'manual', timezone: 'UTC', jobIDs: ['e2e-synthetic-target'] },
     })
     const created = await createRes.json() as { id: string }
 
     try {
-      const alert = await pollForAlert(page, 'maintenance_started', created.id, 50_000)
+      const alert = await pollForAlert(page, 'maintenance_started', created.id, 40_000)
       expect(alert).not.toBeNull()
       if (!alert) return
 
@@ -1519,31 +1521,32 @@ test.describe('Maintenance — Bell lifecycle UI', () => {
     } finally {
       try { await closeBell(page) } catch { /* page may be closed */ }
       await cleanupWindowByApi(page, created.id)
+      await page.request.delete(`${BASE_URL}/api/jobs/${driverJobId}`).catch(() => null)
     }
   })
 
   test('maintenance_ended alert renders in bell with ▶️ icon after window is deactivated', async ({ page }) => {
+    // Two polls of 30s each; driver job keeps scan cycle at 5s so 30s covers 6+ cycles.
     test.setTimeout(90_000)
     await gotoApp(page)
-    const jobId = await getMonitorJobId(page)
-    if (!jobId) { test.skip(); return }
+    const driverJobId = await createScanDriver(page)
 
     const createRes = await page.request.post(`${BASE_URL}/api/maintenance`, {
-      data: { title: 'e2e-bell-ended', active: true, strategy: 'manual', timezone: 'UTC', jobIDs: [jobId] },
+      data: { title: 'e2e-bell-ended', active: true, strategy: 'manual', timezone: 'UTC', jobIDs: ['e2e-synthetic-target'] },
     })
     const created = await createRes.json() as { id: string }
 
     let startedId = ''
     try {
-      const startedAlert = await pollForAlert(page, 'maintenance_started', created.id, 40_000)
+      const startedAlert = await pollForAlert(page, 'maintenance_started', created.id, 30_000)
       expect(startedAlert).not.toBeNull()
       if (!startedAlert) return
       startedId = startedAlert.id
 
-      // Delete window — next scan (≤8s away) detects it's gone and emits "ended".
+      // Delete window — next scan (≤5s away) detects it's gone and emits "ended".
       await cleanupWindowByApi(page, created.id)
 
-      const endedAlert = await pollForAlert(page, 'maintenance_ended', created.id, 40_000)
+      const endedAlert = await pollForAlert(page, 'maintenance_ended', created.id, 30_000)
       expect(endedAlert).not.toBeNull()
       if (!endedAlert) return
 
@@ -1561,6 +1564,7 @@ test.describe('Maintenance — Bell lifecycle UI', () => {
     } finally {
       try { await closeBell(page) } catch { /* page may be closed */ }
       await cleanupWindowByApi(page, created.id) // no-op if already deleted above
+      await page.request.delete(`${BASE_URL}/api/jobs/${driverJobId}`).catch(() => null)
     }
   })
 })
