@@ -134,7 +134,7 @@ func TestNormalizeMaintenanceWindowOnStart(t *testing.T) {
 	})
 
 	t.Run("accepts and lower-cases known values", func(t *testing.T) {
-		for _, want := range []string{MaintenanceOnStartAllowFinish, MaintenanceOnStartCancelQueued, MaintenanceOnStartForceCancel} {
+		for _, want := range []string{MaintenanceOnStartAllowFinish, MaintenanceOnStartForceCancel} {
 			w := validManualWindow()
 			w.OnStart = strings.ToUpper(want)
 			_, saved, err := UpsertMaintenanceWindow(nil, w)
@@ -144,6 +144,18 @@ func TestNormalizeMaintenanceWindowOnStart(t *testing.T) {
 			if saved.OnStart != want {
 				t.Fatalf("OnStart = %q, want %q", saved.OnStart, want)
 			}
+		}
+	})
+
+	t.Run("normalizes legacy cancel-queued to allow-finish", func(t *testing.T) {
+		w := validManualWindow()
+		w.OnStart = "cancel-queued"
+		_, saved, err := UpsertMaintenanceWindow(nil, w)
+		if err != nil {
+			t.Fatalf("UpsertMaintenanceWindow(cancel-queued) error = %v", err)
+		}
+		if saved.OnStart != MaintenanceOnStartAllowFinish {
+			t.Fatalf("OnStart = %q, want %q", saved.OnStart, MaintenanceOnStartAllowFinish)
 		}
 	})
 
@@ -163,12 +175,22 @@ func TestNormalizeMaintenanceWindowSingle(t *testing.T) {
 		return w
 	}
 
-	t.Run("requires end after start", func(t *testing.T) {
+	t.Run("requires end after start — equal timestamps rejected", func(t *testing.T) {
 		w := base()
 		start := time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC)
 		w.Single = &MaintenanceSingleConfig{Start: start, End: start}
 		if _, _, err := UpsertMaintenanceWindow(nil, w); err == nil {
-			t.Fatal("expected error when end is not after start")
+			t.Fatal("expected error when end equals start")
+		}
+	})
+
+	t.Run("requires end after start — end before start rejected", func(t *testing.T) {
+		w := base()
+		start := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+		end := start.Add(-1 * time.Hour)
+		w.Single = &MaintenanceSingleConfig{Start: start, End: end}
+		if _, _, err := UpsertMaintenanceWindow(nil, w); err == nil {
+			t.Fatal("expected error when end is before start")
 		}
 	})
 
@@ -250,6 +272,14 @@ func TestNormalizeMaintenanceWindowCron(t *testing.T) {
 		w.Timezone = "UTC"
 		return w
 	}
+
+	t.Run("rejects empty expression", func(t *testing.T) {
+		w := base()
+		w.Cron = &MaintenanceCronConfig{Expression: "", DurationMinutes: 30}
+		if _, _, err := UpsertMaintenanceWindow(nil, w); err == nil {
+			t.Fatal("expected error for empty cron expression")
+		}
+	})
 
 	t.Run("rejects invalid expression", func(t *testing.T) {
 		w := base()
@@ -334,11 +364,19 @@ func TestNormalizeMaintenanceWindowRecurWeekly(t *testing.T) {
 		return w
 	}
 
-	t.Run("requires at least one weekday", func(t *testing.T) {
+	t.Run("requires at least one weekday (nil)", func(t *testing.T) {
 		w := base()
 		w.RecurWeekly = &MaintenanceRecurWeekly{Weekdays: nil, TimeOfDay: "02:00", DurationMinutes: 30}
 		if _, _, err := UpsertMaintenanceWindow(nil, w); err == nil {
-			t.Fatal("expected error for empty weekdays")
+			t.Fatal("expected error for nil weekdays")
+		}
+	})
+
+	t.Run("requires at least one weekday (empty slice)", func(t *testing.T) {
+		w := base()
+		w.RecurWeekly = &MaintenanceRecurWeekly{Weekdays: []int{}, TimeOfDay: "02:00", DurationMinutes: 30}
+		if _, _, err := UpsertMaintenanceWindow(nil, w); err == nil {
+			t.Fatal("expected error for empty weekdays slice")
 		}
 	})
 
@@ -377,11 +415,19 @@ func TestNormalizeMaintenanceWindowRecurMonthly(t *testing.T) {
 		return w
 	}
 
-	t.Run("requires at least one day of month", func(t *testing.T) {
+	t.Run("requires at least one day of month (nil)", func(t *testing.T) {
 		w := base()
 		w.RecurMonthly = &MaintenanceRecurMonthly{DaysOfMonth: nil, TimeOfDay: "02:00", DurationMinutes: 30}
 		if _, _, err := UpsertMaintenanceWindow(nil, w); err == nil {
-			t.Fatal("expected error for empty days of month")
+			t.Fatal("expected error for nil days of month")
+		}
+	})
+
+	t.Run("requires at least one day of month (empty slice)", func(t *testing.T) {
+		w := base()
+		w.RecurMonthly = &MaintenanceRecurMonthly{DaysOfMonth: []int{}, TimeOfDay: "02:00", DurationMinutes: 30}
+		if _, _, err := UpsertMaintenanceWindow(nil, w); err == nil {
+			t.Fatal("expected error for empty days of month slice")
 		}
 	})
 

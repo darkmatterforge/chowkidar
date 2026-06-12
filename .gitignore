@@ -18,6 +18,7 @@ bin/
 *.out
 *.coverprofile
 coverage/
+test-results/
 
 # ── Dependency cache ─────────────────────────────────────────────────────────
 vendor/

@@ -67,14 +67,10 @@ const (
 // OnStart identifiers — how in-flight/queued jobs targeting this window's
 // jobs/hosts are handled the moment it opens. See MaintenanceWindow.OnStart.
 const (
-	// MaintenanceOnStartAllowFinish is the default and today's behaviour:
-	// new dispatches are filtered out, but anything already running is left
-	// to finish on its own.
+	// MaintenanceOnStartAllowFinish cancels actions queued for this window's
+	// targets that haven't started a Docker call yet, but lets anything
+	// already in flight run to completion.
 	MaintenanceOnStartAllowFinish = "allow-finish"
-	// MaintenanceOnStartCancelQueued aborts an action that was dispatched
-	// moments before the window opened but hasn't yet started its Docker
-	// call; anything whose Docker call has already begun still finishes.
-	MaintenanceOnStartCancelQueued = "cancel-queued"
 	// MaintenanceOnStartForceCancel cancels everything for the window's
 	// targets, including Docker calls already in flight, by cancelling the
 	// action's context. This can leave a container mid-restart/-stop in an
@@ -84,7 +80,7 @@ const (
 
 func isSupportedMaintenanceOnStart(v string) bool {
 	switch v {
-	case MaintenanceOnStartAllowFinish, MaintenanceOnStartCancelQueued, MaintenanceOnStartForceCancel:
+	case MaintenanceOnStartAllowFinish, MaintenanceOnStartForceCancel:
 		return true
 	default:
 		return false
@@ -248,7 +244,7 @@ func normalizeMaintenanceWindow(in MaintenanceWindow) (MaintenanceWindow, error)
 	in.Strategy = strings.ToLower(strings.TrimSpace(in.Strategy))
 	in.Timezone = strings.TrimSpace(in.Timezone)
 	in.OnStart = strings.ToLower(strings.TrimSpace(in.OnStart))
-	if in.OnStart == "" {
+	if in.OnStart == "" || in.OnStart == "cancel-queued" {
 		in.OnStart = MaintenanceOnStartAllowFinish
 	}
 

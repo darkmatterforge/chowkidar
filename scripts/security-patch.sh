@@ -20,10 +20,13 @@ LATEST_VER="${LATEST_TAG#v}"
 NEW_VER="${VERSION#v}"
 NEW_LINK="[${NEW_VER}]: ${REPO_URL}/compare/${LATEST_TAG}...${VERSION}"
 
-# Insert versioned entry before the first ## [ heading only (awk stops after first match).
-# Mirrors the pattern used by release.sh.
+# Insert versioned entry after the ## [Unreleased] block so [Unreleased] stays
+# at the top (Keep a Changelog convention). We skip the [Unreleased] heading
+# itself and any lines that follow it until the next versioned ## [ heading,
+# then insert before that heading.
 awk -v ver="$NEW_VER" -v date="$DATE" -v reason="$REASON" '
-  !inserted && /^## \[/ {
+  /^## \[Unreleased\]/ { past_unreleased = 1 }
+  past_unreleased && !inserted && /^## \[/ && !/^## \[Unreleased\]/ {
     print "## [" ver "] - " date
     print ""
     print "### Security"
@@ -52,7 +55,17 @@ else
     "$REPO_URL" "$VERSION" "$NEW_LINK" >> "$CHANGELOG"
 fi
 
+# ── Bail out if the PR already exists (action re-run after success) ───────────
+if EXISTING_PR=$(gh pr list --head "$BRANCH" --json url -q '.[0].url' 2>/dev/null) && [[ -n "$EXISTING_PR" ]]; then
+  echo "PR for $BRANCH already exists: $EXISTING_PR — nothing to do."
+  exit 0
+fi
+
 # ── Commit and push branch ────────────────────────────────────────────────────
+# Delete a stale remote branch left by a previous failed run before pushing;
+# a clean delete+push avoids force-pushing onto an existing ref.
+git push origin --delete "$BRANCH" 2>/dev/null || true
+
 git checkout -b "$BRANCH"
 git config user.name "github-actions[bot]"
 git config user.email "github-actions[bot]@users.noreply.github.com"

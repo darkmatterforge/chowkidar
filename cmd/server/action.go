@@ -108,11 +108,10 @@ func (j actionJob) Run(ctx context.Context) {
 
 		// Maintenance-window guard: a window may have opened in the moments
 		// between this action being dispatched and the worker claiming it.
-		// Re-check now — if its OnStart policy doesn't allow queued actions
-		// to proceed, bail before making any Docker call. (force-cancel gets
-		// its own mid-flight interruption below; this just catches the case
-		// where the call hasn't started yet.)
-		if onStart := j.app.maintenanceOnStartFor(j.jobID); onStart == config.MaintenanceOnStartCancelQueued || onStart == config.MaintenanceOnStartForceCancel {
+		// Re-check now — any active window always cancels queued actions before
+		// they reach the Docker call. (force-cancel also handles in-flight
+		// interruption separately via cancelForceCancelledJobs.)
+		if onStart := j.app.maintenanceOnStartFor(j.jobID); onStart != "" {
 			logInfof("job: skipping container=%s reason=maintenance-window-started onStart=%s source=%s", name, onStart, source)
 			j.app.logActionHistory(j.container, j.reason, action, 0, "skipped", "maintenance window started", "", 0)
 			return

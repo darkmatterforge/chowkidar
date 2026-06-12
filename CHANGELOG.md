@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Maintenance windows** — schedule service pauses from the Settings → Maintenance tab. Six strategies supported:
+  - `Manual` — a direct on/off toggle; the window is active exactly while the `Active` checkbox is checked
+  - `Single Window` — a one-time pause between a fixed start and end datetime (auto-pruned 12 h after it ends)
+  - `Cron Expression` — standard 5-field cron (`minute hour day month weekday`) evaluated in the chosen timezone; pauses for a configurable Duration on each tick
+  - `Recurring — Interval` — repeats every N days from the window's creation date at a chosen time of day and Duration
+  - `Recurring — Day of Week` — repeats on selected weekdays at a chosen time of day and Duration
+  - `Recurring — Day of Month` — repeats on selected calendar days at a chosen time of day and Duration (days 29–31 skip months that don't have them)
+- **Maintenance targets** — each window targets either specific jobs (by ID) or Docker hosts (by host ID), never both; targeting `local` additionally skips the entire scan cycle for the duration
+- **Optional effective date range** — `Effective From` / `Effective To` fields limit when any strategy is active, even Manual; windows outside the range are automatically inactive (no active-flag management needed)
+- **Per-window `OnStart` behaviour** — controls what happens to queued or in-flight actions the moment a window opens:
+  - `allow-finish` (default) — no interruption; anything already dispatched runs to completion
+  - `cancel-queued` — aborts actions whose Docker call has not yet started (logged as `skipped — maintenance window started`); in-flight calls complete normally
+  - `force-cancel` — also interrupts Docker calls already in flight via context cancellation; may leave a container mid-restart/-stop — use only when necessary
+- **Bell lifecycle notifications** — three alert types complete the pause lifecycle alongside the existing upcoming-reminder (`maintenance_upcoming`): `maintenance_started` fires when a window opens; `maintenance_ended` fires when it closes; both are auto-dismissed after 24 h
+- **Auto-prune** — expired Single Window and time-bounded Manual windows are automatically removed from the list 12 h after their end time (no manual cleanup needed)
+- **Last / Next occurrence columns** — the windows list shows when each window last ran and when it will next run, computed server-side from schedule math
+
 ## [0.4.0] - 2026-06-07
 
 ### Added
