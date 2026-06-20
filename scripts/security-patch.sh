@@ -87,7 +87,5 @@ PR_URL=$(gh pr create \
   --base main \
   --head "$BRANCH")
 
-gh pr merge "$PR_URL" --auto --merge >&2
-
 # Only the PR URL goes to stdout — captured by the calling workflow step.
 echo "$PR_URL"

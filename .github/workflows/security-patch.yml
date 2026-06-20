@@ -264,11 +264,32 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
 
-      - name: Approve PR
+      - name: Merge PR once CI passes
         if: steps.decision.outputs.should_release == 'true'
         run: |
-          gh pr review "${{ steps.pr.outputs.url }}" \
-            --approve \
-            --body "Automated security patch — approved by CI bot."
+          PR_URL="${{ steps.pr.outputs.url }}"
+          HEAD_SHA=$(gh pr view "$PR_URL" --json headRefOid -q .headRefOid)
+          echo "Waiting for test-build-smoke on ${HEAD_SHA}..."
+          for i in $(seq 1 40); do
+            CONCLUSION=$(gh api "repos/${{ github.repository }}/commits/${HEAD_SHA}/check-runs" \
+              --jq '[.check_runs[] | select(.name == "test-build-smoke")] | first | .conclusion // ""' 2>/dev/null)
+            case "$CONCLUSION" in
+              success)
+                echo "CI passed — merging."
+                gh pr merge "$PR_URL" --squash
+                exit 0
+                ;;
+              failure|cancelled|timed_out|action_required)
+                echo "CI ended with: $CONCLUSION — aborting."
+                exit 1
+                ;;
+              *)
+                echo "Status: ${CONCLUSION:-pending} (${i}/40, next check in 30s)"
+                sleep 30
+                ;;
+            esac
+          done
+          echo "Timed out after 20 minutes."
+          exit 1
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
