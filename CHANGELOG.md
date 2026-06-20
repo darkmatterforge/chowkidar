@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-06-20
+
+### Security
+- Automated rebuild: wolfi-base updated, go builder updated; 20 package(s) updated; fixed 6 CVE(s)
+
 ## [0.5.0] - 2026-06-13
 
 ### Added
@@ -209,7 +214,8 @@ All notable changes to this project will be documented in this file.
 - Unraid Community Applications template
 - AGPL-3.0 license
 
-[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/darkmatterforge/chowkidar/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/darkmatterforge/chowkidar/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/darkmatterforge/chowkidar/compare/v0.2.0...v0.3.0
