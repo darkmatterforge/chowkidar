@@ -57,7 +57,8 @@ fi
 
 # ── Bail out if the PR already exists (action re-run after success) ───────────
 if EXISTING_PR=$(gh pr list --head "$BRANCH" --json url -q '.[0].url' 2>/dev/null) && [[ -n "$EXISTING_PR" ]]; then
-  echo "PR for $BRANCH already exists: $EXISTING_PR — nothing to do."
+  echo "PR for $BRANCH already exists: $EXISTING_PR — nothing to do." >&2
+  echo "$EXISTING_PR"
   exit 0
 fi
 
@@ -66,15 +67,12 @@ fi
 # a clean delete+push avoids force-pushing onto an existing ref.
 git push origin --delete "$BRANCH" 2>/dev/null || true
 
-git checkout -b "$BRANCH"
+git checkout -b "$BRANCH" >&2
 git config user.name "github-actions[bot]"
 git config user.email "github-actions[bot]@users.noreply.github.com"
 git add "$CHANGELOG"
-git commit -m "chore(security): bump to ${VERSION} — ${REASON}"
-git push origin "$BRANCH"
-
-BRANCH_SHA="$(git rev-parse HEAD)"
-echo "branch_sha=${BRANCH_SHA}"
+git commit -m "chore(security): bump to ${VERSION} — ${REASON}" >&2
+git push origin "$BRANCH" >&2
 
 # ── Open PR and enable auto-merge ─────────────────────────────────────────────
 BODY="$(printf '### Automated security patch\n\n**Reason:** %s\n\n<details><summary>Package diff</summary>\n\n```\n%s\n```\n\n</details>' "$REASON" "$PKG_DIFF")"
@@ -85,9 +83,7 @@ PR_URL=$(gh pr create \
   --base main \
   --head "$BRANCH")
 
-echo "PR: ${PR_URL}"
+gh pr merge "$PR_URL" --auto --merge >&2
 
-# Auto-merge: GitHub merges the PR automatically once all required CI checks pass.
-gh pr merge "$PR_URL" --auto --merge
-
-echo "Auto-merge enabled — PR will merge once CI passes."
+# Only the PR URL goes to stdout — captured by the calling workflow step.
+echo "$PR_URL"
