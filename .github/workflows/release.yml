@@ -17,19 +17,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install script dependencies
+        run: npm install --prefix scripts
+
       - name: Extract changelog for this version
         id: changelog
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          # Extract the block between this version's heading and the next
-          NOTES=$(awk "/^## \[${VERSION}\]/{found=1; next} found && /^(## \[|\[.*\]:)/{exit} found{print}" CHANGELOG.md)
+          NOTES=$(node scripts/extract-changelog.js "$VERSION" CHANGELOG.md)
           if [ -z "$NOTES" ]; then
             NOTES="See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details."
           fi
-          # Use a delimiter to safely pass multi-line string to env
           {
             echo "notes<<CHANGELOG_EOF"
-            echo "$NOTES"
+            printf '%s\n' "$NOTES"
             echo "CHANGELOG_EOF"
           } >> "$GITHUB_OUTPUT"
 

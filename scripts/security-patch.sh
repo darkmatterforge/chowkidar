@@ -65,14 +65,18 @@ fi
 # ── Commit and push branch ────────────────────────────────────────────────────
 # Delete a stale remote branch left by a previous failed run before pushing;
 # a clean delete+push avoids force-pushing onto an existing ref.
-git push origin --delete "$BRANCH" 2>/dev/null || true
+git push origin --delete "$BRANCH" >/dev/null 2>&1 || true
 
-git checkout -b "$BRANCH" >&2
-git config user.name "github-actions[bot]"
-git config user.email "github-actions[bot]@users.noreply.github.com"
-git add "$CHANGELOG"
-git commit -m "chore(security): bump to ${VERSION} — ${REASON}" >&2
-git push origin "$BRANCH" >&2
+# Run all git ops in a subshell with stdout redirected to stderr so the only
+# thing that ever reaches our stdout is the PR URL printed at the end.
+(
+  git checkout -b "$BRANCH"
+  git config user.name "github-actions[bot]"
+  git config user.email "github-actions[bot]@users.noreply.github.com"
+  git add "$CHANGELOG"
+  git commit -m "chore(security): bump to ${VERSION} — ${REASON}"
+  git push origin "$BRANCH"
+) >&2
 
 # ── Open PR and enable auto-merge ─────────────────────────────────────────────
 BODY="$(printf '### Automated security patch\n\n**Reason:** %s\n\n<details><summary>Package diff</summary>\n\n```\n%s\n```\n\n</details>' "$REASON" "$PKG_DIFF")"
@@ -82,8 +86,6 @@ PR_URL=$(gh pr create \
   --body "$BODY" \
   --base main \
   --head "$BRANCH")
-
-gh pr merge "$PR_URL" --auto --merge >&2
 
 # Only the PR URL goes to stdout — captured by the calling workflow step.
 echo "$PR_URL"
