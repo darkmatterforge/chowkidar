@@ -276,7 +276,7 @@ jobs:
             case "$CONCLUSION" in
               success)
                 echo "CI passed — merging."
-                gh pr merge "$PR_URL" --squash
+                gh pr merge "$PR_URL" --squash --admin
                 exit 0
                 ;;
               failure|cancelled|timed_out|action_required)
