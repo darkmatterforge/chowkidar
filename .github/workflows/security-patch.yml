@@ -2,7 +2,7 @@ name: security-patch
 
 on:
   schedule:
-    - cron: "0 6 * * 1"
+    - cron: "0 6 */2 * *"
   workflow_dispatch:
 
 permissions:
@@ -78,9 +78,12 @@ jobs:
       - name: Count fixable CVEs in published image
         id: published_cves
         run: |
-          COUNT=$(docker scout cves darkmatterforge/chowkidar:latest \
-            --only-fixed 2>/dev/null | grep -cE "CVE-[0-9]+-[0-9]+" || true)
+          OUTPUT=$(docker scout cves darkmatterforge/chowkidar:latest \
+            --only-fixed 2>/dev/null || true)
+          COUNT=$(echo "$OUTPUT" | grep -cE "CVE-[0-9]+-[0-9]+" || true)
+          LIST=$(echo "$OUTPUT" | grep -oE "CVE-[0-9]+-[0-9]+" | sort -u | paste -sd ',' - || true)
           echo "fixable=${COUNT}" >> "$GITHUB_OUTPUT"
+          echo "list=${LIST}" >> "$GITHUB_OUTPUT"
           echo "Published fixable CVEs: ${COUNT}"
 
       - name: Skip if nothing to do
@@ -182,9 +185,12 @@ jobs:
       - name: Count fixable CVEs in candidate
         id: candidate_cves
         run: |
-          COUNT=$(docker scout cves chowkidar:candidate \
-            --only-fixed 2>/dev/null | grep -cE "CVE-[0-9]+-[0-9]+" || true)
+          OUTPUT=$(docker scout cves chowkidar:candidate \
+            --only-fixed 2>/dev/null || true)
+          COUNT=$(echo "$OUTPUT" | grep -cE "CVE-[0-9]+-[0-9]+" || true)
+          LIST=$(echo "$OUTPUT" | grep -oE "CVE-[0-9]+-[0-9]+" | sort -u | paste -sd ',' - || true)
           echo "fixable=${COUNT}" >> "$GITHUB_OUTPUT"
+          echo "list=${LIST}" >> "$GITHUB_OUTPUT"
           echo "Candidate fixable CVEs: ${COUNT}"
 
       - name: Detect package version changes
@@ -236,9 +242,17 @@ jobs:
 
           [ "$SHOULD_RELEASE" = "false" ] && echo "No improvements detected — skipping."
 
+          # Compute which CVEs were fixed (in published but not in candidate)
+          FIXED_CVES=$(comm -23 \
+            <(echo "${{ steps.published_cves.outputs.list }}" | tr ',' '\n' | grep -v '^$' | sort) \
+            <(echo "${{ steps.candidate_cves.outputs.list }}" | tr ',' '\n' | grep -v '^$' | sort) \
+            | paste -sd ',' - || true)
+
           echo "should_release=${SHOULD_RELEASE}" >> "$GITHUB_OUTPUT"
           echo "reason=${REASON_PARTS}" >> "$GITHUB_OUTPUT"
+          echo "fixed_cves=${FIXED_CVES}" >> "$GITHUB_OUTPUT"
           echo "Decision: should_release=${SHOULD_RELEASE}, reason=${REASON_PARTS}"
+          echo "Fixed CVEs: ${FIXED_CVES:-none}"
 
       - name: Get next version
         if: steps.decision.outputs.should_release == 'true'
@@ -259,7 +273,8 @@ jobs:
           PR_URL=$(bash scripts/security-patch.sh \
             "${{ steps.version.outputs.next }}" \
             "${{ steps.decision.outputs.reason }}" \
-            "${{ steps.packages.outputs.summary }}")
+            "${{ steps.packages.outputs.summary }}" \
+            "${{ steps.decision.outputs.fixed_cves }}")
           echo "url=${PR_URL}" >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
