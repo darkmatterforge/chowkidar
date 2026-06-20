@@ -6,7 +6,8 @@ set -euo pipefail
 
 VERSION="$1"          # e.g. v0.3.1
 REASON="$2"           # e.g. "wolfi-base updated; fixed 2 CVE(s)"
-PKG_DIFF="${3:-}"     # optional package diff summary
+PKG_DIFF="${3:-}"     # optional package diff summary (raw diff lines)
+CVE_LIST="${4:-}"     # optional comma-separated fixed CVE IDs
 
 CHANGELOG="CHANGELOG.md"
 DATE=$(date -u +%Y-%m-%d)
@@ -20,22 +21,41 @@ LATEST_VER="${LATEST_TAG#v}"
 NEW_VER="${VERSION#v}"
 NEW_LINK="[${NEW_VER}]: ${REPO_URL}/compare/${LATEST_TAG}...${VERSION}"
 
-# Insert versioned entry after the ## [Unreleased] block so [Unreleased] stays
-# at the top (Keep a Changelog convention). We skip the [Unreleased] heading
-# itself and any lines that follow it until the next versioned ## [ heading,
-# then insert before that heading.
-awk -v ver="$NEW_VER" -v date="$DATE" -v reason="$REASON" '
+# Format package diff into "old-pkg → new-pkg" pairs for readability.
+PKG_LINES=""
+if [[ -n "$PKG_DIFF" ]]; then
+  PKG_LINES=$(echo "$PKG_DIFF" | awk '
+    /^< / { sub(/^< /,""); old=$0; next }
+    /^> / { sub(/^> /,""); if (old != "") print "  - " old " → " $0; old="" }
+  ')
+fi
+
+# Build the complete security block in a temp file to avoid awk escaping issues.
+BLOCK=$(mktemp)
+{
+  printf '## [%s] - %s\n\n' "$NEW_VER" "$DATE"
+  printf '### Security\n\n'
+  printf '- Automated rebuild: %s\n' "$REASON"
+  if [[ -n "$CVE_LIST" ]]; then
+    printf '  - **Fixed CVEs:** %s\n' "$CVE_LIST"
+  fi
+  if [[ -n "$PKG_LINES" ]]; then
+    printf '  - **Updated packages:**\n'
+    printf '%s\n' "$PKG_LINES"
+  fi
+  printf '\n'
+} > "$BLOCK"
+
+# Insert the block after the ## [Unreleased] section, before the next versioned heading.
+awk -v block="$BLOCK" '
   /^## \[Unreleased\]/ { past_unreleased = 1 }
   past_unreleased && !inserted && /^## \[/ && !/^## \[Unreleased\]/ {
-    print "## [" ver "] - " date
-    print ""
-    print "### Security"
-    print "- Automated rebuild: " reason
-    print ""
+    while ((getline line < block) > 0) print line
     inserted = 1
   }
   { print }
 ' "$CHANGELOG" > "$TEMP" && mv "$TEMP" "$CHANGELOG"
+rm -f "$BLOCK"
 
 # Update or insert comparison links at bottom, matching existing link style.
 TEMP=$(mktemp)

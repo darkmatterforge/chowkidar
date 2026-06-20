@@ -11,7 +11,7 @@
  */
 
 import { test, expect, Page } from '@playwright/test'
-import { gotoApp } from './helpers/nav.js'
+import { gotoApp, gotoSettings } from './helpers/nav.js'
 
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:8080'
 
@@ -430,7 +430,6 @@ test.describe('Notification limit suspension', () => {
 
 test.describe('Job form save feedback', () => {
   test('saving a new job shows success banner', async ({ page }) => {
-    const { gotoSettings } = await import('./helpers/nav.js')
     await gotoSettings(page, 'jobs')
 
     await page.locator('#openAddJobBtn').click()
