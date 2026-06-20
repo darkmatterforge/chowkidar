@@ -12,15 +12,36 @@ services:
       LOG_LEVEL: debug
       DOCKER_HOST: ${DOCKER_HOST:-}
       CHOWKIDAR_SECRET_KEY: change-me-to-a-long-random-string
+      # Proxy UI requests to the Vite dev server instead of embedded dist.
+      VITE_DEV_SERVER: http://frontend:5173
     volumes:
-      # Source mount: Go files trigger air rebuild; web/ served directly from disk
       - .:/src
       - ./config:/config
       - /var/run/docker.sock:/var/run/docker.sock
-      # Cache Go module downloads between restarts
       - chowkidar-dev-gomod:/go/pkg/mod
       - chowkidar-dev-gocache:/root/.cache/go-build
+    depends_on:
+      - frontend
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      target: frontend
+    container_name: chowkidar-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      # Point Vite's /api proxy to the Go container by service name.
+      API_TARGET: http://chowkidar-dev:8080
+    volumes:
+      # Mount source so HMR picks up edits on the host.
+      - ./web-next:/src/web-next
+      - chowkidar-frontend-nm:/src/web-next/node_modules
+    command: ["sh", "-c", "cd /src/web-next && npm install && npm run dev"]
 
 volumes:
   chowkidar-dev-gomod:
   chowkidar-dev-gocache:
+  chowkidar-frontend-nm:

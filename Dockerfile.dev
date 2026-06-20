@@ -1,7 +1,6 @@
-# --- Dev Build Stage ---
-FROM cgr.dev/chainguard/wolfi-base:latest
+# ── Base: shared toolchain ─────────────────────────────────────────────────────
+FROM cgr.dev/chainguard/wolfi-base:latest AS base
 
-# Upgrade existing packages and install dev dependencies in one layer
 RUN apk upgrade --no-cache && \
     apk add --no-cache ca-certificates git go python3 py3-pip bash curl jq docker-cli nodejs npm && \
     python3 -m venv /apprise && \
@@ -9,21 +8,28 @@ RUN apk upgrade --no-cache && \
     mkdir -p /usr/local/bin && \
     ln -sf /apprise/bin/apprise /usr/local/bin/apprise
 
-# Install Air live-reload tool directly into PATH
 RUN GOBIN=/usr/local/bin go install github.com/air-verse/air@v1.61.1
 
 WORKDIR /src
 
-# Copy Go module files and download dependencies
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Expose application port
 EXPOSE 8080
 
-# Health check endpoint
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -f http://localhost:8080/api/health || exit 1
 
-# Default command for live reload
 CMD ["air", "-c", ".air.toml"]
+
+# ── Frontend: Vite dev server ──────────────────────────────────────────────────
+FROM base AS frontend
+
+WORKDIR /src/web-next
+
+EXPOSE 5173
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=3 \
+  CMD curl -f http://localhost:5173/ || exit 1
+
+CMD ["sh", "-c", "npm install && npm run dev"]

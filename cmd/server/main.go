@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -22,8 +24,10 @@ import (
 	"chowkidar/internal/dockerhealth"
 	"chowkidar/internal/history"
 	"chowkidar/internal/notify"
+	"chowkidar/internal/webui"
 	"chowkidar/internal/worker"
 )
+
 
 // hostEntry pairs a configured Docker host profile with its live client.
 type hostEntry struct {
@@ -428,12 +432,28 @@ func setupMux(a *app) *http.ServeMux {
 	mux.HandleFunc("/api/test-docker-host", a.authMiddleware(a.handleTestDockerHost))
 	mux.HandleFunc("/api/action", a.authMiddleware(a.handleManualAction))
 	mux.HandleFunc("/api/containers/", a.authMiddleware(a.handleResetCooldown))
-	// noDirFS wraps http.Dir and returns ErrNotExist for any directory path,
-	// preventing directory listing. The FileServer call is safe here. //nolint:gosec
-	fileServer := http.FileServer(noDirFS{http.Dir("web")})
+	var staticHandler http.Handler
+	if viteURL := os.Getenv("VITE_DEV_SERVER"); viteURL != "" {
+		// Dev mode: reverse-proxy everything (including HMR websocket) to Vite.
+		target, err := url.Parse(viteURL)
+		if err != nil {
+			log.Fatalf("invalid VITE_DEV_SERVER url: %v", err)
+		}
+		proxy := httputil.NewSingleHostReverseProxy(target)
+		staticHandler = proxy
+		logInfof("serving UI from Vite dev server at %s", viteURL)
+	} else {
+		staticHandler = http.FileServer(http.FS(webui.FS()))
+	}
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-store")
-		fileServer.ServeHTTP(w, r)
+		h := w.Header()
+		h.Set("Cache-Control", "no-store")
+		h.Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		staticHandler.ServeHTTP(w, r)
 	}))
 	return mux
 }

@@ -1,0 +1,97 @@
+@import '@unocss/reset/tailwind.css';
+
+:root {
+  --bg:       #f4f7fb;
+  --panel:    #ffffff;
+  --line:     #dbe3ee;
+  --text:     #1f2a37;
+  --muted:    #5f6f82;
+  --ok:       #20b26b;
+  --warn:     #d49a21;
+  --danger:   #d24c5b;
+  --accent:   #2f8fdd;
+  --accent-2: #e9f3ff;
+  --input-bg: #ffffff;
+  --error-bg: #fff2f3;
+  --warn-bg:  #fff4d6;
+  --shadow:   rgba(18, 38, 63, .05);
+}
+
+[data-theme="dark"] {
+  --bg:       #0f1117;
+  --panel:    #1a1d2e;
+  --line:     #2a2e42;
+  --text:     #dde1ed;
+  --muted:    #8892a8;
+  --ok:       #27c97a;
+  --warn:     #e5a92a;
+  --danger:   #e05568;
+  --accent:   #4da6f5;
+  --accent-2: #152035;
+  --input-bg: #141825;
+  --error-bg: #2a1018;
+  --warn-bg:  #241a08;
+  --shadow:   rgba(0, 0, 0, .25);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:       #0f1117;
+    --panel:    #1a1d2e;
+    --line:     #2a2e42;
+    --text:     #dde1ed;
+    --muted:    #8892a8;
+    --ok:       #27c97a;
+    --warn:     #e5a92a;
+    --danger:   #e05568;
+    --accent:   #4da6f5;
+    --accent-2: #152035;
+    --input-bg: #141825;
+    --error-bg: #2a1018;
+    --warn-bg:  #241a08;
+    --shadow:   rgba(0, 0, 0, .25);
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  font-family: "Manrope", "Avenir Next", "Segoe UI", sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--accent) 12%, transparent) 0, transparent 35%),
+    radial-gradient(circle at 100% 15%, color-mix(in srgb, var(--accent) 8%, transparent) 0, transparent 30%),
+    var(--bg);
+  min-height: 100dvh;
+}
+
+.btn {
+  @apply inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[var(--line)]
+         bg-[var(--panel)] text-[var(--text)] text-sm font-semibold
+         cursor-pointer transition-opacity duration-150
+         hover:opacity-80 active:opacity-60 disabled:opacity-40 disabled:cursor-not-allowed;
+}
+
+.btn-primary {
+  @apply btn bg-[var(--accent)] text-white border-[var(--accent)];
+}
+
+.btn-danger {
+  @apply btn bg-[var(--danger)] text-white border-[var(--danger)];
+}
+
+.card {
+  @apply bg-[var(--panel)] border border-[var(--line)] rounded-2xl
+         shadow-[0_2px_8px_var(--shadow)];
+}
+
+.input {
+  @apply w-full px-3 py-2 rounded-lg border border-[var(--line)]
+         bg-[var(--input-bg)] text-[var(--text)] text-sm
+         outline-none focus:border-[var(--accent)] transition-colors;
+}
+
+.badge-ok     { @apply text-xs font-semibold px-2 py-0.5 rounded-full bg-[var(--ok)] text-white; }
+.badge-warn   { @apply text-xs font-semibold px-2 py-0.5 rounded-full bg-[var(--warn)] text-white; }
+.badge-danger { @apply text-xs font-semibold px-2 py-0.5 rounded-full bg-[var(--danger)] text-white; }
+.badge-muted  { @apply text-xs font-semibold px-2 py-0.5 rounded-full bg-[var(--line)] text-[var(--muted)]; }

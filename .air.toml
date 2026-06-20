@@ -5,7 +5,7 @@ tmp_dir = "tmp"
   bin = "tmp/chowkidar"
   cmd = "go build -ldflags \"-X main.appVersion=dev\" -o tmp/chowkidar ./cmd/server"
   include_ext = ["go"]
-  exclude_dir = ["web", "config", "tmp", "docs", "scripts", "unraid"]
+  exclude_dir = ["web", "web-next", "internal/webui/dist", "config", "tmp", "docs", "scripts", "unraid"]
   delay = 800
   kill_delay = "200ms"
   rerun = false
