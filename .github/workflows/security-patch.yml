@@ -56,20 +56,13 @@ jobs:
             --format '{{.Created}}' | xargs -I{} date -d {} +%s)
 
           docker pull cgr.dev/chainguard/wolfi-base:latest --quiet
-          docker pull cgr.dev/chainguard/go:latest --quiet
 
           WOLFI_EPOCH=$(docker inspect cgr.dev/chainguard/wolfi-base:latest \
-            --format '{{.Created}}' | xargs -I{} date -d {} +%s)
-          GO_EPOCH=$(docker inspect cgr.dev/chainguard/go:latest \
             --format '{{.Created}}' | xargs -I{} date -d {} +%s)
 
           UPDATED=false
           REASON=""
           [ "$WOLFI_EPOCH" -gt "$PUBLISHED_EPOCH" ] && UPDATED=true && REASON="wolfi-base updated"
-          if [ "$GO_EPOCH" -gt "$PUBLISHED_EPOCH" ]; then
-            UPDATED=true
-            REASON="${REASON:+$REASON, }go builder updated"
-          fi
 
           echo "updated=${UPDATED}" >> "$GITHUB_OUTPUT"
           echo "reason=${REASON}" >> "$GITHUB_OUTPUT"
@@ -221,7 +214,7 @@ jobs:
           BASE_REASON="${{ steps.base.outputs.reason }}"
           PUBLISHED_CVES=${{ steps.published_cves.outputs.fixable }}
           CANDIDATE_CVES=${{ steps.candidate_cves.outputs.fixable }}
-          FIXED_CVES=$((PUBLISHED_CVES - CANDIDATE_CVES))
+          FIXED_CVE_COUNT=$((PUBLISHED_CVES - CANDIDATE_CVES))
           PKG_CHANGES=${{ steps.packages.outputs.changed }}
 
           SHOULD_RELEASE=false
@@ -235,14 +228,14 @@ jobs:
             SHOULD_RELEASE=true
             REASON_PARTS="${REASON_PARTS:+$REASON_PARTS; }${PKG_CHANGES} package(s) updated"
           fi
-          if [ "$FIXED_CVES" -gt 0 ]; then
+          if [ "$FIXED_CVE_COUNT" -gt 0 ]; then
             SHOULD_RELEASE=true
-            REASON_PARTS="${REASON_PARTS:+$REASON_PARTS; }fixed ${FIXED_CVES} CVE(s)"
+            REASON_PARTS="${REASON_PARTS:+$REASON_PARTS; }fixed ${FIXED_CVE_COUNT} CVE(s)"
           fi
 
           [ "$SHOULD_RELEASE" = "false" ] && echo "No improvements detected — skipping."
 
-          # Compute which CVEs were fixed (in published but not in candidate)
+          # Compute which CVE IDs were fixed (in published but not in candidate)
           FIXED_CVES=$(comm -23 \
             <(echo "${{ steps.published_cves.outputs.list }}" | tr ',' '\n' | grep -v '^$' | sort) \
             <(echo "${{ steps.candidate_cves.outputs.list }}" | tr ',' '\n' | grep -v '^$' | sort) \
