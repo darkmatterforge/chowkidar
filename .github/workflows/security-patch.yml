@@ -77,7 +77,7 @@ jobs:
           LIST=$(echo "$OUTPUT" | grep -oE "CVE-[0-9]+-[0-9]+" | sort -u | paste -sd ',' - || true)
           echo "fixable=${COUNT}" >> "$GITHUB_OUTPUT"
           echo "list=${LIST}" >> "$GITHUB_OUTPUT"
-          echo "Published fixable CVEs: ${COUNT}"
+          echo "Published image — unpatched CVEs with a fix available: ${COUNT}"
 
       - name: Build candidate image
         uses: docker/build-push-action@v7
@@ -97,7 +97,7 @@ jobs:
           LIST=$(echo "$OUTPUT" | grep -oE "CVE-[0-9]+-[0-9]+" | sort -u | paste -sd ',' - || true)
           echo "fixable=${COUNT}" >> "$GITHUB_OUTPUT"
           echo "list=${LIST}" >> "$GITHUB_OUTPUT"
-          echo "Candidate fixable CVEs: ${COUNT}"
+          echo "Candidate image — unpatched CVEs with a fix available: ${COUNT}"
 
       - name: Detect package version changes
         id: packages
@@ -121,7 +121,7 @@ jobs:
             echo "$DIFF_SUMMARY"
             echo "PKG_EOF"
           } >> "$GITHUB_OUTPUT"
-          echo "Package changes: ${CHANGED}"
+          echo "Packages updated in candidate vs published: ${CHANGED}"
 
       - name: Decide whether to release
         id: decision
@@ -160,8 +160,8 @@ jobs:
           echo "should_release=${SHOULD_RELEASE}" >> "$GITHUB_OUTPUT"
           echo "reason=${REASON_PARTS}" >> "$GITHUB_OUTPUT"
           echo "fixed_cves=${FIXED_CVES}" >> "$GITHUB_OUTPUT"
-          echo "Decision: should_release=${SHOULD_RELEASE}, reason=${REASON_PARTS}"
-          echo "Fixed CVEs: ${FIXED_CVES:-none}"
+          echo "Release decision: ${SHOULD_RELEASE} — ${REASON_PARTS:-no improvements detected}"
+          echo "CVEs eliminated vs published: ${FIXED_CVES:-none}"
 
       - name: Set up Node.js
         if: steps.decision.outputs.should_release == 'true'
