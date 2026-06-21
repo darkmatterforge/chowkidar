@@ -34,13 +34,13 @@ fi
 BLOCK=$(mktemp)
 {
   printf '## [%s] - %s\n\n' "$NEW_VER" "$DATE"
-  printf '### Security\n\n'
-  printf '- Automated rebuild: %s\n' "$REASON"
+  printf '%s\n\n' '### Security'
+  printf '%s\n' "- Automated rebuild: ${REASON}"
   if [[ -n "$CVE_LIST" ]]; then
-    printf '  - **Fixed CVEs:** %s\n' "$CVE_LIST"
+    printf '%s\n' "  - **Fixed CVEs:** ${CVE_LIST}"
   fi
   if [[ -n "$PKG_LINES" ]]; then
-    printf '  - **Updated packages:**\n'
+    printf '%s\n' '  - **Updated packages:**'
     printf '%s\n' "$PKG_LINES"
   fi
   printf '\n'
