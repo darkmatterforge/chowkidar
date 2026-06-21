@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-06-21
+
+### Security
+
+- Automated rebuild: 6 package(s) updated
+  - **Updated packages:**
+  - libffi-3.5.2-r7 → libffi-3.6.0-r0
+  - ncurses-terminfo-base-6.6.20260613-r3 → ncurses-6.6.20260620-r0
+
 ## [0.5.1] - 2026-06-20
 
 ### Security
@@ -214,7 +223,8 @@ All notable changes to this project will be documented in this file.
 - Unraid Community Applications template
 - AGPL-3.0 license
 
-[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/darkmatterforge/chowkidar/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/darkmatterforge/chowkidar/compare/v0.3.0...v0.4.0
