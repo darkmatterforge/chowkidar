@@ -21,13 +21,19 @@ LATEST_VER="${LATEST_TAG#v}"
 NEW_VER="${VERSION#v}"
 NEW_LINK="[${NEW_VER}]: ${REPO_URL}/compare/${LATEST_TAG}...${VERSION}"
 
-# Format package diff into "old-pkg → new-pkg" pairs for readability.
+# Format package diff into "old → new" pairs.
+# Pair the Nth < line with the Nth > line (paste by index) to handle
+# consecutive diff blocks where multiple < lines appear before any > line.
 PKG_LINES=""
+PKG_TABLE_ROWS=""
 if [[ -n "$PKG_DIFF" ]]; then
-  PKG_LINES=$(echo "$PKG_DIFF" | awk '
-    /^< / { sub(/^< /,""); old=$0; next }
-    /^> / { sub(/^> /,""); if (old != "") print "  - " old " → " $0; old="" }
-  ')
+  while IFS='|' read -r old new; do
+    PKG_LINES+="  - ${old} → ${new}"$'\n'
+    PKG_TABLE_ROWS+="| ${old} | ${new} |"$'\n'
+  done < <(paste -d'|' \
+    <(printf '%s\n' "$PKG_DIFF" | grep "^< " | sed 's/^< //') \
+    <(printf '%s\n' "$PKG_DIFF" | grep "^> " | sed 's/^> //'))
+  PKG_LINES="${PKG_LINES%$'\n'}"
 fi
 
 # Build the complete security block in a temp file to avoid awk escaping issues.
@@ -99,7 +105,22 @@ git push origin --delete "$BRANCH" >/dev/null 2>&1 || true
 ) >&2
 
 # ── Open PR and enable auto-merge ─────────────────────────────────────────────
-BODY="$(printf '### Automated security patch\n\n**Reason:** %s\n\n<details><summary>Package diff</summary>\n\n```\n%s\n```\n\n</details>' "$REASON" "$PKG_DIFF")"
+BODY_FILE=$(mktemp)
+{
+  printf '### Automated security patch\n\n'
+  printf '**Reason:** %s\n\n' "$REASON"
+  if [[ -n "$CVE_LIST" ]]; then
+    printf '**Fixed CVEs:** %s\n\n' "$CVE_LIST"
+  fi
+  if [[ -n "$PKG_TABLE_ROWS" ]]; then
+    printf '#### Updated packages\n\n'
+    printf '| Published | Candidate |\n'
+    printf '| --- | --- |\n'
+    printf '%s' "$PKG_TABLE_ROWS"
+  fi
+} > "$BODY_FILE"
+BODY="$(cat "$BODY_FILE")"
+rm -f "$BODY_FILE"
 
 PR_URL=$(gh pr create \
   --title "chore(security): bump to ${VERSION} — ${REASON}" \
