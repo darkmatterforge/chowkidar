@@ -21,13 +21,19 @@ LATEST_VER="${LATEST_TAG#v}"
 NEW_VER="${VERSION#v}"
 NEW_LINK="[${NEW_VER}]: ${REPO_URL}/compare/${LATEST_TAG}...${VERSION}"
 
-# Format package diff into "old-pkg → new-pkg" pairs for readability.
+# Format package diff into "old → new" pairs.
+# Pair the Nth < line with the Nth > line (paste by index) to handle
+# consecutive diff blocks where multiple < lines appear before any > line.
 PKG_LINES=""
+PKG_TABLE_ROWS=""
 if [[ -n "$PKG_DIFF" ]]; then
-  PKG_LINES=$(echo "$PKG_DIFF" | awk '
-    /^< / { sub(/^< /,""); old=$0; next }
-    /^> / { sub(/^> /,""); if (old != "") print "  - " old " → " $0; old="" }
-  ')
+  while IFS='|' read -r old new; do
+    PKG_LINES+="  - ${old} → ${new}"$'\n'
+    PKG_TABLE_ROWS+="| ${old} | ${new} |"$'\n'
+  done < <(paste -d'|' \
+    <(printf '%s\n' "$PKG_DIFF" | grep "^< " | sed 's/^< //') \
+    <(printf '%s\n' "$PKG_DIFF" | grep "^> " | sed 's/^> //'))
+  PKG_LINES="${PKG_LINES%$'\n'}"
 fi
 
 # Build the complete security block in a temp file to avoid awk escaping issues.
@@ -35,14 +41,17 @@ BLOCK=$(mktemp)
 {
   printf '## [%s] - %s\n\n' "$NEW_VER" "$DATE"
   printf '%s\n\n' '### Security'
-  printf '%s\n' "- Automated rebuild: ${REASON}"
+  printf '%s\n' "- Automated security rebuild"
   if [[ -n "$CVE_LIST" ]]; then
     printf '%s\n' "  - **Fixed CVEs:** ${CVE_LIST}"
+  else
+    printf '%s\n' "  - **Fixed CVEs:** none"
   fi
   if [[ -n "$PKG_LINES" ]]; then
-    printf '%s\n' '  - **Updated packages:**'
+    printf '%s\n' "  - **OS packages updated:**"
     printf '%s\n' "$PKG_LINES"
   fi
+  printf '%s\n' "  - **Trigger:** ${REASON}"
   printf '\n'
 } > "$BLOCK"
 
@@ -99,7 +108,34 @@ git push origin --delete "$BRANCH" >/dev/null 2>&1 || true
 ) >&2
 
 # ── Open PR and enable auto-merge ─────────────────────────────────────────────
-BODY="$(printf '### Automated security patch\n\n**Reason:** %s\n\n<details><summary>Package diff</summary>\n\n```\n%s\n```\n\n</details>' "$REASON" "$PKG_DIFF")"
+BODY_FILE=$(mktemp)
+{
+  printf '### Automated security patch\n\n'
+
+  printf '#### CVE fixes\n\n'
+  if [[ -n "$CVE_LIST" ]]; then
+    for cve in $(printf '%s' "$CVE_LIST" | tr ',' ' '); do
+      printf '- %s\n' "$cve"
+    done
+  else
+    printf '_No CVEs eliminated in this rebuild._\n'
+  fi
+  printf '\n'
+
+  printf '#### OS package updates\n\n'
+  if [[ -n "$PKG_TABLE_ROWS" ]]; then
+    printf '| Published | Candidate |\n'
+    printf '| --- | --- |\n'
+    printf '%s' "$PKG_TABLE_ROWS"
+  else
+    printf '_No package version changes._\n'
+  fi
+  printf '\n'
+
+  printf '#### Trigger\n\n%s\n' "$REASON"
+} > "$BODY_FILE"
+BODY="$(cat "$BODY_FILE")"
+rm -f "$BODY_FILE"
 
 PR_URL=$(gh pr create \
   --title "chore(security): bump to ${VERSION} — ${REASON}" \
