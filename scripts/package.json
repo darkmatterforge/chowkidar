@@ -1,9 +1,0 @@
-{
-  "name": "chowkidar-scripts",
-  "version": "1.0.0",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "changelog-parser": "^4.1.0"
-  }
-}
