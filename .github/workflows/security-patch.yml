@@ -79,12 +79,6 @@ jobs:
           echo "list=${LIST}" >> "$GITHUB_OUTPUT"
           echo "Published fixable CVEs: ${COUNT}"
 
-      - name: Skip if nothing to do
-        if: steps.base.outputs.updated == 'false' && steps.published_cves.outputs.fixable == '0'
-        run: |
-          echo "Base images are current and no fixable CVEs — nothing to do."
-          exit 0
-
       - name: Build candidate image
         uses: docker/build-push-action@v7
         with:
@@ -113,8 +107,11 @@ jobs:
           docker run --rm chowkidar:candidate \
             apk info -v 2>/dev/null | sort > /tmp/candidate-pkgs.txt
 
+          # Count only packages that are NEW or UPDATED in candidate (> lines).
+          # Each package change produces one < line and one > line, so counting
+          # only > gives the real number of changed packages.
           CHANGED=$(diff /tmp/published-pkgs.txt /tmp/candidate-pkgs.txt \
-            | grep -cE "^[<>]" || true)
+            | grep -cE "^>" || true)
           DIFF_SUMMARY=$(diff /tmp/published-pkgs.txt /tmp/candidate-pkgs.txt \
             | grep -E "^[<>]" | head -20 || true)
 
@@ -251,7 +248,7 @@ jobs:
           E2E_EMAIL_PASSWORD: ${{ secrets.E2E_EMAIL_PASSWORD }}
 
       - name: Stop test containers
-        if: steps.decision.outputs.should_release == 'true'
+        if: always() && steps.decision.outputs.should_release == 'true'
         run: docker rm -f chowkidar-e2e e2e-target e2e-unhealthy || true
 
       - name: Get next version
