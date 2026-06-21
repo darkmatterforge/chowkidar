@@ -56,20 +56,13 @@ jobs:
             --format '{{.Created}}' | xargs -I{} date -d {} +%s)
 
           docker pull cgr.dev/chainguard/wolfi-base:latest --quiet
-          docker pull cgr.dev/chainguard/go:latest --quiet
 
           WOLFI_EPOCH=$(docker inspect cgr.dev/chainguard/wolfi-base:latest \
-            --format '{{.Created}}' | xargs -I{} date -d {} +%s)
-          GO_EPOCH=$(docker inspect cgr.dev/chainguard/go:latest \
             --format '{{.Created}}' | xargs -I{} date -d {} +%s)
 
           UPDATED=false
           REASON=""
           [ "$WOLFI_EPOCH" -gt "$PUBLISHED_EPOCH" ] && UPDATED=true && REASON="wolfi-base updated"
-          if [ "$GO_EPOCH" -gt "$PUBLISHED_EPOCH" ]; then
-            UPDATED=true
-            REASON="${REASON:+$REASON, }go builder updated"
-          fi
 
           echo "updated=${UPDATED}" >> "$GITHUB_OUTPUT"
           echo "reason=${REASON}" >> "$GITHUB_OUTPUT"
