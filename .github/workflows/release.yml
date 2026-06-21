@@ -23,13 +23,13 @@ jobs:
           node-version: '24'
 
       - name: Install script dependencies
-        run: npm install --prefix scripts
+        run: npm install changelog-parser
 
       - name: Extract changelog for this version
         id: changelog
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          NOTES=$(node scripts/extract-changelog.js "$VERSION" CHANGELOG.md)
+          NOTES=$(node scripts/extract-changelog.mjs "$VERSION" CHANGELOG.md)
           if [ -z "$NOTES" ]; then
             NOTES="See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details."
           fi
