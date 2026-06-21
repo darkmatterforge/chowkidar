@@ -41,14 +41,17 @@ BLOCK=$(mktemp)
 {
   printf '## [%s] - %s\n\n' "$NEW_VER" "$DATE"
   printf '%s\n\n' '### Security'
-  printf '%s\n' "- Automated rebuild: ${REASON}"
+  printf '%s\n' "- Automated security rebuild"
   if [[ -n "$CVE_LIST" ]]; then
     printf '%s\n' "  - **Fixed CVEs:** ${CVE_LIST}"
+  else
+    printf '%s\n' "  - **Fixed CVEs:** none"
   fi
   if [[ -n "$PKG_LINES" ]]; then
-    printf '%s\n' '  - **Updated packages:**'
+    printf '%s\n' "  - **OS packages updated:**"
     printf '%s\n' "$PKG_LINES"
   fi
+  printf '%s\n' "  - **Trigger:** ${REASON}"
   printf '\n'
 } > "$BLOCK"
 
@@ -108,16 +111,28 @@ git push origin --delete "$BRANCH" >/dev/null 2>&1 || true
 BODY_FILE=$(mktemp)
 {
   printf '### Automated security patch\n\n'
-  printf '**Reason:** %s\n\n' "$REASON"
+
+  printf '#### CVE fixes\n\n'
   if [[ -n "$CVE_LIST" ]]; then
-    printf '**Fixed CVEs:** %s\n\n' "$CVE_LIST"
+    for cve in $(printf '%s' "$CVE_LIST" | tr ',' ' '); do
+      printf '- %s\n' "$cve"
+    done
+  else
+    printf '_No CVEs eliminated in this rebuild._\n'
   fi
+  printf '\n'
+
+  printf '#### OS package updates\n\n'
   if [[ -n "$PKG_TABLE_ROWS" ]]; then
-    printf '#### Updated packages\n\n'
     printf '| Published | Candidate |\n'
     printf '| --- | --- |\n'
     printf '%s' "$PKG_TABLE_ROWS"
+  else
+    printf '_No package version changes._\n'
   fi
+  printf '\n'
+
+  printf '#### Trigger\n\n%s\n' "$REASON"
 } > "$BODY_FILE"
 BODY="$(cat "$BODY_FILE")"
 rm -f "$BODY_FILE"
