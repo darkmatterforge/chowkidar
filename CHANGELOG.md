@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-06-23
+
+### Security
+
+- Automated security rebuild
+  - **Fixed CVEs:** none
+  - **OS packages updated:**
+  - busybox-1.37.0-r60 → busybox-1.37.0-r61
+  - jq-1.8.1-r6 → jq-1.8.2-r0
+  - libcrypto3-3.6.3-r1 → libcrypto3-3.6.3-r2
+  - libffi-3.6.0-r0 → libffi-3.6.0-r1
+  - libssl3-3.6.3-r1 → libssl3-3.6.3-r2
+  - **Trigger:** wolfi-base updated; 5 package(s) updated
+
 ## [0.5.3] - 2026-06-21
 
 ### Security
@@ -231,7 +245,8 @@ All notable changes to this project will be documented in this file.
 - Unraid Community Applications template
 - AGPL-3.0 license
 
-[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.3...HEAD
+[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.4...HEAD
+[0.5.4]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.0...v0.5.1
