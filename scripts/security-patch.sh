@@ -115,7 +115,7 @@ BODY_FILE=$(mktemp)
   printf '#### CVE fixes\n\n'
   if [[ -n "$CVE_LIST" ]]; then
     for cve in $(printf '%s' "$CVE_LIST" | tr ',' ' '); do
-      printf '- %s\n' "$cve"
+      printf '%s\n' "- $cve"
     done
   else
     printf '_No CVEs eliminated in this rebuild._\n'
