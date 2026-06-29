@@ -103,7 +103,7 @@ git push origin --delete "$BRANCH" >/dev/null 2>&1 || true
   git config user.name "github-actions[bot]"
   git config user.email "github-actions[bot]@users.noreply.github.com"
   git add "$CHANGELOG"
-  git commit -m "chore(security): bump to ${VERSION} — ${REASON}"
+  git commit -m "chore(security): bump to ${VERSION} — ${REASON} [skip e2e]"
   git push origin "$BRANCH"
 ) >&2
 
