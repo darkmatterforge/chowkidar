@@ -190,11 +190,18 @@ jobs:
 
       - name: Merge PR once CI passes
         if: steps.decision.outputs.should_release == 'true'
+        id: merge
         run: |
           PR_URL="${{ steps.pr.outputs.url }}"
           echo "Waiting for all PR checks on ${PR_URL}..."
           gh pr checks "$PR_URL" --watch --interval 30
           echo "All checks passed — merging."
           gh pr merge "$PR_URL" --squash --admin
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+
+      - name: Delete release branch
+        if: steps.decision.outputs.should_release == 'true' && steps.merge.outcome == 'success'
+        run: gh api -X DELETE "repos/${{ github.repository }}/git/refs/heads/release/v${{ steps.version.outputs.next }}"
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
