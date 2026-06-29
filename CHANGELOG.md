@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-06-29
+
+### Security
+
+- Automated security rebuild
+  - **Fixed CVEs:** CVE-2026-50219
+  - **OS packages updated:**
+  - docker-cli-29.6.0-r0 → docker-cli-29.6.1-r0
+  - heimdal-libs-7.8.0-r49 → heimdal-libs-7.8.0-r50
+  - libcrypto3-3.6.3-r2 → libcrypto3-3.6.3-r3
+  - libexpat1-2.8.1-r1 → libexpat1-2.8.2-r0
+  - libgcc-16.1.0-r2 → libgcc-16.1.0-r4
+  - libssl3-3.6.3-r2 → libssl3-3.6.3-r3
+  - libstdc++-16.1.0-r2 → libstdc++-16.1.0-r4
+  - ncurses-6.6.20260620-r0 → ncurses-6.6.20260627-r1
+  - ncurses-terminfo-base-6.6.20260620-r0 → ncurses-terminfo-base-6.6.20260627-r1
+  - nghttp3-1.16.0-r0 → 
+  - ngtcp2-1.23.0-r0 → 
+  - **Trigger:** wolfi-base updated; 12 package(s) updated; fixed 4 CVE(s)
+
 ## [0.5.5] - 2026-06-25
 
 ### Security
@@ -261,7 +281,8 @@ All notable changes to this project will be documented in this file.
 - Unraid Community Applications template
 - AGPL-3.0 license
 
-[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.5...HEAD
+[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.6...HEAD
+[0.5.6]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.2...v0.5.3
