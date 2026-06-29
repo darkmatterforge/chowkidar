@@ -163,94 +163,6 @@ jobs:
           echo "Release decision: ${SHOULD_RELEASE} — ${REASON_PARTS:-no improvements detected}"
           echo "CVEs eliminated vs published: ${FIXED_CVES:-none}"
 
-      - name: Set up Node.js
-        if: steps.decision.outputs.should_release == 'true'
-        uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-          cache: 'npm'
-          cache-dependency-path: tests/e2e/package.json
-
-      - name: Install Playwright dependencies
-        if: steps.decision.outputs.should_release == 'true'
-        working-directory: tests/e2e
-        run: npm ci
-
-      - name: Install Playwright browsers
-        if: steps.decision.outputs.should_release == 'true'
-        working-directory: tests/e2e
-        run: npx playwright install --with-deps chromium
-
-      - name: Start test containers
-        if: steps.decision.outputs.should_release == 'true'
-        run: |
-          docker run -d --name e2e-target \
-            --health-cmd="echo ok" \
-            --health-interval=3s \
-            --health-timeout=2s \
-            --health-retries=1 \
-            alpine:3 sh -c "while true; do sleep 5; done"
-          docker run -d --name e2e-unhealthy \
-            --health-cmd='[ -f /tmp/ok ]' \
-            --health-interval=3s \
-            --health-timeout=2s \
-            --health-retries=1 \
-            alpine:3 sh -c 'touch /tmp/ok; sleep 15; rm -f /tmp/ok; while true; do sleep 5; done'
-
-      - name: Start app container
-        if: steps.decision.outputs.should_release == 'true'
-        run: |
-          docker run -d \
-            --name chowkidar-e2e \
-            -p 18081:8080 \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            chowkidar:candidate
-          for i in $(seq 1 60); do
-            if curl -fsS http://localhost:18081/api/health >/dev/null 2>&1; then
-              echo "App is healthy"
-              break
-            fi
-            sleep 1
-            if [ "$i" -eq 60 ]; then
-              echo "App failed to start"
-              docker logs chowkidar-e2e
-              exit 1
-            fi
-          done
-
-      - name: Bootstrap monitoring job for test containers
-        if: steps.decision.outputs.should_release == 'true'
-        run: |
-          curl -s -X POST http://localhost:18081/api/jobs \
-            -H 'Content-Type: application/json' \
-            -d '{"name":"e2e-monitor","action":"restart","containerNameFilter":"e2e-target,e2e-unhealthy","monitorIntervalSeconds":8,"enabled":true,"startExited":false}'
-          sleep 10
-
-      - name: Run E2E tests
-        if: steps.decision.outputs.should_release == 'true'
-        working-directory: tests/e2e
-        run: npx playwright test
-        env:
-          BASE_URL: http://localhost:18081
-          E2E_USERNAME: testadmin
-          E2E_PASSWORD: TestPassword1!
-          E2E_DISCORD_WEBHOOK_URL: ${{ secrets.E2E_DISCORD_WEBHOOK_URL }}
-          E2E_SLACK_WEBHOOK_URL: ${{ secrets.E2E_SLACK_WEBHOOK_URL }}
-          E2E_NTFY_TOPIC: ${{ secrets.E2E_NTFY_TOPIC }}
-          E2E_TELEGRAM_BOT_TOKEN: ${{ secrets.E2E_TELEGRAM_BOT_TOKEN }}
-          E2E_TELEGRAM_CHAT_ID: ${{ secrets.E2E_TELEGRAM_CHAT_ID }}
-          E2E_PUSHOVER_USER_KEY: ${{ secrets.E2E_PUSHOVER_USER_KEY }}
-          E2E_PUSHOVER_TOKEN: ${{ secrets.E2E_PUSHOVER_TOKEN }}
-          E2E_EMAIL_HOST: ${{ secrets.E2E_EMAIL_HOST }}
-          E2E_EMAIL_PORT: ${{ secrets.E2E_EMAIL_PORT }}
-          E2E_EMAIL_TO: ${{ secrets.E2E_EMAIL_TO }}
-          E2E_EMAIL_USERNAME: ${{ secrets.E2E_EMAIL_USERNAME }}
-          E2E_EMAIL_PASSWORD: ${{ secrets.E2E_EMAIL_PASSWORD }}
-
-      - name: Stop test containers
-        if: always() && steps.decision.outputs.should_release == 'true'
-        run: docker rm -f chowkidar-e2e e2e-target e2e-unhealthy || true
-
       - name: Get next version
         if: steps.decision.outputs.should_release == 'true'
         id: version
@@ -280,28 +192,9 @@ jobs:
         if: steps.decision.outputs.should_release == 'true'
         run: |
           PR_URL="${{ steps.pr.outputs.url }}"
-          HEAD_SHA=$(gh pr view "$PR_URL" --json headRefOid -q .headRefOid)
-          echo "Waiting for test-build-smoke on ${HEAD_SHA}..."
-          for i in $(seq 1 40); do
-            CONCLUSION=$(gh api "repos/${{ github.repository }}/commits/${HEAD_SHA}/check-runs" \
-              --jq '[.check_runs[] | select(.name == "test-build-smoke")] | first | .conclusion // ""' 2>/dev/null)
-            case "$CONCLUSION" in
-              success)
-                echo "CI passed — merging."
-                gh pr merge "$PR_URL" --squash --admin
-                exit 0
-                ;;
-              failure|cancelled|timed_out|action_required)
-                echo "CI ended with: $CONCLUSION — aborting."
-                exit 1
-                ;;
-              *)
-                echo "Status: ${CONCLUSION:-pending} (${i}/40, next check in 30s)"
-                sleep 30
-                ;;
-            esac
-          done
-          echo "Timed out after 20 minutes."
-          exit 1
+          echo "Waiting for all PR checks on ${PR_URL}..."
+          gh pr checks "$PR_URL" --watch --interval 30
+          echo "All checks passed — merging."
+          gh pr merge "$PR_URL" --squash --admin
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
