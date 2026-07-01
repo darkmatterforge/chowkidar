@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.7] - 2026-07-01
+
+### Security
+
+- Automated security rebuild
+  - **Fixed CVEs:** none
+  - **OS packages updated:**
+  - curl-8.21.0-r0 → curl-8.21.0-r1
+  - libcurl-openssl4-8.21.0-r0 → libcurl-openssl4-8.21.0-r1
+  - libffi-3.6.0-r1 → libffi-3.6.0-r2
+  - **Trigger:** 3 package(s) updated
+
 ## [0.5.6] - 2026-06-29
 
 ### Security
@@ -281,7 +293,8 @@ All notable changes to this project will be documented in this file.
 - Unraid Community Applications template
 - AGPL-3.0 license
 
-[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.6...HEAD
+[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.7...HEAD
+[0.5.7]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.6...v0.5.7
 [0.5.6]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.3...v0.5.4
