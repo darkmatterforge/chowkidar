@@ -219,6 +219,6 @@ jobs:
 
       - name: Delete release branch
         if: steps.decision.outputs.should_release == 'true' && steps.merge.outcome == 'success'
-        run: gh api -X DELETE "repos/${{ github.repository }}/git/refs/heads/release/v${{ steps.version.outputs.next }}"
+        run: gh api -X DELETE "repos/${{ github.repository }}/git/refs/heads/release/${{ steps.version.outputs.next }}"
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
