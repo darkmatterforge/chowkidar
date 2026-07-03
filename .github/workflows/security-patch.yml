@@ -194,25 +194,25 @@ jobs:
         run: |
           PR_URL="${{ steps.pr.outputs.url }}"
           echo "Waiting for all PR checks on ${PR_URL}..."
+          # Allow up to ~5 minutes for checks to appear on newly created PR branches.
           MAX_ATTEMPTS=20
           SLEEP_SECONDS=15
           for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
-            CHECK_OUTPUT="$(gh pr checks "$PR_URL" --watch --interval 30 2>&1)" && CHECK_RC=0 || CHECK_RC=$?
-            echo "$CHECK_OUTPUT"
-            if [ "$CHECK_RC" -eq 0 ]; then
-              echo "All checks passed — merging."
-              gh pr merge "$PR_URL" --squash --admin
-              exit 0
-            fi
-            if echo "$CHECK_OUTPUT" | grep -q "no checks reported"; then
+            HEAD_SHA=$(gh pr view "$PR_URL" --json headRefOid -q .headRefOid)
+            CHECK_COUNT=$(gh api "repos/${{ github.repository }}/commits/${HEAD_SHA}/check-runs" -q '.total_count')
+            if [ "$CHECK_COUNT" -eq 0 ]; then
               if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
                 echo "Checks not reported yet (attempt ${attempt}/${MAX_ATTEMPTS}); retrying in ${SLEEP_SECONDS}s..."
                 sleep "$SLEEP_SECONDS"
                 continue
               fi
+              echo "No checks reported after ${MAX_ATTEMPTS} attempts; aborting merge."
+              exit 1
             fi
-            echo "PR checks did not pass; aborting merge."
-            exit "$CHECK_RC"
+            gh pr checks "$PR_URL" --watch --interval 30
+            echo "All checks passed — merging."
+            gh pr merge "$PR_URL" --squash --admin
+            exit 0
           done
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
