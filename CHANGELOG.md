@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.8] - 2026-07-03
+
+### Security
+
+- Automated security rebuild
+  - **Fixed CVEs:** none
+  - **OS packages updated:**
+  - sqlite-libs-3.53.3-r0 → sqlite-libs-3.53.3-r1
+  - **Trigger:** 1 package(s) updated
+
 ## [0.5.7] - 2026-07-01
 
 ### Security
@@ -293,7 +303,8 @@ All notable changes to this project will be documented in this file.
 - Unraid Community Applications template
 - AGPL-3.0 license
 
-[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.7...HEAD
+[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.8...HEAD
+[0.5.8]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.7...v0.5.8
 [0.5.7]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.6...v0.5.7
 [0.5.6]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.4...v0.5.5
