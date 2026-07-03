@@ -194,9 +194,26 @@ jobs:
         run: |
           PR_URL="${{ steps.pr.outputs.url }}"
           echo "Waiting for all PR checks on ${PR_URL}..."
-          gh pr checks "$PR_URL" --watch --interval 30
-          echo "All checks passed — merging."
-          gh pr merge "$PR_URL" --squash --admin
+          # Allow up to ~5 minutes for checks to appear on newly created PR branches.
+          MAX_ATTEMPTS=20
+          SLEEP_SECONDS=30
+          for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+            HEAD_SHA=$(gh pr view "$PR_URL" --json headRefOid -q .headRefOid)
+            CHECK_COUNT=$(gh api "repos/${{ github.repository }}/commits/${HEAD_SHA}/check-runs" -q '.total_count')
+            if [ "$CHECK_COUNT" -eq 0 ]; then
+              if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+                echo "Checks not reported yet (attempt ${attempt}/${MAX_ATTEMPTS}); retrying in ${SLEEP_SECONDS}s..."
+                sleep "$SLEEP_SECONDS"
+                continue
+              fi
+              echo "No checks reported after ${MAX_ATTEMPTS} attempts; aborting merge."
+              exit 1
+            fi
+            gh pr checks "$PR_URL" --watch --interval 30
+            echo "All checks passed — merging."
+            gh pr merge "$PR_URL" --squash --admin
+            exit 0
+          done
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
 
