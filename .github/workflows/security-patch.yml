@@ -204,7 +204,7 @@ jobs:
               gh pr merge "$PR_URL" --squash --admin
               exit 0
             fi
-            if echo "$CHECK_OUTPUT" | grep -q "no checks reported on the"; then
+            if echo "$CHECK_OUTPUT" | grep -q "no checks reported"; then
               if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
                 echo "Checks not reported yet (attempt ${attempt}/${MAX_ATTEMPTS}); retrying in ${SLEEP_SECONDS}s..."
                 sleep "$SLEEP_SECONDS"
