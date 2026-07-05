@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.9] - 2026-07-05
+
+### Security
+
+- Automated security rebuild
+  - **Fixed CVEs:** none
+  - **OS packages updated:**
+  - heimdal-libs-7.8.0-r50 → heimdal-libs-7.8.0-r51
+  - ncurses-6.6.20260627-r1 → ncurses-6.6.20260704-r0
+  - ncurses-terminfo-base-6.6.20260627-r1 → ncurses-terminfo-base-6.6.20260704-r0
+  - py3.13-setuptools-82.0.1-r1 → py3.13-setuptools-83.0.0-r0
+  - **Trigger:** 4 package(s) updated
+
 ## [0.5.8] - 2026-07-03
 
 ### Security
@@ -303,7 +316,8 @@ All notable changes to this project will be documented in this file.
 - Unraid Community Applications template
 - AGPL-3.0 license
 
-[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.8...HEAD
+[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.9...HEAD
+[0.5.9]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.8...v0.5.9
 [0.5.8]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.7...v0.5.8
 [0.5.7]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.6...v0.5.7
 [0.5.6]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.5...v0.5.6
