@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.10] - 2026-07-07
+
+### Security
+
+- Automated security rebuild
+  - **Fixed CVEs:** none
+  - **OS packages updated:**
+  - glibc-2.43-r9 → glibc-2.43-r11
+  - glibc-locale-posix-2.43-r9 → glibc-locale-posix-2.43-r11
+  - ld-linux-2.43-r9 → ld-linux-2.43-r11
+  - libcrypt1-2.43-r9 → libcrypt1-2.43-r11
+  - **Trigger:** wolfi-base updated; 4 package(s) updated
+
 ## [0.5.9] - 2026-07-05
 
 ### Security
@@ -316,7 +329,8 @@ All notable changes to this project will be documented in this file.
 - Unraid Community Applications template
 - AGPL-3.0 license
 
-[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.9...HEAD
+[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.10...HEAD
+[0.5.10]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.9...v0.5.10
 [0.5.9]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.8...v0.5.9
 [0.5.8]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.7...v0.5.8
 [0.5.7]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.6...v0.5.7
