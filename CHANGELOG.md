@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.21] - 2026-08-03
+
+### Security
+
+- Automated security rebuild
+  - **Fixed CVEs:** none
+  - **OS packages updated:**
+  - cyrus-sasl-heimdal-libs-2.1.28-r53 → cyrus-sasl-heimdal-libs-2.1.28-r54
+  - libpsl-0.23.0-r0 → libpsl-0.23.1-r0
+  - ncurses-6.6.20260725-r0 → ncurses-6.6.20260801-r0
+  - ncurses-terminfo-base-6.6.20260725-r0 → ncurses-terminfo-base-6.6.20260801-r0
+  - **Trigger:** 4 package(s) updated
+
 ## [0.5.20] - 2026-08-01
 
 ### Security
@@ -450,7 +463,8 @@ All notable changes to this project will be documented in this file.
 - Unraid Community Applications template
 - AGPL-3.0 license
 
-[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.20...HEAD
+[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.21...HEAD
+[0.5.21]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.20...v0.5.21
 [0.5.20]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.19...v0.5.20
 [0.5.19]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.18...v0.5.19
 [0.5.18]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.17...v0.5.18
