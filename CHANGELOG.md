@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.23] - 2026-08-07
+
+### Security
+
+- Automated security rebuild
+  - **Fixed CVEs:** none
+  - **OS packages updated:**
+  - docker-cli-29.7.1-r0 → docker-cli-29.7.2-r0
+  - python-3.13-3.13.14-r3 → python-3.13-3.13.15-r0
+  - python-3.13-base-3.13.14-r3 → python-3.13-base-3.13.15-r0
+  - **Trigger:** 3 package(s) updated
+
 ## [0.5.22] - 2026-08-05
 
 ### Security
@@ -475,7 +487,8 @@ All notable changes to this project will be documented in this file.
 - Unraid Community Applications template
 - AGPL-3.0 license
 
-[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.22...HEAD
+[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.23...HEAD
+[0.5.23]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.22...v0.5.23
 [0.5.22]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.21...v0.5.22
 [0.5.21]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.20...v0.5.21
 [0.5.20]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.19...v0.5.20
