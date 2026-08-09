@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.24] - 2026-08-09
+
+### Security
+
+- Automated security rebuild
+  - **Fixed CVEs:** none
+  - **OS packages updated:**
+  - glibc-2.43-r11 → glibc-2.43-r12
+  - glibc-locale-posix-2.43-r11 → glibc-locale-posix-2.43-r12
+  - jq-1.8.2-r0 → jq-1.8.2-r1
+  - keyutils-libs-1.6.3-r38 → keyutils-libs-1.6.3-r39
+  - ld-linux-2.43-r11 → ld-linux-2.43-r12
+  - libcrypt1-2.43-r11 → libcrypt1-2.43-r12
+  - libffi-3.7.1-r0 → libffi-3.8.0-r0
+  - libuuid-2.42.2-r0 → libuuid-2.42.2-r1
+  - ncurses-6.6.20260801-r0 → ncurses-6.6.20260808-r0
+  - ncurses-terminfo-base-6.6.20260801-r0 → ncurses-terminfo-base-6.6.20260808-r0
+  - **Trigger:** wolfi-base updated; 12 package(s) updated
+
 ## [0.5.23] - 2026-08-07
 
 ### Security
@@ -487,7 +506,8 @@ All notable changes to this project will be documented in this file.
 - Unraid Community Applications template
 - AGPL-3.0 license
 
-[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.23...HEAD
+[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.24...HEAD
+[0.5.24]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.23...v0.5.24
 [0.5.23]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.22...v0.5.23
 [0.5.22]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.21...v0.5.22
 [0.5.21]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.20...v0.5.21
