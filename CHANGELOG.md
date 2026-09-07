@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.24] - 2026-09-07
+
+### Security
+
+- Automated security rebuild
+  - **Fixed CVEs:** CVE-2026-14456,CVE-2026-15806,CVE-2026-17084,CVE-2026-33818,CVE-2026-39821,CVE-2026-46600,CVE-2026-54876,CVE-2026-56853,CVE-2026-56854,CVE-2026-56855,CVE-2026-56858,CVE-2026-56859,CVE-2026-56860,CVE-2026-56862,CVE-2026-78662
+  - **OS packages updated:**
+  - apk-tools-2.14.10-r13 → apk-tools-2.14.10-r14
+  - bash-5.3-r12 → bash-5.3-r13
+  - busybox-1.37.0-r61 → busybox-1.38.0-r2
+  - ca-certificates-20260413-r0 → ca-certificates-20260611-r1
+  - ca-certificates-bundle-20260413-r0 → ca-certificates-bundle-20260611-r1
+  - curl-8.21.0-r1 → curl-8.22.0-r0
+  - cyrus-sasl-heimdal-libs-2.1.28-r54 → cyrus-sasl-heimdal-libs-2.1.28-r56
+  - docker-cli-29.7.2-r0 → docker-cli-29.8.0-r0
+  - gdbm-1.26-r5 → 
+  - glibc-2.43-r11 → 
+  - glibc-locale-posix-2.43-r11 → 
+  - heimdal-libs-7.8.0-r51 → 
+  - **Trigger:** wolfi-base updated; 51 package(s) updated; fixed 38 CVE(s)
+
 ## [0.5.23] - 2026-08-07
 
 ### Security
@@ -487,7 +508,8 @@ All notable changes to this project will be documented in this file.
 - Unraid Community Applications template
 - AGPL-3.0 license
 
-[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.23...HEAD
+[Unreleased]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.24...HEAD
+[0.5.24]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.23...v0.5.24
 [0.5.23]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.22...v0.5.23
 [0.5.22]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.21...v0.5.22
 [0.5.21]: https://github.com/darkmatterforge/chowkidar/compare/v0.5.20...v0.5.21
